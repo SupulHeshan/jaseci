@@ -77,7 +77,7 @@ def get_where_to_visit_next(
     )
 
 
-def visit_by(
+def _visit_by(
     model: Model,
     walker: WalkerArchetype,
     node: NodeArchetype,

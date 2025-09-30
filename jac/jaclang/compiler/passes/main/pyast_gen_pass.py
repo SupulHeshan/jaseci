@@ -1753,48 +1753,70 @@ class PyastGenPass(UniPass):
             ]
 
     def exit_visit_stmt(self, node: uni.VisitStmt) -> None:
-        loc = self.sync(
-            ast3.Name(id="self", ctx=ast3.Load())
-            if node.from_walker
-            else ast3.Name(id=Con.VISITOR.value, ctx=ast3.Load())
-        )
-
-        visit_call = self.sync(
-            ast3.Call(
-                func=self.jaclib_obj("visit"),
-                args=cast(list[ast3.expr], [loc, node.target.gen.py_ast[0]]),
-                keywords=[],
+        if (
+            node.genai_call
+            and isinstance(node.genai_call, uni.FuncCall)
+            and isinstance(node.genai_call.target, uni.Name)
+        ):
+            _model = self.sync(
+                ast3.Name(id=node.genai_call.target.value, ctx=ast3.Load())
             )
-        )
+            _self = self.sync(ast3.Name(id="visitor", ctx=ast3.Load()))
+            _here = self.sync(ast3.Name(id="self", ctx=ast3.Load()))
+            _nodes = node.target.gen.py_ast[0]
+            visit_call = self.sync(
+                ast3.Call(
+                    func=self.jaclib_obj("visit_by"),
+                    args=cast(
+                        list[ast3.expr], [_model, _self, _here, cast(ast3.expr, _nodes)]
+                    ),
+                    keywords=[],
+                )
+            )
+            node.gen.py_ast = [self.sync(ast3.Expr(value=visit_call))]
+        else:
+            loc = self.sync(
+                ast3.Name(id="self", ctx=ast3.Load())
+                if node.from_walker
+                else ast3.Name(id=Con.VISITOR.value, ctx=ast3.Load())
+            )
 
-        if node.insert_loc is not None:
-            visit_call.keywords.append(
-                self.sync(
-                    ast3.keyword(
-                        arg="insert_loc",
-                        value=cast(ast3.expr, node.insert_loc.gen.py_ast[0]),
-                    )
+            visit_call = self.sync(
+                ast3.Call(
+                    func=self.jaclib_obj("visit"),
+                    args=cast(list[ast3.expr], [loc, node.target.gen.py_ast[0]]),
+                    keywords=[],
                 )
             )
 
-        node.gen.py_ast = [
-            (
-                self.sync(
-                    ast3.If(
-                        test=self.sync(
-                            ast3.UnaryOp(
-                                op=self.sync(ast3.Not()),
-                                operand=visit_call,
-                            )
-                        ),
-                        body=cast(list[ast3.stmt], node.else_body.gen.py_ast),
-                        orelse=[],
+            if node.insert_loc is not None:
+                visit_call.keywords.append(
+                    self.sync(
+                        ast3.keyword(
+                            arg="insert_loc",
+                            value=cast(ast3.expr, node.insert_loc.gen.py_ast[0]),
+                        )
                     )
                 )
-                if node.else_body
-                else self.sync(ast3.Expr(value=visit_call))
-            )
-        ]
+
+            node.gen.py_ast = [
+                (
+                    self.sync(
+                        ast3.If(
+                            test=self.sync(
+                                ast3.UnaryOp(
+                                    op=self.sync(ast3.Not()),
+                                    operand=visit_call,
+                                )
+                            ),
+                            body=cast(list[ast3.stmt], node.else_body.gen.py_ast),
+                            orelse=[],
+                        )
+                    )
+                    if node.else_body
+                    else self.sync(ast3.Expr(value=visit_call))
+                )
+            ]
 
     def exit_disengage_stmt(self, node: uni.DisengageStmt) -> None:
         loc = self.sync(

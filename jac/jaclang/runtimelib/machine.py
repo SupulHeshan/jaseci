@@ -1350,6 +1350,24 @@ class JacBasics:
             "byLLM is not installed. Please install it with `pip install byllm` and run `jac clean`."
         )
 
+    @staticmethod
+    def visit_by(
+        model: object,
+        walker: WalkerArchetype,
+        node: NodeArchetype,
+        connected_nodes: list[NodeArchetype],
+    ) -> (
+        list[NodeArchetype | EdgeArchetype]
+        | list[NodeArchetype]
+        | list[EdgeArchetype]
+        | NodeArchetype
+        | EdgeArchetype
+    ):
+        """Go through the available nodes and decide which next nodes to visit based on their semantics using an llm."""
+        raise ImportError(
+            "byLLM is not installed. Please install it with `pip install byllm` and run `jac clean`."
+        )
+
 
 class JacUtils:
     """Jac Machine Utilities."""
