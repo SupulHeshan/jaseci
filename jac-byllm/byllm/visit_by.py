@@ -6,14 +6,14 @@ import inspect
 from dataclasses import fields, is_dataclass
 
 # from jaclang.runtimelib.builtin import *
+from byllm import MTIR, Model
+
 from jaclang import JacMachineInterface as _
 from jaclang.runtimelib.constructs import (
     EdgeArchetype,
     NodeArchetype,
     WalkerArchetype,
 )
-
-from byllm import Model, MTIR
 
 
 def describe_node_for_llm(obj: NodeArchetype | EdgeArchetype) -> str:
@@ -72,8 +72,8 @@ def get_where_to_visit_next(
                 "connected_nodes": connected_nodes,
                 "description": description,
             },
-            call_params=model.call_params
-        )
+            call_params=model.call_params,
+        ),
     )
 
 
@@ -107,6 +107,6 @@ def visit_by(
             ordered_list.append(connected_nodes[index])
         else:
             raise IndexError("Index out of range for connected nodes")
-    
+
     _.visit(walker, ordered_list)
     return ordered_list
