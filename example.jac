@@ -23,12 +23,6 @@ node Bike {
     }
 }
 
-node ThreeWheeler {
-    can act with showroom_visitor entry {
-        print("🛺 Three-Wheeler: A compact and efficient vehicle for city travel.");
-    }
-}
-
 node Van {
     can act with showroom_visitor entry {
         print("🚚 Van: A spacious van ideal for family trips.");
@@ -40,7 +34,6 @@ walker showroom_visitor {
 
     can visit_showroom with `root entry {
         print("🛎️ Visitor: Entering the showroom...");
-        # visit [-->] by llm();
         visit [-->];
     }
 }
@@ -50,16 +43,6 @@ with entry {
     show_room ++> Car();
     show_room ++> Bike();
     show_room ++> Van();
-    show_room ++> ThreeWheeler();
 
-    showroom_visitor([2, 3]) spawn root;
+    showroom_visitor([2]) spawn root;
 }
-
-
-
-
-# def say_hello(name: str) -> str by llm();
-
-# with entry {
-#     say_hello("Malitha");
-# }
