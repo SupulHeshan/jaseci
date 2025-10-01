@@ -1753,6 +1753,11 @@ class PyastGenPass(UniPass):
             ]
 
     def exit_visit_stmt(self, node: uni.VisitStmt) -> None:
+        loc = self.sync(
+            ast3.Name(id="self", ctx=ast3.Load())
+            if node.from_walker
+            else ast3.Name(id=Con.VISITOR.value, ctx=ast3.Load())
+        )
         if (
             node.genai_call
             and isinstance(node.genai_call, uni.FuncCall)
@@ -1761,8 +1766,12 @@ class PyastGenPass(UniPass):
             _model = self.sync(
                 ast3.Name(id=node.genai_call.target.value, ctx=ast3.Load())
             )
-            _self = self.sync(ast3.Name(id="visitor", ctx=ast3.Load()))
-            _here = self.sync(ast3.Name(id="self", ctx=ast3.Load()))
+            if loc.id == Con.VISITOR.value:
+                _self = self.sync(ast3.Name(id="visitor", ctx=ast3.Load()))
+                _here = self.sync(ast3.Name(id="self", ctx=ast3.Load()))
+            else:
+                _self = self.sync(ast3.Name(id="self", ctx=ast3.Load()))
+                _here = self.sync(ast3.Name(id="here", ctx=ast3.Load()))
             _nodes = node.target.gen.py_ast[0]
             visit_call = self.sync(
                 ast3.Call(
@@ -1775,12 +1784,6 @@ class PyastGenPass(UniPass):
             )
             node.gen.py_ast = [self.sync(ast3.Expr(value=visit_call))]
         else:
-            loc = self.sync(
-                ast3.Name(id="self", ctx=ast3.Load())
-                if node.from_walker
-                else ast3.Name(id=Con.VISITOR.value, ctx=ast3.Load())
-            )
-
             visit_call = self.sync(
                 ast3.Call(
                     func=self.jaclib_obj("visit"),
