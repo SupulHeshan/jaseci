@@ -1,12 +1,15 @@
-import from byllm { Model }
+import from byllm.llm { Model }
 
-glob llm: Model = Model("gpt-4o");
+glob llm = Model("gpt-4o");
 
 node VehicleShowroom {
     can show_vehicles with showroom_visitor entry {
         print("🚗 Welcome to the Vehicle Showroom! Here are the vehicles available:");
-        # aaa = visit_by(llm, visitor, self, [self -->]);
-        visit [-->] by llm();
+        visit [-->] by llm(
+            incl_info = {
+                "important": "Describe each vehicle briefly in a friendly manner."
+            }
+        );
         print("🏁 End of the vehicle list.");
     }
 }
@@ -44,5 +47,19 @@ with entry {
     show_room ++> Bike();
     show_room ++> Van();
 
-    showroom_visitor([2]) spawn root;
+    showroom_visitor([2, 4]) spawn root;
 }
+
+
+
+
+
+# def say_hello(name: str) -> str by llm(
+#     incl_info = {
+#         "important": "Start the name as Mr./Ms. and make it very formal"
+#     }
+# );
+
+# with entry {
+#     print(say_hello("Malitha"));
+# }
