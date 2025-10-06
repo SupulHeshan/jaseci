@@ -1102,6 +1102,7 @@ class JacBasics:
         if custom:
             ctx.custom = expr
         else:
+            print(expr)
             ctx.reports.append(expr)
 
     @staticmethod
@@ -1131,6 +1132,13 @@ class JacBasics:
                 )
             return JacMachineInterface.get_edges(origin, path.destinations[-1])
         return origin
+
+    @staticmethod
+    async def arefs(
+        path: DataSpatialPath | NodeArchetype | list[NodeArchetype],
+    ) -> None:
+        """Jac's apply_dir stmt feature."""
+        pass
 
     @staticmethod
     def filter(
@@ -1727,4 +1735,5 @@ class JacMachine(JacMachineInterface):
         JacMachine.base_path_dir = os.getcwd()
         JacMachine.program = JacProgram()
         JacMachine.pool = ThreadPoolExecutor()
+        JacMachine.exec_ctx.mem.close()
         JacMachine.exec_ctx = ExecutionContext()
