@@ -1778,11 +1778,12 @@ class PyastGenPass(UniPass):
                 ast3.Name(id=node.genai_call.target.value, ctx=ast3.Load())
             )
             if loc.id == Con.VISITOR.value:
-                _self = self.sync(ast3.Name(id="visitor", ctx=ast3.Load()))
+                _self = self.sync(ast3.Name(id=Con.VISITOR.value, ctx=ast3.Load()))
                 _here = self.sync(ast3.Name(id="self", ctx=ast3.Load()))
             else:
                 _self = self.sync(ast3.Name(id="self", ctx=ast3.Load()))
-                _here = self.sync(ast3.Name(id="here", ctx=ast3.Load()))
+                _here = self.sync(ast3.Name(id=Con.HERE.value, ctx=ast3.Load()))
+            
             _nodes = node.target.gen.py_ast[0]
             visit_call = self.sync(
                 ast3.Call(

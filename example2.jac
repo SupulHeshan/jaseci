@@ -4,9 +4,8 @@ glob llm: Model = Model("gpt-4o");
 
 node VehicleShowroom {
     can show_vehicles with showroom_visitor entry {
-        print("🚗 Welcome to the Vehicle Showroom! Here are the vehicles available:");
+        print("Welcome to the Vehicle Showroom! Here are the vehicles available:\n");
         visit [-->(`?Car)] by llm();
-        print("🏁 End of the vehicle list.");
     }
 }
 
@@ -28,7 +27,7 @@ walker showroom_visitor {
     has expected_color: list[str];
 
     can visit_showroom with `root entry {
-        print("🛎️ Visitor: Entering the showroom...");
+        print("Visitor: Entering the showroom...");
         visit [-->];
     }
 }
