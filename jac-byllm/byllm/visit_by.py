@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
-from dataclasses import fields, is_dataclass
-
 # from jaclang.runtimelib.builtin import *
 from byllm import MTIR, Model
 
@@ -14,40 +11,6 @@ from jaclang.runtimelib.constructs import (
     NodeArchetype,
     WalkerArchetype,
 )
-
-
-def describe_node_for_llm(obj: NodeArchetype | EdgeArchetype) -> str:
-    """Return a string describing the attributes and methods of a node or edge object."""
-    cls = obj.__class__
-    lines = [f"Class: {cls.__name__}"]
-
-    # Attributes
-    lines.append("Attributes:")
-    if is_dataclass(obj):
-        for f in fields(cls):
-            val = getattr(obj, f.name)
-            type_name = (
-                getattr(f.type, "__name__", str(f.type)) if f.type else "unknown"
-            )
-            lines.append(f"- {f.name}: {type_name} = {val!r}")
-    else:
-        for name, val in vars(obj).items():
-            lines.append(f"- {name}: {type(val).__name__} = {val!r}")
-
-    # Methods
-    lines.append("Methods:")
-    for name, func in inspect.getmembers(cls, predicate=inspect.isfunction):
-        if not name.startswith("__"):
-            sig = str(inspect.signature(func))
-            lines.append(f"- {name}{sig}")
-
-    return "\n".join(lines)
-
-
-def describe_object_list_for_llm(objects: list[NodeArchetype | EdgeArchetype]) -> str:
-    """Combine descriptions of a list of objects into a single string."""
-    return "\n\n".join(describe_node_for_llm(obj) for obj in objects)
-
 
 def get_where_to_visit_next(
     model: Model,
@@ -99,7 +62,7 @@ def _visit_by(
         walker,
         node,
         connected_nodes,
-        description=describe_object_list_for_llm(connected_nodes),
+        description=_.describe_object_list(connected_nodes),
     )
     ordered_list = []
     for index in next_node_indexes:

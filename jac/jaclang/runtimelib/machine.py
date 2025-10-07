@@ -11,7 +11,7 @@ import tempfile
 import types
 from collections import OrderedDict
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import MISSING, dataclass, field
+from dataclasses import MISSING, dataclass, field, fields, is_dataclass
 from functools import wraps
 from inspect import getfile
 from logging import getLogger
@@ -1582,6 +1582,38 @@ class JacUtils:
         """Wait for a thread to finish."""
         return future.result()
 
+    @staticmethod
+    def describe_node(obj: NodeArchetype | EdgeArchetype) -> str:
+        """Return a string describing the attributes and methods of a node or edge object."""
+        cls = obj.__class__
+        lines = [f"Class: {cls.__name__}"]
+
+        # Attributes
+        lines.append("Attributes:")
+        if is_dataclass(obj):
+            for f in fields(cls):
+                val = getattr(obj, f.name)
+                type_name = (
+                    getattr(f.type, "__name__", str(f.type)) if f.type else "unknown"
+                )
+                lines.append(f"- {f.name}: {type_name} = {val!r}")
+        else:
+            for name, val in vars(obj).items():
+                lines.append(f"- {name}: {type(val).__name__} = {val!r}")
+
+        # Methods
+        lines.append("Methods:")
+        for name, func in inspect.getmembers(cls, predicate=inspect.isfunction):
+            if not name.startswith("__"):
+                sig = str(inspect.signature(func))
+                lines.append(f"- {name}{sig}")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def describe_object_list(objects: list[NodeArchetype | EdgeArchetype]) -> str:
+        """Combine descriptions of a list of objects into a single string."""
+        return "\n\n".join(JacUtils.describe_node(obj) for obj in objects)
 
 class JacMachineInterface(
     JacClassReferences,
