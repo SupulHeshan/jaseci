@@ -1624,6 +1624,7 @@ class JacUtils:
         """Combine descriptions of a list of objects into a single string."""
         return "\n\n".join(JacUtils.describe_node(obj) for obj in objects)
 
+
 class JacMachineInterface(
     JacClassReferences,
     JacAccessValidation,

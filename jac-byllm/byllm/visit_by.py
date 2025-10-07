@@ -12,6 +12,7 @@ from jaclang.runtimelib.constructs import (
     WalkerArchetype,
 )
 
+
 def get_where_to_visit_next(
     model: Model,
     walker: WalkerArchetype,
