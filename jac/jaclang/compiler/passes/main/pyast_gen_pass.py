@@ -172,15 +172,6 @@ class PyastGenPass(UniPass):
             ),
         )
 
-    def needs_mtllm(self) -> None:
-        """Ensure byLLM is imported only once."""
-        self._add_preamble_once(
-            self.needs_mtllm.__name__,
-            ast3.Import(
-                names=[self.sync(ast3.alias(name="byllm"), jac_node=self.ir_out)]
-            ),
-        )
-
     def needs_enum(self) -> None:
         """Ensure Enum utilities are imported only once."""
         self._add_preamble_once(
@@ -752,23 +743,9 @@ class PyastGenPass(UniPass):
         self, model: ast3.expr, caller: ast3.expr, args: ast3.Dict
     ) -> ast3.Call:
         """Reusable method to codegen call_llm(model, caller, args)."""
-        self.needs_mtllm()
-        mtir_cls_ast = self.sync(
-            ast3.Attribute(
-                value=self.sync(ast3.Name(id="byllm", ctx=ast3.Load())),
-                attr="MTIR",
-                ctx=ast3.Load(),
-            )
-        )
         mtir_ast = self.sync(
             ast3.Call(
-                func=self.sync(
-                    ast3.Attribute(
-                        value=mtir_cls_ast,
-                        attr="factory",
-                        ctx=ast3.Load(),
-                    )
-                ),
+                func=self.jaclib_obj("get_mtir"),
                 args=[],
                 keywords=[
                     self.sync(
@@ -1230,8 +1207,29 @@ class PyastGenPass(UniPass):
         ]
 
     def exit_typed_ctx_block(self, node: uni.TypedCtxBlock) -> None:
-        # TODO: Come back
-        pass
+        loc = self.sync(
+            ast3.Name(id=Con.HERE.value, ctx=ast3.Load())
+            if node.from_walker
+            else ast3.Name(id=Con.VISITOR.value, ctx=ast3.Load())
+        )
+        node.gen.py_ast = [
+            self.sync(
+                ast3.If(
+                    test=self.sync(
+                        ast3.Call(
+                            func=self.sync(ast3.Name(id="isinstance", ctx=ast3.Load())),
+                            args=[
+                                loc,
+                                cast(ast3.expr, node.type_ctx.gen.py_ast[0]),
+                            ],
+                            keywords=[],
+                        )
+                    ),
+                    body=cast(list[ast3.stmt], self.resolve_stmt_block(node.body)),
+                    orelse=[],
+                )
+            )
+        ]
 
     def exit_if_stmt(self, node: uni.IfStmt) -> None:
         node.gen.py_ast = [

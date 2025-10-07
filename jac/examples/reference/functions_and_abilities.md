@@ -2,6 +2,34 @@
 
 Functions and abilities are the core computational units in Jac. Functions provide traditional callable operations, while abilities enable Object-Spatial Programming (OSP) through event-driven, type-specific dispatch during graph traversal.
 
+**Important: Self Parameter in Methods**
+
+Methods in Jac have different self parameter requirements depending on the archetype type:
+
+| Archetype Type | Self Parameter | Example |
+|----------------|----------------|---------|
+| `class` | **Explicit** with type annotation | `def init(self: MyClass, x: int)` |
+| `obj` | **Implicit** (not in signature) | `def init(x: int)` |
+| `node` | **Implicit** (not in signature) | `def process()` |
+| `edge` | **Implicit** (not in signature) | `def get_weight() -> float` |
+| `walker` | **Implicit** (not in signature) | `can collect(item: str)` |
+
+**Why the difference?** `class` follows traditional Python class semantics for compatibility, while `obj`, `node`, `edge`, and `walker` use Jac's simplified semantics with automatic self handling. Inside method bodies, all methods can access `self` to refer to the current instance, regardless of whether `self` appears in the parameter list. See [class_archetypes.md](class_archetypes.md) for detailed examples.
+
+**Optional Parentheses for No-Parameter Methods**
+
+When defining methods or functions with **no parameters**, the `()` are **optional** in Jac:
+
+```jac
+# With parentheses (traditional)
+def increment() { self.count += 1; }
+
+# Without parentheses (Jac style)
+def increment { self.count += 1; }
+```
+
+Both are valid. When **calling** the method, parentheses are still required: `obj.increment()`. This syntactic sugar makes method definitions cleaner and more readable.
+
 **Basic Functions**
 
 Lines 6-8 show a function with typed parameters and return type. Lines 11-13 demonstrate a function with only a return type (no parameters):
@@ -117,7 +145,10 @@ Lines 284-287 demonstrate `disengage` for early termination. The `disengage` sta
 | `with exit` | Walker completes | 151 |
 | `with \`root entry` | Visiting root node specifically | 172 |
 | `with NodeType entry` | Visiting specific node type | 178, 185 |
+| `with (Type1, Type2) entry` | Visiting any of the listed types | See typed_context_blocks_(osp).jac:80 |
 | `with WalkerType entry` | Node ability for specific walker | 225, 231 |
+
+**Note:** You can specify multiple types in parentheses to trigger the ability for any of those types. For example, `can handle with (Person, City) entry` will trigger when visiting either Person or City nodes. See [typed_context_blocks_(osp).md](typed_context_blocks_(osp).md) for detailed examples of using multiple types with typed context blocks.
 
 **Execution Order When Walker Visits Node**
 
