@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # from jaclang.runtimelib.builtin import *
-from byllm import MTIR, Model
+from byllm import Model
 
 from jaclang import JacMachineInterface as _
 from jaclang.runtimelib.constructs import (
@@ -20,25 +20,24 @@ def get_where_to_visit_next(
     connected_nodes: list[NodeArchetype | EdgeArchetype],
     description: str = "",
 ) -> list[int]:
-    """Determine the next nodes to visit by analyzing semantics using an LLM.
+    """Call LLM to analyze semantics and determine the next nodes to visit."""
 
-    Walker is a transitioning agent while the nodes are agents that can be visited.
-    It returns the list of indexes of the next nodes to visit in order to complete the task of the walker.
-    If no suitable node is found, it returns [].
-    """
-    return _.call_llm(
-        model=model(),
-        mtir=MTIR.factory(
-            caller=get_where_to_visit_next,
-            args={
-                "walker": walker,
-                "current_node": current_node,
-                "connected_nodes": connected_nodes,
-                "description": description,
-            },
-            call_params=model.call_params,
-        ),
-    )
+    @_.by(model=model)
+    def _get_where_to_visit_next(
+        walker: WalkerArchetype,
+        current_node: NodeArchetype,
+        connected_nodes: list[NodeArchetype | EdgeArchetype],
+        description: str = "",
+    ) -> list[int]:
+        """Determine the next nodes to visit by analyzing semantics using an LLM.
+
+        Walker is a transitioning agent while the nodes are agents that can be visited.
+        It returns the list of indexes of the next nodes to visit in order to complete the task of the walker.
+        If no suitable node is found, it returns [].
+        """
+        return []
+
+    return _get_where_to_visit_next(walker, current_node, connected_nodes, description)
 
 
 def _visit_by(

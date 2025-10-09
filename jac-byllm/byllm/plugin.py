@@ -45,25 +45,3 @@ class JacMachine:
     ):
         """Go through the available nodes and decide which next nodes to visit based on their semantics using an llm."""
         return _visit_by(model, walker, node, connected_nodes)
-
-    @staticmethod
-    def by(model: Model) -> Callable:
-        """Python library mode decorator for Jac's by llm() syntax."""
-
-        def _decorator(caller: Callable) -> Callable:
-            def _wrapped_caller(*args: object, **kwargs: object) -> object:
-                invoke_args: dict[int | str, object] = {}
-                for i, arg in enumerate(args):
-                    invoke_args[i] = arg
-                for key, value in kwargs.items():
-                    invoke_args[key] = value
-                mtir = MTIR.factory(
-                    caller=caller,
-                    args=invoke_args,
-                    call_params=model.llm_connector.call_params,
-                )
-                return model.invoke(mtir=mtir)
-
-            return _wrapped_caller
-
-        return _decorator
