@@ -258,7 +258,7 @@ class JacLanguageTests(TestCase):
         """Test the visit by functionality."""
         captured_output = io.StringIO()
         sys.stdout = captured_output
-        jac_import("vehicle_finder1", base_path=self.examples_abs_path("./visit_by"))
+        jac_import("vehicle_finder1", base_path=self.fixture_abs_path("./visit_by"))
         sys.stdout = sys.__stdout__
         stdout_value = captured_output.getvalue()
         self.assertIn("Car: A sleek sedan with modern features.", stdout_value)
@@ -268,7 +268,7 @@ class JacLanguageTests(TestCase):
         """Test the visit by functionality with node filtering."""
         captured_output = io.StringIO()
         sys.stdout = captured_output
-        jac_import("vehicle_finder2", base_path=self.examples_abs_path("./visit_by"))
+        jac_import("vehicle_finder2", base_path=self.fixture_abs_path("./visit_by"))
         sys.stdout = sys.__stdout__
         stdout_value = captured_output.getvalue()
         self.assertIn("Car, color: Blue", stdout_value)
