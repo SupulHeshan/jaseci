@@ -5,6 +5,8 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 ## jaclang 0.8.10 / jac-cloud 0.2.10 / byllm 0.4.5 (Unreleased)
 
+- **LLM-Powered Graph Traversal (`visit by`)**: Introduced `visit [-->] by llm()` syntax enabling walkers to make intelligent traversal decisions. The LLM analyzes the semantic context of available nodes and selects which ones to visit based on the walker's purpose, bringing AI-powered decision making to graph navigation.
+
 ## jaclang 0.8.9 / jac-cloud 0.2.9 / byllm 0.4.4 (Latest Release)
 
 - **Typed Context Blocks (OSP)**: Fully implemented typed context blocks (`-> NodeType { }` and `-> WalkerType { }`) for Object-Spatial Programming, enabling conditional code execution based on runtime types.
