@@ -1358,7 +1358,8 @@ class JacByLLM:
         raise ImportError(
             "byLLM is not installed. Please install it with `pip install byllm` and run `jac clean`."
         )
-    
+
+    @staticmethod
     def by(model: object) -> Callable:
         """Python library mode decorator for Jac's by llm() syntax."""
 

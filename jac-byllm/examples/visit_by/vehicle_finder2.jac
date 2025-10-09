@@ -1,6 +1,6 @@
 import from byllm { Model }
 
-glob llm: Model = Model("gpt-4o");
+glob llm: Model = Model("mockllm", outputs=[[1]]);
 
 node VehicleShowroom {
     can show_vehicles with showroom_visitor entry {
@@ -12,14 +12,14 @@ node VehicleShowroom {
 node Car {
     has color: str;
     can act with showroom_visitor entry {
-        print("🚙 Car: A sleek sedan with modern features.");
+        print("Car, color: " + self.color);
     }
 }
 
 node Bike {
     has color: str;
     can act with showroom_visitor entry {
-        print("🚲 Bike: A sporty mountain bike perfect for off-road adventures.");
+        print("Bike, color: " + self.color);
     }
 }
 

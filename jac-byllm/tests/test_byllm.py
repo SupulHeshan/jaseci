@@ -253,3 +253,22 @@ class JacLanguageTests(TestCase):
         stdout_value = captured_output.getvalue()
         self.assertIn("YES", stdout_value)
         self.assertIn("NO", stdout_value)
+
+    def test_visit_by(self) -> None:
+        """Test the visit by functionality."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        jac_import("vehicle_finder1", base_path=self.examples_abs_path("./visit_by"))
+        sys.stdout = sys.__stdout__
+        stdout_value = captured_output.getvalue()
+        self.assertIn("Car: A sleek sedan with modern features.", stdout_value)
+        self.assertIn("Van: A spacious van ideal for family trips.", stdout_value)
+
+    def test_visit_by_with_node_filtering(self) -> None:
+        """Test the visit by functionality with node filtering."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        jac_import("vehicle_finder2", base_path=self.examples_abs_path("./visit_by"))
+        sys.stdout = sys.__stdout__
+        stdout_value = captured_output.getvalue()
+        self.assertIn("Car, color: Blue", stdout_value)
