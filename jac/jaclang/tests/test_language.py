@@ -528,7 +528,7 @@ class JacLanguageTests(TestCase):
             ).ir_out.unparse()
         self.assertIn("def greet2( **kwargs: Any) {", output)
         self.assertEqual(output.count("with entry {"), 14)
-        self.assertIn("assert (x == 5) , 'x should be equal to 5' ;", output)
+        self.assertIn("assert (x == 5) , 'x should be equal to 5';", output)
         self.assertIn("if not (x == y) {", output)
         self.assertIn("squares_dict = {x : (x ** 2) for x in numbers};", output)
         self.assertIn(
@@ -623,6 +623,27 @@ class JacLanguageTests(TestCase):
         self.assertIn(
             "def len(<>obj: Sized, astt: Any, /, z: int, j: str, a: Any = 90) -> int {",
             output,
+        )
+
+    def test_py2jac_empty_file(self) -> None:
+        """Test py ast to Jac ast conversion."""
+        from jaclang.compiler.passes.main import PyastBuildPass
+        import jaclang.compiler.unitree as ast
+        import ast as py_ast
+
+        py_out_path = os.path.join(self.fixture_abs_path("./"), "py2jac_empty.py")
+        with open(py_out_path) as f:
+            file_source = f.read()
+            converted_ast = PyastBuildPass(
+                ir_in=ast.PythonModuleAst(
+                    py_ast.parse(file_source),
+                    orig_src=ast.Source(file_source, py_out_path),
+                ),
+                prog=None,
+            ).ir_out
+        self.assertIsInstance(
+            converted_ast,
+            ast.Module
         )
 
     def test_refs_target(self) -> None:
@@ -1556,6 +1577,34 @@ class JacLanguageTests(TestCase):
         finally:
             os.unlink(temp_path)
 
+    def test_funccall_genexpr(self) -> None:
+        """Test function call with generator expression in both Jac and py2jac."""
+        # Test language support
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        Jac.jac_import("funccall_genexpr", base_path=self.fixture_abs_path("./"))
+        sys.stdout = sys.__stdout__
+        stdout_value = captured_output.getvalue().split("\n")
+        self.assertIn("Result: 30", stdout_value[0])
+        
+        # Test py2jac conversion
+        py_file_path = f"{self.fixture_abs_path('../../tests/fixtures/funccall_genexpr.py')}"
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        cli.py2jac(py_file_path)
+        sys.stdout = sys.__stdout__
+        stdout_value = captured_output.getvalue()
+        self.assertIn("result = total((x * x) for x in range(5));", stdout_value)
+
+    def test_attr_pattern_case(self) -> None:
+        """Test attribute pattern matching."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        Jac.jac_import("attr_pattern_case", base_path=self.fixture_abs_path("./"))
+        sys.stdout = sys.__stdout__
+        stdout_value = captured_output.getvalue().split("\n")
+        self.assertIn("Matched a.b.c Hello Jaseci!", stdout_value[0])
+        
     def test_known_builtins_matches_actual(self) -> None:
         """Test that KNOWN_BUILTINS in PyastGenPass matches actual builtins."""
         from jaclang.compiler.passes.main.pyast_gen_pass import PyastGenPass
