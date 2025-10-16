@@ -141,6 +141,25 @@ class PreDynamoPass(UniPass):
                 return any(parts) in self._HOISTABLE_CALLS
         return False
 
+    def _replace_io_call(self, node: uni.FuncCall) -> uni.FuncCall:
+        """Return an I/O function call with a call to the hoisted version."""
+        args = deepcopy(node.params)
+        gm_name = self.gen_name(node, Tok.NAME, "_gm_io")
+        append_attr = self.gen_name(node, Tok.NAME, "append")
+        func_name = uni.AtomTrailer(
+            target=gm_name,
+            right=append_attr,
+            is_attr=True,
+            is_null_ok=False,
+            kid=[gm_name, append_attr],
+        )
+        return uni.FuncCall(
+            target=func_name,
+            params=args,
+            genai_call=None,
+            kid=[func_name] + args,
+        )
+
     def _create_ability(self, node: uni.Ability) -> uni.Ability:
         """Create ability node."""
         ability_name = f"__gm_core_{node.name_ref._sym_name}"
@@ -158,6 +177,13 @@ class PreDynamoPass(UniPass):
             kid=kid,
         )
         return ability
+
+    def _classify_io_call(self, node: uni.FuncCall) -> Optional[tuple]:
+        """Classify I/O call into (call_type, args, kwargs) or None if not I/O."""
+        # if isinstance(node.target, uni.Name):
+        #     call_name = node.target.value
+        #     if call_name in {"print", "logging"}:
+        pass
 
     def exit_module(self, node: uni.Module) -> None:
         """Exit module."""
@@ -180,11 +206,17 @@ class PreDynamoPass(UniPass):
             self.needs_gm_rt = True
             ability_node = self._create_ability(node)
             if isinstance(node.body, list):
-                node.body.insert(0, ability_node)
+                body = node.body
             elif isinstance(node.body, uni.ImplDef) and isinstance(
                 node.body.body, list
             ):
-                node.body.body.insert(0, ability_node)  # type: ignore
+                body = node.body.body
+            for i in body:
+                if isinstance(i, uni.FuncCall) and self._is_io_call(i):
+                    new_call = self._replace_io_call(i)
+                    self.replace_node(new_call, i, "body")
+            return_node = uni.ReturnStmt()
+            self.replace_node([ability_node, return_node], node, "body")
 
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Exit function call."""
