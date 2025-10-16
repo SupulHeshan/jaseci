@@ -35,8 +35,6 @@ class PreDynamoPass(UniPass):
     def exit_node(self, node: uni.UniNode) -> None:
         """Exit node."""
         super().exit_node(node)
-        # if isinstance(node, uni.Module):
-        #     print(node.unparse())
 
     def gen_name(self, node: uni.UniNode, name: Tok, value: str) -> uni.Name:
         """Generate Name."""
@@ -251,7 +249,6 @@ class PreDynamoPass(UniPass):
                     self.replace_node(new_call, i, "body")
             node.body = [ability_node, *out_body_parts]
             node.kid = [node.kid[0], ability_node, *out_body_parts]
-            print(f"unparsed ability:\n{node.unparse()}")
 
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Exit function call."""
@@ -267,7 +264,6 @@ class PreDynamoPass(UniPass):
                 if hasattr(node.parent, "kid") and node in node.parent.kid:
                     idx = node.parent.kid.index(node)
                     node.parent.kid[idx] = new_func_call
-                print(f"unparsed func call:\n{new_func_call.unparse()}")
 
     def exit_if_stmt(self, node: uni.IfStmt) -> None:
         """Exit if statement."""
