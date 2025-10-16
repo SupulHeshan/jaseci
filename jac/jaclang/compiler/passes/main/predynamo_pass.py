@@ -164,6 +164,7 @@ class PreDynamoPass(UniPass):
         """Create ability node."""
         ability_name = f"__gm_core_{node.name_ref._sym_name}"
         name = self.gen_name(node, Tok.NAME, ability_name)
+        name.py_ctx_func = ast3.Load
         kid = [name]
         ability = uni.Ability(
             name_ref=name,
@@ -173,7 +174,7 @@ class PreDynamoPass(UniPass):
             is_abstract=False,
             access=None,
             signature=deepcopy(node.signature),
-            body=[],
+            body=deepcopy(node.body),
             kid=kid,
         )
 
@@ -186,7 +187,10 @@ class PreDynamoPass(UniPass):
         gm_ret, gm_io = self.gen_name(node, Tok.NAME, "_gm_ret"), self.gen_name(
             node, Tok.NAME, "_gm_io"
         )
+        gm_ret.py_ctx_func = ast3.Store
+        gm_io.py_ctx_func = ast3.Store
         assign_target = uni.TupleVal(values=[gm_ret, gm_io], kid=[gm_ret, gm_io])
+        assign_target.name_spec.py_ctx_func = ast3.Store
         assign_expr = uni.Assignment(
             target=[assign_target],
             value=call,
@@ -196,6 +200,8 @@ class PreDynamoPass(UniPass):
 
         gm_name = self.gen_name(node, Tok.NAME, "_gm_rt")
         flush_name = self.gen_name(node, Tok.NAME, "graphmend_flush")
+        gm_name.py_ctx_func = ast3.Load
+        flush_name.py_ctx_func = ast3.Load
         flush_func_name = uni.AtomTrailer(
             target=gm_name,
             right=flush_name,
@@ -203,15 +209,18 @@ class PreDynamoPass(UniPass):
             is_null_ok=False,
             kid=[gm_name, flush_name],
         )
+        gm_io_new = deepcopy(gm_io)
+        gm_io_new.py_ctx_func = ast3.Load
         flush_call = uni.FuncCall(
             target=flush_func_name,
-            params=[gm_io],
+            params=[gm_io_new],
             genai_call=None,
-            kid=[flush_func_name, gm_io],
+            kid=[flush_func_name, gm_io_new],
         )
         flush_expr = uni.ExprStmt(expr=flush_call, in_fstring=False, kid=[flush_call])
-
-        return_stmt = uni.ReturnStmt(expr=gm_ret, kid=[gm_ret])
+        gm_ret_new = deepcopy(gm_ret)
+        gm_ret_new.py_ctx_func = ast3.Load
+        return_stmt = uni.ReturnStmt(expr=gm_ret_new, kid=[gm_ret_new])
 
         out_body_parts = (assign_expr, flush_expr, return_stmt)
         return (ability, out_body_parts)
@@ -222,6 +231,7 @@ class PreDynamoPass(UniPass):
             return
         imp_name = self.gen_name(node, Tok.NAME, "graphmend_runtime")
         imp_alias = self.gen_name(node, Tok.NAME, "_gm_rt")
+        imp_alias.py_ctx_func = ast3.Store
         item = uni.ModuleItem(name=imp_name, alias=imp_alias, kid=[imp_name])
         imp = uni.Import(
             from_loc=None,
@@ -249,6 +259,7 @@ class PreDynamoPass(UniPass):
                     self.replace_node(new_call, i, "body")
             node.body = [ability_node, *out_body_parts]
             node.kid = [node.kid[0], ability_node, *out_body_parts]
+            print(f"ability unparse after: {node.unparse()}")
 
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Exit function call."""
