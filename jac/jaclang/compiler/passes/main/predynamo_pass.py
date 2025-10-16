@@ -14,6 +14,19 @@ T = TypeVar("T", bound=ast3.AST)
 class PreDynamoPass(UniPass):
     """Pre-Dynamo pass for PyTorch."""
 
+    def before_pass(self) -> None:
+        """Before pass."""
+        self.needs_gm_rt = False  # whether we need to import graphmend_runtime
+        self._HOISTABLE_CALLS = {
+            "print",
+            "logging",
+            "sys.stdout.write",
+            "sys.stderr.write",
+            "sys.stdout.flush",
+            "sys.stderr.flush",
+        }
+        return super().before_pass()
+
     def enter_node(self, node: uni.UniNode) -> None:
         """Enter node."""
         super().enter_node(node)
@@ -109,6 +122,39 @@ class PreDynamoPass(UniPass):
                 )
                 return (call.target, name, tensor_expr, kwargs)
         return None
+
+    def hoist(self, node: uni.FuncCall) -> None:
+        """Hoist the function calls."""
+        pass
+
+    def exit_module(self, node: uni.Module) -> None:
+        """Exit module."""
+        if not self.needs_gm_rt:
+            return
+        imp_name = self.gen_name(node, Tok.NAME, "graphmend_runtime")
+        imp_alias = self.gen_name(node, Tok.NAME, "_gm_rt")
+        item = uni.ModuleItem(name=imp_name, alias=imp_alias, kid=[imp_name])
+        imp = uni.Import(
+            from_loc=None,
+            items=[item],
+            is_absorb=False,
+            kid=[item],
+        )
+        node.body = [imp] + list(node.body)
+
+    def exit_ability(self, node: uni.Ability) -> None:
+        """Exit ability."""
+        pass
+
+    def exit_func_call(self, node: uni.FuncCall) -> None:
+        """Exit function call."""
+        if (
+            isinstance(node.target, uni.Name)
+            and node.target.value in self._HOISTABLE_CALLS
+        ):
+            self.hoist(node)
+        elif isinstance(node.target, uni.AtomTrailer):
+            pass
 
     def exit_if_stmt(self, node: uni.IfStmt) -> None:
         """Exit if statement."""
