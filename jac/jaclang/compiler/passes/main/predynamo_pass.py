@@ -2,7 +2,7 @@
 
 import ast as ast3
 from copy import deepcopy
-from typing import Optional, TypeVar, cast
+from typing import Optional, Sequence, TypeVar, cast
 
 import jaclang.compiler.unitree as uni
 from jaclang.compiler.constant import Tokens as Tok
@@ -143,7 +143,17 @@ class PreDynamoPass(UniPass):
 
     def _replace_io_call(self, node: uni.FuncCall) -> uni.FuncCall:
         """Return an I/O function call with a call to the hoisted version."""
-        args = deepcopy(node.params)
+        params = deepcopy(node.params)
+        tuple_params = uni.TupleVal(values=cast(Sequence[uni.Expr], params), kid=params)
+        io_name = node.target
+        if isinstance(io_name, uni.Name):
+            io_str = self.gen_name(node, Tok.STRING, f'"{io_name.value}"')
+        else:
+            io_str = self.gen_name(node, Tok.STRING, '"unknown_io"')
+        lpr = self.gen_name(node, Tok.LPAREN, "(")
+        rpr = self.gen_name(node, Tok.RPAREN, ")")
+        dict_val = uni.DictVal(kv_pairs=[], kid=[lpr, rpr])
+        args = [io_str, tuple_params, dict_val]
         gm_name = self.gen_name(node, Tok.NAME, "_gm_io")
         append_attr = self.gen_name(node, Tok.NAME, "append")
         func_name = uni.AtomTrailer(
@@ -259,7 +269,6 @@ class PreDynamoPass(UniPass):
                     self.replace_node(new_call, i, "body")
             node.body = [ability_node, *out_body_parts]
             node.kid = [node.kid[0], ability_node, *out_body_parts]
-            print(f"ability unparse after: {node.unparse()}")
 
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Exit function call."""
