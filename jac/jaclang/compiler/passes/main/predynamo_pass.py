@@ -1,6 +1,7 @@
 """Pytorch Fix Pass."""
 
 import ast as ast3
+from copy import deepcopy
 from typing import Optional, TypeVar, cast
 
 import jaclang.compiler.unitree as uni
@@ -123,9 +124,40 @@ class PreDynamoPass(UniPass):
                 return (call.target, name, tensor_expr, kwargs)
         return None
 
-    def hoist(self, node: uni.FuncCall) -> None:
-        """Hoist the function calls."""
-        pass
+    def _is_io_call(self, node: uni.FuncCall) -> bool:
+        """Check if a function call is an I/O operation that should be hoisted."""
+        if isinstance(node.target, uni.Name):
+            return node.target.value in self._HOISTABLE_CALLS
+        elif isinstance(node.target, uni.AtomTrailer):
+            parts = []
+            current = node.target
+            while isinstance(current, uni.AtomTrailer):
+                if hasattr(current, "right") and isinstance(current.right, uni.Name):
+                    parts.append(current.right.value)
+                current = current.target
+                if isinstance(current, uni.Name):
+                    parts.append(current.value)
+
+                return any(parts) in self._HOISTABLE_CALLS
+        return False
+
+    def _create_ability(self, node: uni.Ability) -> uni.Ability:
+        """Create ability node."""
+        ability_name = f"__gm_core_{node.name_ref._sym_name}"
+        name = self.gen_name(node, Tok.NAME, ability_name)
+        kid = [name]
+        ability = uni.Ability(
+            name_ref=name,
+            is_async=False,
+            is_override=False,
+            is_static=False,
+            is_abstract=False,
+            access=None,
+            signature=deepcopy(node.signature),
+            body=None,
+            kid=kid,
+        )
+        return ability
 
     def exit_module(self, node: uni.Module) -> None:
         """Exit module."""
@@ -144,17 +176,22 @@ class PreDynamoPass(UniPass):
 
     def exit_ability(self, node: uni.Ability) -> None:
         """Exit ability."""
-        pass
+        if getattr(node, "is_hoistable", False):
+            self.needs_gm_rt = True
+            ability_node = self._create_ability(node)
+            if isinstance(node.body, list):
+                node.body.insert(0, ability_node)
+            elif isinstance(node.body, uni.ImplDef) and isinstance(
+                node.body.body, list
+            ):
+                node.body.body.insert(0, ability_node)  # type: ignore
 
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Exit function call."""
-        if (
-            isinstance(node.target, uni.Name)
-            and node.target.value in self._HOISTABLE_CALLS
-        ):
-            self.hoist(node)
-        elif isinstance(node.target, uni.AtomTrailer):
-            pass
+        if self._is_io_call(node):
+            ability_node = node.find_parent_of_type(uni.Ability)
+            if ability_node is not None:
+                node.is_hoistable = True  # type: ignore[attr-defined]
 
     def exit_if_stmt(self, node: uni.IfStmt) -> None:
         """Exit if statement."""
