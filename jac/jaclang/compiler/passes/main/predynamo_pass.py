@@ -35,6 +35,8 @@ class PreDynamoPass(UniPass):
     def exit_node(self, node: uni.UniNode) -> None:
         """Exit node."""
         super().exit_node(node)
+        # if isinstance(node, uni.Module):
+        #     print(node.unparse())
 
     def gen_name(self, node: uni.UniNode, name: Tok, value: str) -> uni.Name:
         """Generate Name."""
@@ -160,7 +162,7 @@ class PreDynamoPass(UniPass):
             kid=[func_name] + args,
         )
 
-    def _create_ability(self, node: uni.Ability) -> uni.Ability:
+    def _create_ability(self, node: uni.Ability) -> tuple:
         """Create ability node."""
         ability_name = f"__gm_core_{node.name_ref._sym_name}"
         name = self.gen_name(node, Tok.NAME, ability_name)
@@ -173,17 +175,48 @@ class PreDynamoPass(UniPass):
             is_abstract=False,
             access=None,
             signature=deepcopy(node.signature),
-            body=None,
+            body=[],
             kid=kid,
         )
-        return ability
 
-    def _classify_io_call(self, node: uni.FuncCall) -> Optional[tuple]:
-        """Classify I/O call into (call_type, args, kwargs) or None if not I/O."""
-        # if isinstance(node.target, uni.Name):
-        #     call_name = node.target.value
-        #     if call_name in {"print", "logging"}:
-        pass
+        call = uni.FuncCall(
+            target=name,
+            params=[],
+            genai_call=None,
+            kid=[name],
+        )
+        gm_ret, gm_io = self.gen_name(node, Tok.NAME, "_gm_ret"), self.gen_name(
+            node, Tok.NAME, "_gm_io"
+        )
+        assign_target = uni.TupleVal(values=[gm_ret, gm_io], kid=[gm_ret, gm_io])
+        assign_expr = uni.Assignment(
+            target=[assign_target],
+            value=call,
+            type_tag=None,
+            kid=[assign_target, call],
+        )
+
+        gm_name = self.gen_name(node, Tok.NAME, "_gm_rt")
+        flush_name = self.gen_name(node, Tok.NAME, "graphmend_flush")
+        flush_func_name = uni.AtomTrailer(
+            target=gm_name,
+            right=flush_name,
+            is_attr=True,
+            is_null_ok=False,
+            kid=[gm_name, flush_name],
+        )
+        flush_call = uni.FuncCall(
+            target=flush_func_name,
+            params=[gm_io],
+            genai_call=None,
+            kid=[flush_func_name, gm_io],
+        )
+        flush_expr = uni.ExprStmt(expr=flush_call, in_fstring=False, kid=[flush_call])
+
+        return_stmt = uni.ReturnStmt(expr=gm_ret, kid=[gm_ret])
+
+        out_body_parts = (assign_expr, flush_expr, return_stmt)
+        return (ability, out_body_parts)
 
     def exit_module(self, node: uni.Module) -> None:
         """Exit module."""
@@ -199,12 +232,13 @@ class PreDynamoPass(UniPass):
             kid=[item],
         )
         node.body = [imp] + list(node.body)
+        node.kid = [imp] + list(node.kid)
 
     def exit_ability(self, node: uni.Ability) -> None:
         """Exit ability."""
         if getattr(node, "is_hoistable", False):
             self.needs_gm_rt = True
-            ability_node = self._create_ability(node)
+            ability_node, out_body_parts = self._create_ability(node)
             if isinstance(node.body, list):
                 body = node.body
             elif isinstance(node.body, uni.ImplDef) and isinstance(
@@ -215,15 +249,25 @@ class PreDynamoPass(UniPass):
                 if isinstance(i, uni.FuncCall) and self._is_io_call(i):
                     new_call = self._replace_io_call(i)
                     self.replace_node(new_call, i, "body")
-            return_node = uni.ReturnStmt()
-            self.replace_node([ability_node, return_node], node, "body")
+            node.body = [ability_node, *out_body_parts]
+            node.kid = [node.kid[0], ability_node, *out_body_parts]
+            print(f"unparsed ability:\n{node.unparse()}")
 
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Exit function call."""
         if self._is_io_call(node):
             ability_node = node.find_parent_of_type(uni.Ability)
             if ability_node is not None:
-                node.is_hoistable = True  # type: ignore[attr-defined]
+                ability_node.is_hoistable = True  # type: ignore[attr-defined]
+
+            new_func_call = self._replace_io_call(node)
+            if isinstance(node.parent, uni.ExprStmt):
+                node.parent.expr = new_func_call
+                new_func_call.parent = node.parent
+                if hasattr(node.parent, "kid") and node in node.parent.kid:
+                    idx = node.parent.kid.index(node)
+                    node.parent.kid[idx] = new_func_call
+                print(f"unparsed func call:\n{new_func_call.unparse()}")
 
     def exit_if_stmt(self, node: uni.IfStmt) -> None:
         """Exit if statement."""
