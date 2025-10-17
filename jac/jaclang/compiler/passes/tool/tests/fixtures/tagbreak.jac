@@ -266,14 +266,14 @@ def x3() {
         and src_type.is_class_instance()
         and src_type.is_class_instance()
     ) {
-
+    
         print("x");
 
     }
     if (dest_type.is_class_instance() and src_type.is_class_instance()) {
-
+    
         print("x");
-        
+
     }
 }
 
@@ -285,4 +285,13 @@ hello
 hru
 """;
     }
+}
+
+
+with entry {
+    msg = f"""
+    Multi-line
+    Value:
+    {y}
+    """;
 }
