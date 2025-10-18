@@ -279,6 +279,7 @@ extra_javascript:
   - js/jac.monarch.js
   - js/run-code.js
   - js/feedback.js
+  - js/fix-view-source.js
 
 plugins:
   - search
