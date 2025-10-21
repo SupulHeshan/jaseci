@@ -15,7 +15,6 @@ from jaclang.runtimelib.machine import hookimpl
 if TYPE_CHECKING:
     from byllm.llm import Model
     from byllm.mtir import MTIR
-from byllm.visit_by import _visit_by
 
 
 class JacMachine:
@@ -50,4 +49,5 @@ class JacMachine:
         | EdgeArchetype
     ):
         """Go through the available nodes and decide which next nodes to visit based on their semantics using an llm."""
+        from byllm.visit_by import _visit_by
         return _visit_by(model, walker, node, connected_nodes)
