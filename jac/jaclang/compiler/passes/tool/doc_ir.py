@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, Union
 
 # Define DocType for self-referential typing
-DocType = Union["Doc", "Text", "Line", "Group", "Indent", "Concat", "IfBreak", "Align"]
+DocType = Union["Doc", "Text", "Comment", "Line", "Group", "Indent", "Concat", "IfBreak", "Align"]
 
 
 class Doc:
@@ -40,6 +40,23 @@ class Text(Doc):
         indent = "  " * level
         return f'{indent}Text("{self.text}")'
 
+
+class Comment(Text):
+    """Comment text content."""
+
+    def __init__(self, text: str) -> None:
+        """Initialize a Comment object."""
+        super().__init__(text)
+        self.inline: bool = False
+        self.block: bool = False
+
+    def __str__(self) -> str:
+        """Return a string representation of the Comment object."""
+        return f'Comment("{self.text}")'
+
+    def treeprint(self, level: int = 0) -> str:
+        indent = "  " * level
+        return f'{indent}Comment("{self.text}")'
 
 class Line(Doc):
     """Represents a line break that can be preserved or flattened."""

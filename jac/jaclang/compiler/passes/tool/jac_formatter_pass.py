@@ -54,6 +54,12 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
                 if remaining <= 0:
                     return False
 
+            elif isinstance(cur, doc.Comment):
+                # Comments are treated like Text for width calculation
+                remaining -= len(cur.text)
+                if remaining <= 0:
+                    return False
+
             elif isinstance(cur, doc.Line):
                 if cur.hard or cur.literal:
                     # Any *real* newline (hard or literal) in FLAT means "doesn't fit"
@@ -117,6 +123,9 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
             width_remaining = self.MAX_LINE_LENGTH
 
         if isinstance(doc_node, doc.Text):
+            return doc_node.text
+
+        elif isinstance(doc_node, doc.Comment):            
             return doc_node.text
 
         elif isinstance(doc_node, doc.Line):

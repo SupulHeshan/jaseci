@@ -18,6 +18,13 @@ class DocIRGenPass(UniPass):
         """Create a Text node."""
         return doc.Text(text)
 
+    def comment(self, text: str, inline: bool = False, block: bool = False) -> doc.Comment:
+        """Create a Comment node."""
+        comment = doc.Comment(text)
+        comment.inline = inline
+        comment.block = block
+        return comment
+
     def space(self) -> doc.Text:
         """Create a space node."""
         return doc.Text(" ")
@@ -1740,19 +1747,33 @@ class DocIRGenPass(UniPass):
 
     def exit_comment_token(self, node: uni.CommentToken) -> None:
         """Generate DocIR for comment tokens."""
+        print(f"Generating DocIR for comment: {node.value}")
+        # Determine comment type based on content
+        is_block_comment = node.value.startswith("#*") and node.value.endswith("*#")
+        is_inline_comment = node.value.startswith("#") and not is_block_comment
+        parent = node.parent 
+        # Create Comment node with appropriate flags
+        comment = self.comment(
+            node.value, 
+            inline=is_inline_comment, 
+            block=is_block_comment
+        )
+        
         if isinstance(node.left_node, uni.CommentToken):
+            # Multiple comments in sequence
             node.gen.doc_ir = self.group(
-                self.concat([self.text(node.value), self.hard_line()])
+                self.concat([comment])
             )
         elif node.left_node and node.left_node.loc.last_line == node.loc.first_line:
+            # Inline comment on same line as code
             node.gen.doc_ir = self.group(
                 self.concat(
-                    [self.tight_line(), self.text(node.value), self.hard_line()]
+                    [self.tight_line(), comment, self.hard_line()]
                 )
             )
         else:
             node.gen.doc_ir = self.group(
-                self.concat([self.text(node.value), self.hard_line()])
+                self.concat([comment, self.hard_line()])
             )
 
     def exit_jsx_element(self, node: uni.JsxElement) -> None:
