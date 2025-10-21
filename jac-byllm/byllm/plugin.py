@@ -1,10 +1,9 @@
 """Plugin for Jac's with_llm feature."""
 
-from typing import Callable
+from __future__ import annotations
 
-from byllm.llm import Model
-from byllm.mtir import MTIR
-from byllm.visit_by import _visit_by
+
+from typing import Callable, TYPE_CHECKING
 
 from jaclang.runtimelib.constructs import (
     EdgeArchetype,
@@ -12,6 +11,11 @@ from jaclang.runtimelib.constructs import (
     WalkerArchetype,
 )
 from jaclang.runtimelib.machine import hookimpl
+
+if TYPE_CHECKING:
+    from byllm.llm import Model
+    from byllm.mtir import MTIR
+from byllm.visit_by import _visit_by
 
 
 class JacMachine:
@@ -21,6 +25,8 @@ class JacMachine:
     @hookimpl
     def get_mtir(caller: Callable, args: dict, call_params: dict) -> object:
         """Call JacLLM and return the result."""
+        from byllm.mtir import MTIR
+
         return MTIR.factory(caller, args, call_params)
 
     @staticmethod

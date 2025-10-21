@@ -892,6 +892,13 @@ class DocIRGenPass(UniPass):
             parts.append(i.gen.doc_ir)
         node.gen.doc_ir = self.group(self.concat(parts))
 
+    def exit_formatted_value(self, node: uni.FormattedValue) -> None:
+        """Generate DocIR for formatted value expressions."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.group(self.concat(parts))
+
     def exit_if_else_expr(self, node: uni.IfElseExpr) -> None:
         """Generate DocIR for conditional expressions."""
         parts: list[doc.DocType] = []
@@ -1747,3 +1754,111 @@ class DocIRGenPass(UniPass):
             node.gen.doc_ir = self.group(
                 self.concat([self.text(node.value), self.hard_line()])
             )
+
+    def exit_jsx_element(self, node: uni.JsxElement) -> None:
+        """Generate DocIR for JSX elements - kid-centric beautiful formatting!"""
+        parts: list[doc.DocType] = []
+        prev = None
+
+        # Check if we have any JSX element children
+        # Use node.children instead of node.kid to avoid counting opening/closing tags
+        has_jsx_elem_children = any(
+            isinstance(k, uni.JsxElement) for k in node.children
+        )
+
+        # Only break/indent if we have JSX element children
+        # (simple text/expression children stay inline)
+        should_format_children = has_jsx_elem_children
+
+        for i in node.kid:
+            # Add line break between attributes (allows them to wrap nicely)
+            if (
+                prev
+                and isinstance(prev, (uni.JsxElementName, uni.JsxAttribute))
+                and isinstance(i, uni.JsxAttribute)
+            ):
+                parts.append(self.line())
+            # Add hard line between JSX element children, or before first child
+            elif (
+                prev
+                and (
+                    (
+                        isinstance(prev, (uni.JsxChild, uni.JsxElement))
+                        and isinstance(i, (uni.JsxChild, uni.JsxElement))
+                    )
+                    or (
+                        isinstance(prev, (uni.JsxElementName, uni.JsxAttribute))
+                        and isinstance(i, (uni.JsxChild, uni.JsxElement))
+                    )
+                )
+                and should_format_children
+            ):
+                parts.append(self.hard_line())
+
+            # Indent JSX element children, but not text/expression children
+            if isinstance(i, uni.JsxElement) and should_format_children:
+                parts.append(self.indent(i.gen.doc_ir))
+            else:
+                parts.append(i.gen.doc_ir)
+
+            prev = i
+
+        node.gen.doc_ir = self.group(self.concat(parts))
+
+    def exit_jsx_element_name(self, node: uni.JsxElementName) -> None:
+        """Generate DocIR for JSX element names."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_spread_attribute(self, node: uni.JsxSpreadAttribute) -> None:
+        """Generate DocIR for JSX spread attributes."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_normal_attribute(self, node: uni.JsxNormalAttribute) -> None:
+        """Generate DocIR for JSX normal attributes."""
+        # Normalize to ensure LBRACE/RBRACE tokens are added for expression values
+        node.normalize()
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            # Tokens created by normalize() have empty doc_ir, so regenerate it
+            if (
+                isinstance(i, uni.Token)
+                and isinstance(i.gen.doc_ir, doc.Text)
+                and not i.gen.doc_ir.text
+            ):
+                i.gen.doc_ir = self.text(i.value)
+            elif not isinstance(
+                i.gen.doc_ir,
+                (
+                    doc.Text,
+                    doc.Concat,
+                    doc.Group,
+                    doc.Indent,
+                    doc.Line,
+                    doc.Align,
+                    doc.IfBreak,
+                ),
+            ):
+                # For nodes with invalid doc_ir, generate it by visiting
+                self.enter_exit(i)
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_text(self, node: uni.JsxText) -> None:
+        """Generate DocIR for JSX text."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_expression(self, node: uni.JsxExpression) -> None:
+        """Generate DocIR for JSX expressions."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)

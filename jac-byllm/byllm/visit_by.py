@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # from jaclang.runtimelib.builtin import *
-from byllm import Model
+from byllm.lib import Model
 
 from jaclang import JacMachineInterface as _
 from jaclang.runtimelib.constructs import (

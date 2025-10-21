@@ -5,15 +5,19 @@ module: (toplevel_stmt (tl_stmt_with_doc | toplevel_stmt)*)?
        | STRING        (tl_stmt_with_doc | toplevel_stmt)*
 
 tl_stmt_with_doc: STRING toplevel_stmt
-toplevel_stmt: import_stmt
+
+toplevel_stmt: KW_CLIENT? onelang_stmt
+       | KW_CLIENT LBRACE onelang_stmt* RBRACE
+       | py_code_block
+
+onelang_stmt: import_stmt
        | archetype
-       | impl_def
-       | sem_def
        | ability
        | global_var
        | free_code
-       | py_code_block
        | test
+       | impl_def
+       | sem_def
 
 // [Heading]: Import/Include Statements.
 import_stmt: KW_IMPORT KW_FROM from_path LBRACE import_items RBRACE
@@ -23,7 +27,7 @@ import_stmt: KW_IMPORT KW_FROM from_path LBRACE import_items RBRACE
 from_path: (DOT | ELLIPSIS)* import_path
          | (DOT | ELLIPSIS)+
 
-import_path: dotted_name (KW_AS NAME)?
+import_path: (NAME COLON)? dotted_name (KW_AS NAME)?
 import_items: (import_item COMMA)* import_item COMMA?
 import_item: named_ref (KW_AS NAME)?
 dotted_name: named_ref (DOT named_ref)*
@@ -61,7 +65,7 @@ enum_block: LBRACE assignment_list (py_code_block | free_code)* RBRACE
 ability: decorators? KW_ASYNC? (ability_decl | function_decl)
 
 function_decl: KW_OVERRIDE? KW_STATIC? KW_DEF access_tag? named_ref func_decl? (block_tail | KW_ABSTRACT? SEMI)
-ability_decl: KW_OVERRIDE? KW_STATIC? KW_CAN access_tag? named_ref event_clause (block_tail | KW_ABSTRACT? SEMI)
+ability_decl: KW_OVERRIDE? KW_STATIC? KW_CAN access_tag? named_ref? event_clause (block_tail | KW_ABSTRACT? SEMI)
 block_tail: code_block | KW_BY expression SEMI
 event_clause: KW_WITH expression? (KW_EXIT | KW_ENTRY)
 
@@ -243,7 +247,8 @@ concurrent_expr: (KW_FLOW | KW_WAIT)? walrus_assign
 walrus_assign: (named_ref WALRUS_EQ)? pipe
 
 // [Heading]: Lambda expressions.
-lambda_expr: KW_LAMBDA func_decl_params? (RETURN_HINT expression)? COLON expression
+lambda_expr: KW_LAMBDA func_decl_params (RETURN_HINT expression)? ( COLON expression | code_block )
+           | KW_LAMBDA func_decl? ( COLON expression | code_block )
 
 // [Heading]: Pipe expressions.
 pipe: (pipe PIPE_FWD)? pipe_back
@@ -324,10 +329,11 @@ param_list: expr_list COMMA kw_expr_list COMMA?
 
 // [Heading]: Atomic expressions.
 atom: named_ref
-    | LPAREN (expression | yield_expr) RPAREN
+    | LPAREN (expression | yield_expr | function_decl) RPAREN
     | atom_collection
     | atom_literal
     | type_ref
+    | jsx_element
 
 atom_literal: builtin_type
             | NULL
@@ -344,15 +350,34 @@ type_ref: TYPE_OP (named_ref | builtin_type)
 
 multistring: (fstring | STRING)+
 
-fstring: FSTR_START fstr_parts FSTR_END
-       | FSTR_SQ_START fstr_sq_parts FSTR_SQ_END
-       | FSTR_TRIPLE_START fstr_triple_parts FSTR_TRIPLE_END
-       | FSTR_SQ_TRIPLE_START fstr_sq_triple_parts FSTR_SQ_TRIPLE_END
+// [Heading]: Formatted string literals.
+fstring: F_DQ_START fstr_dq_part* F_DQ_END
+       | F_SQ_START fstr_sq_part* F_SQ_END
+       | F_TDQ_START fstr_tdq_part* F_TDQ_END
+       | F_TSQ_START fstr_tsq_part* F_TSQ_END
+       | RF_DQ_START rfstr_dq_part* F_DQ_END
+       | RF_SQ_START rfstr_sq_part* F_SQ_END
+       | RF_TDQ_START rfstr_tdq_part* F_TDQ_END
+       | RF_TSQ_START rfstr_tsq_part* F_TSQ_END
 
-fstr_parts: (FSTR_PIECE | FSTR_BESC | LBRACE expression RBRACE )*
-fstr_sq_parts: (FSTR_SQ_PIECE | FSTR_BESC | LBRACE expression RBRACE )*
-fstr_triple_parts: (FSTR_TRIPLE_PIECE | FSTR_BESC | LBRACE expression RBRACE )*
-fstr_sq_triple_parts: (FSTR_SQ_TRIPLE_PIECE | FSTR_BESC | LBRACE expression RBRACE )*
+fstr_dq_part: F_TEXT_DQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+fstr_sq_part: F_TEXT_SQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+fstr_tdq_part: F_TEXT_TDQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+fstr_tsq_part: F_TEXT_TSQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+// Add separate rules for raw f-strings
+rfstr_dq_part: RF_TEXT_DQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+rfstr_sq_part: RF_TEXT_SQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+rfstr_tdq_part: RF_TEXT_TDQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+rfstr_tsq_part: RF_TEXT_TSQ | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
+
+fformat: F_FORMAT_TEXT | D_LBRACE | D_RBRACE | LBRACE expression CONV? (COLON fformat*)? RBRACE
 
 // [Heading]: Collection values.
 atom_collection: dict_compr
@@ -420,6 +445,37 @@ special_ref: KW_INIT
             | KW_HERE
             | KW_VISITOR
 
+// [Heading]: JSX Elements.
+jsx_element: jsx_self_closing
+           | jsx_fragment
+           | jsx_opening_closing
+
+jsx_self_closing: JSX_OPEN_START jsx_element_name jsx_attributes? JSX_SELF_CLOSE
+jsx_opening_closing: jsx_opening_element jsx_children? jsx_closing_element
+jsx_fragment: JSX_FRAG_OPEN jsx_children? JSX_FRAG_CLOSE
+
+jsx_opening_element: JSX_OPEN_START jsx_element_name jsx_attributes? JSX_TAG_END
+jsx_closing_element: JSX_CLOSE_START jsx_element_name JSX_TAG_END
+
+jsx_element_name: JSX_NAME (DOT JSX_NAME)*
+
+jsx_attributes: jsx_attribute+
+jsx_attribute: jsx_spread_attribute | jsx_normal_attribute
+
+jsx_spread_attribute: LBRACE ELLIPSIS expression RBRACE
+jsx_normal_attribute: JSX_NAME (EQ jsx_attr_value)?
+
+jsx_attr_value: STRING
+              | LBRACE expression RBRACE
+
+jsx_children: jsx_child+
+jsx_child: jsx_element
+         | jsx_expression
+         | jsx_text
+
+jsx_expression: LBRACE expression RBRACE
+jsx_text: JSX_TEXT
+
 // [Heading]: Builtin types.
 builtin_type: TYP_TYPE
             | TYP_ANY
@@ -441,21 +497,6 @@ PYNLINE: /::py::(.|\n|\r)*?::py::/
 TYPE_OP: /`/
 GLOBAL_OP: "global"
 NONLOCAL_OP: "nonlocal"
-
-// [Heading]: f-string tokens.
-FSTR_TRIPLE_START.2: "f\"\"\""
-FSTR_TRIPLE_END: "\"\"\""
-FSTR_SQ_TRIPLE_START.2: "f'''"
-FSTR_SQ_TRIPLE_END: "'''"
-FSTR_START.1: "f\""
-FSTR_END: "\""
-FSTR_SQ_START.1: "f'"
-FSTR_SQ_END: "'"
-FSTR_TRIPLE_PIECE.-1: /(?:(?!""")(?![{}])[\s\S])+/
-FSTR_SQ_TRIPLE_PIECE.-1: /(?:(?!''')(?![{}])[\s\S])+/
-FSTR_PIECE.-1: /[^\{\}\"]+/
-FSTR_SQ_PIECE.-1: /[^\{\}\']+/
-FSTR_BESC.1: /{{|}}/
 
 RETURN_HINT: "->"
 NULL_OK: "?"
@@ -547,6 +588,7 @@ KW_STATIC: "static"
 KW_OVERRIDE: "override"
 KW_MATCH: "match"
 KW_CASE: "case"
+KW_CLIENT: "cl"
 
 KW_INIT: "init"
 KW_POST_INIT: "postinit"
@@ -567,6 +609,35 @@ NOT: "not" // TODO:AST: Rename to KW_NOT
 
 STRING: /(r?b?|b?r?)("[^"\r\n]*"|'[^'\r\n]*')/
        | /(r?b?|b?r?)("""(.|\r|\n)*?"""|'''(.|\r|\n)*?''')/
+
+RF_DQ_START.3: /[rR][fF]"|[fF][rR]"/
+RF_SQ_START.3: /[rR][fF]'|[fF][rR]'/
+RF_TDQ_START.3: /[rR][fF]"""|[fF][rR]"""/
+RF_TSQ_START.3: /[rR][fF]'''|[fF][rR]'''/
+F_DQ_START.2: /[fF]"/
+F_SQ_START.2: /[fF]'/
+F_TDQ_START.2: /[fF]"""/
+F_TSQ_START.2: /[fF]'''/
+
+F_DQ_END: "\""
+F_SQ_END: "'"
+F_TDQ_END: "\"\"\""
+F_TSQ_END: "'''"
+
+D_RBRACE: "}}"
+D_LBRACE: "{{"
+
+F_TEXT_DQ.-1: /[^"{}\n\\]+|\\./
+F_TEXT_SQ.-1: /[^'{}\n\\]+|\\./
+F_TEXT_TDQ.-1: /(?:[^"{}\\]|"(?!""))+|\\./s
+F_TEXT_TSQ.-1: /(?:[^'{}\\]|'(?!''))+|\\./s
+RF_TEXT_DQ.-1: /[^"{}]+/
+RF_TEXT_SQ.-1: /[^'{}]+/
+RF_TEXT_TDQ.-1: /(?:[^"{}]|"(?!""))+/s
+RF_TEXT_TSQ.-1: /(?:[^'{}]|'(?!''))+/s
+F_FORMAT_TEXT.-1: /[^{}]+/
+
+CONV: /![rRsSaA]/
 
 NULL.1: "None"
 BOOL.1: /True|False/
@@ -656,12 +727,40 @@ PIPE_BKWD: "<|"
 DOT_FWD: ".>"
 DOT_BKWD: "<."
 
+// JSX Contextual Tokens --------------------------------------------------- //
+
+// JSX opening tag start: < followed by identifier or uppercase
+// Using lower priority so it doesn't interfere with LT operator
+JSX_OPEN_START.2: /<(?=[A-Z_a-z])/
+
+// JSX self-closing end: />
+JSX_SELF_CLOSE: /\/>/
+
+// JSX tag end: > (used for both opening and closing)
+JSX_TAG_END: />/
+
+// JSX closing tag start: </
+JSX_CLOSE_START: /<\//
+
+// JSX fragment open: <>
+JSX_FRAG_OPEN: /<>/
+
+// JSX fragment close: </>
+JSX_FRAG_CLOSE: /<\/>/
+
+// JSX identifier (NAME in JSX context) - allows hyphens for attributes like data-age, aria-label
+JSX_NAME: /[A-Z_a-z][A-Z_a-z0-9\-]*/
+
+// JSX text content (anything except < > { } and must not start/end with whitespace-only)
+// Using negative priority so it's only matched as last resort within JSX
+JSX_TEXT.-1: /[^<>{}\n]+/
+
 
 // ************************************************************************* //
 // Comments and Whitespace                                                   //
 // ************************************************************************* //
 
-COMMENT: /#\*(.|\n|\r)*?\*#|#.*/
+COMMENT.4: /#\*(.|\n|\r)*?\*#|#.*/
 WS.-2: /[ \t\f\r\n]/+
 %ignore COMMENT
 %ignore WS

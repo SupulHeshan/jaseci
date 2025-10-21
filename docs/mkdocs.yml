@@ -71,6 +71,7 @@ nav:
       - Jac Lens: "learn/jac-lens.md"
     - Tooling:
       - "learn/tools/cli.md"
+      - "learn/tools/jac_serve.md"
       - "learn/tools/streamlit.md"
     - Specifications:
       - Jac Keywords: "learn/keywords.md"
@@ -137,6 +138,7 @@ nav:
     - Edge references (OSP): "learn/jac_ref/edge_references_(osp).md"
     - Filter and assign comprehensions: "learn/jac_ref/filter_and_assign_comprehensions.md"
     - Names and references: "learn/jac_ref/names_and_references.md"
+    - Jsx elements: "learn/jac_ref/jsx_elements.md"
     - Builtin types: "learn/jac_ref/builtin_types.md"
     - f-string tokens: "learn/jac_ref/f_string_tokens.md"
     - Lexer Tokens: "learn/jac_ref/lexer_tokens.md"
@@ -148,12 +150,10 @@ nav:
     - Leaderboard: "communityhub/top_contributors.md"
     - Fun Stuff:
       - Project Ideas:
-        - "communityhub/fun/projects.md"
-        - "communityhub/fun/p1.md"
-        - "communityhub/fun/p2.md"
-        - "communityhub/fun/p3.md"
+        - "communityhub/fun/static_fx.md"
       - Content Pieces: "communityhub/content_pieces.md"
     - Internals:
+      - JSX 'Project OneLang' Design Doc: "internals/jsx_client_serv_design.md"
       - Lang Ref Coverage: "internals/refs_coverage_report.md"
       - Roadmap: "communityhub/roadmap.md"
       - Design Docs and Guides:
@@ -174,6 +174,7 @@ nav:
         - Archetype Lifecycle Enhancement Roadmap: "internals/planning_specs/spawn_life_cycle.md"
         - Error System: "internals/planning_specs/error_system.md"
         - Formatter System: "internals/planning_specs/formatter_system.md"
+        - JacStyle (CSS Integration) Proposal: "internals/planning_specs/jacstyle_proposal.md"
         - Native Type System:
           - Introduction: "internals/planning_specs/native_type_system/index.md"
           - Architecture: "internals/planning_specs/native_type_system/architecture.md"
