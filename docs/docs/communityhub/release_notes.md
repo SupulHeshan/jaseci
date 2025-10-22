@@ -18,6 +18,7 @@ This document provides a summary of new features, improvements, and bug fixes in
 - **Import System Refactoring**: Refactored and simplified the Jac import system to better leverage Python's PEP 302 and PEP 451 import protocols. Removed over-engineered custom import logic in favor of standard Python meta path finders and module loaders, improving reliability and compatibility.
 - **Module Cache Synchronization Fix**: Fixed module cache synchronization issues between `JacMachine.loaded_modules` and `sys.modules` that caused test failures and module loading inconsistencies. The machine now properly manages module lifecycles while preserving special Python modules like `__main__`.
 - **Formatted String Literals (f-strings)**: Added improved and comprehensive support for Python-style formatted string literals in Jac with full feature parity.
+- **Switch Case Statement**: Switch statement is introduced and javascript style fallthrough behavior is also supported.
 
 - **LLM-Powered Graph Traversal (`visit by`)**: Introduced `visit [-->] by llm()` syntax enabling walkers to make intelligent traversal decisions. The LLM analyzes the semantic context of available nodes and selects which ones to visit based on the walker's purpose, bringing AI-powered decision making to graph navigation.
 

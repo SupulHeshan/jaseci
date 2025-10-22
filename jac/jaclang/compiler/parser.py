@@ -452,18 +452,31 @@ class JacParser(Transform[uni.Source, uni.Module]):
             if client_tok:
                 lbrace = self.match_token(Tok.LBRACE)
                 if lbrace:
-                    # Collect all statements in the block
+                    # Create a ClientBlock to wrap the statements
                     elements: list[uni.ElementStmt] = []
                     while elem := self.match(uni.ElementStmt):
                         if isinstance(elem, uni.ClientFacingNode):
                             elem.is_client_decl = True
+                            # Propagate to ModuleCode children (with entry blocks)
+                            if isinstance(elem, uni.ModuleCode) and elem.body:
+                                for stmt in elem.body:
+                                    if isinstance(stmt, uni.ClientFacingNode):
+                                        stmt.is_client_decl = True
                         elements.append(elem)
                     self.consume(uni.Token)  # RBRACE
-                    return elements
+                    return uni.ClientBlock(
+                        body=elements,
+                        kid=self.flat_cur_nodes,
+                    )
                 else:
                     element = self.consume(uni.ElementStmt)
                     if isinstance(element, uni.ClientFacingNode):
                         element.is_client_decl = True
+                        # Propagate to ModuleCode children (with entry blocks)
+                        if isinstance(element, uni.ModuleCode) and element.body:
+                            for stmt in element.body:
+                                if isinstance(stmt, uni.ClientFacingNode):
+                                    stmt.is_client_decl = True
                         element.add_kids_left([client_tok])
                     return element
             else:
@@ -3285,6 +3298,44 @@ class JacParser(Transform[uni.Source, uni.Module]):
             return uni.MatchCase(
                 pattern=pattern,
                 guard=guard,
+                body=stmts,
+                kid=self.cur_nodes,
+            )
+
+        def switch_stmt(self, _: None) -> uni.SwitchStmt:
+            """Grammar rule.
+
+            switch_stmt: KW_SWITCH expression LBRACE switch_case_block+ RBRACE
+            """
+            self.consume_token(Tok.KW_SWITCH)
+            target = self.consume(uni.Expr)
+            self.consume_token(Tok.LBRACE)
+            cases = [self.consume(uni.SwitchCase)]
+            while case := self.match(uni.SwitchCase):
+                cases.append(case)
+            self.consume_token(Tok.RBRACE)
+            return uni.SwitchStmt(
+                target=target,
+                cases=cases,
+                kid=self.cur_nodes,
+            )
+
+        def switch_case_block(self, _: None) -> uni.SwitchCase:
+            """Grammar rule.
+
+            switch_case_block: (KW_CASE pattern_seq | KW_DEFAULT) COLON statement*
+            """
+            stmts = []
+            if self.match_token(Tok.KW_CASE):
+                pattern = self.consume(uni.MatchPattern)
+            else:
+                self.consume_token(Tok.KW_DEFAULT)
+                pattern = None
+            self.consume_token(Tok.COLON)
+            while stmt := self.match(uni.CodeBlockStmt):
+                stmts.append(stmt)
+            return uni.SwitchCase(
+                pattern=pattern,
                 body=stmts,
                 kid=self.cur_nodes,
             )

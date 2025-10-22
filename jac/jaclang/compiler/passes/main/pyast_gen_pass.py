@@ -113,10 +113,14 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
 
     def enter_node(self, node: uni.UniNode) -> None:
         """Enter node."""
-        if self._should_skip_client(node):
-            node.gen.py_ast = []
-            if hasattr(node.gen, "py"):
-                node.gen.py = ""  # type: ignore[attr-defined]
+        if isinstance(node, uni.ClientBlock):
+            self.prune()
+            return
+        if (
+            isinstance(node, uni.ClientFacingNode)
+            and node.is_client_decl
+            and (node.parent is None or isinstance(node.parent, uni.Module))
+        ):
             self.prune()
             return
         if node.gen.py_ast:
@@ -126,10 +130,14 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
 
     def exit_node(self, node: uni.UniNode) -> None:
         """Exit node."""
-        if self._should_skip_client(node):
-            node.gen.py_ast = []
-            if hasattr(node.gen, "py"):
-                node.gen.py = ""  # type: ignore[attr-defined]
+        # ClientBlock already handled in enter_node
+        if isinstance(node, uni.ClientBlock):
+            return
+        if (
+            isinstance(node, uni.ClientFacingNode)
+            and node.is_client_decl
+            and (node.parent is None or isinstance(node.parent, uni.Module))
+        ):
             return
         super().exit_node(node)
 
@@ -306,10 +314,6 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
                 keywords=[],
             )
         )
-
-    def _should_skip_client(self, node: uni.UniNode) -> bool:
-        """Check if node is a client-facing declaration that should skip Python codegen."""
-        return isinstance(node, uni.ClientFacingNode) and node.is_client_decl
 
     def sync(
         self, py_node: T, jac_node: Optional[uni.UniNode] = None, deep: bool = False
@@ -560,6 +564,11 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
                     )
                 )
             ]
+
+    def exit_client_block(self, node: uni.ClientBlock) -> None:
+        """Handle ClientBlock - already set to empty in enter_node."""
+        # py_ast already set to [] in enter_node, nothing to do here
+        pass
 
     def exit_py_inline_code(self, node: uni.PyInlineCode) -> None:
         if node.doc:
@@ -3077,6 +3086,48 @@ class PyastGenPass(BaseAstGenPass[ast3.AST]):
                         if node.guard
                         else None
                     ),
+                    body=[cast(ast3.stmt, x.gen.py_ast[0]) for x in node.body],
+                )
+            )
+        ]
+
+    def enter_switch_stmt(self, node: uni.SwitchStmt) -> None:
+        cases = []
+        all_cases = []
+        for i in range(len(node.cases)):
+            if not node.cases[i].body:
+                cases.append(node.cases[i])
+                all_cases.append(node.cases[i])
+            elif cases and node.cases[i].pattern and node.cases[i].body:
+                pattern = [case.pattern for case in cases] + [node.cases[i].pattern]
+                node.cases[i].pattern = uni.MatchOr(patterns=pattern, kid=pattern)
+                node.cases[i].unparse()
+                cases = []
+        for i in all_cases:
+            if i in node.kid:
+                node.cases.remove(i)
+                node.kid.remove(i)
+
+    def exit_switch_stmt(self, node: uni.SwitchStmt) -> None:
+        node.gen.py_ast = [
+            self.sync(
+                ast3.Match(
+                    subject=cast(ast3.expr, node.target.gen.py_ast[0]),
+                    cases=[cast(ast3.match_case, x.gen.py_ast[0]) for x in node.cases],
+                )
+            )
+        ]
+
+    def exit_switch_case(self, node: uni.SwitchCase) -> None:
+        node.gen.py_ast = [
+            self.sync(
+                ast3.match_case(
+                    pattern=(
+                        cast(ast3.pattern, node.pattern.gen.py_ast[0])
+                        if node.pattern
+                        else self.sync(ast3.MatchAs())
+                    ),
+                    guard=None,
                     body=[cast(ast3.stmt, x.gen.py_ast[0]) for x in node.body],
                 )
             )
