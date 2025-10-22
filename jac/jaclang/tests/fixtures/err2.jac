@@ -1,5 +1,4 @@
-"""Demo"""
 
-can speak {
-    "Hello" |> : print;
+with entry{
+    import os;
 }

@@ -40,14 +40,15 @@ async def did_open(ls: JacLangServer, params: lspt.DidOpenTextDocumentParams) ->
 """Check syntax on change."""
 @server.feature(lspt.TEXT_DOCUMENT_DID_SAVE)
 async def did_save(ls: JacLangServer, params: lspt.DidOpenTextDocumentParams) -> None {
-
+    print("********* SAVED ->", time.time(), file=sys.stderr);
     file_path = params.text_document.uri;
     await ls.type_check(file_path);
     ls.lsp.send_request(lspt.WORKSPACE_SEMANTIC_TOKENS_REFRESH);
 }
 
 
-glob still_compiling = False;
+glob compilation_sessions: dict[str, str] = {};  # file_path -> session_id
+glob active_sessions: set[str] = set();  # active session_ids
 
 
 """Check syntax on change with debouncing."""
@@ -57,9 +58,14 @@ async def did_change(
 ) -> None {
     print("********* ->", time.time(), file=sys.stderr);
 
-    global still_compiling;
-    still_compiling = True;
+    # Generate unique session ID for this compilation
+    session_id = f"{params.text_document.uri}_{int(time.time() * 1000000)}";
     file_path = params.text_document.uri;
+    
+    global compilation_sessions, active_sessions;
+    compilation_sessions[file_path] = session_id;
+    active_sessions.add(session_id);
+    
     try {
         document = ls.workspace.get_text_document(file_path);
         lines = document.source.splitlines();
@@ -73,13 +79,15 @@ async def did_change(
     } except Exception as e {
         ls.log_py(f" 'Failed to update semantic tokens: ' {e} ");
     }
-    debug(ls, "Type checking started...");
-    ls.log_py(f" 'Launching type check for ' {file_path} ");
+    debug(ls, f"Type checking started for session {session_id}...");
+    ls.log_py(f" 'Launching type check for ' {file_path} ' with session ' {session_id} ");
     await ls.type_check(file_path);
+    print("******eeee*** ->", time.time(), file=sys.stderr);
     ls.lsp.send_request(lspt.WORKSPACE_SEMANTIC_TOKENS_REFRESH);
 
-    still_compiling = False;
-    debug(ls, "Type checking finished...");
+    # Remove session when compilation is done
+    active_sessions.discard(session_id);
+    debug(ls, f"Type checking finished for session {session_id}...");
 }
 
 
@@ -147,10 +155,25 @@ async def completion(
     ls: JacLangServer, params: lspt.CompletionParams
 ) -> lspt.CompletionList {
     debug(ls, "Waiting for compilation to finish...");
-    global still_compiling;
-    while still_compiling {
-        await asyncio.sleep(0.1);
+    print("comcomcomcomcom waiting",params.context.trigger_character if params.context else None, time.time(), file=sys.stderr);
+
+    file_path = params.text_document.uri;
+    global compilation_sessions, active_sessions;
+    
+    # Get the current session for this file (if any)
+    current_session = compilation_sessions.get(file_path);
+    
+    # Wait for the specific session to complete
+    if current_session and current_session in active_sessions {
+        debug(ls, f"Waiting for session {current_session} to complete...");
+        while current_session in active_sessions {
+            await asyncio.sleep(0.05);  # Shorter sleep for better responsiveness
+        }
+        debug(ls, f"Session {current_session} completed.");
     }
+    
+    print("com finished com finished com finished ->", params.context.trigger_character if params.context else None,time.time(), file=sys.stderr);
+
     debug(ls, "Compilation finished, providing completions...");
     return ls.get_completion(
         params.text_document.uri,

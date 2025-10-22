@@ -87,7 +87,7 @@ class JacLangServer(JacProgram , LanguageServer) {
         self.debounce_timers: dict[str, threading.Timer] = {};
 
         # Disable logging library from logging anything
-        # logging.getLogger().setLevel(logging.CRITICAL);
+        logging.getLogger().setLevel(logging.CRITICAL);
     }
 
     """Return diagnostics for all files as a dict {uri: diagnostics}."""
@@ -251,7 +251,7 @@ class JacLangServer(JacProgram , LanguageServer) {
         position: lspt.Position,
         completion_trigger: Optional[str]
     ) -> lspt.CompletionList {
-        self.debug("getting completion for " + file_uri + " at " + str(position));
+        self.debug("getting completion for " + uris.to_fs_path(file_uri) + " at " + str(position));
         try {
             file_path = uris.to_fs_path(file_uri);
             if (
