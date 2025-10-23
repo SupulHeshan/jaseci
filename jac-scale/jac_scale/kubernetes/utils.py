@@ -2,6 +2,9 @@ import os
 
 from dotenv import dotenv_values
 
+from kubernetes import config
+from kubernetes.config.config_exception import ConfigException
+
 
 def load_env_variables(code_folder: str) -> list:
     """Load env variables in .env to aws beanstalk environment."""
@@ -17,3 +20,21 @@ def load_env_variables(code_folder: str) -> list:
                 }
             )
     return env_list
+
+
+def is_k8s_configured() -> bool:
+    """
+    Detects whether Kubernetes configuration is available on this machine.
+    Returns True if either a local kubeconfig or in-cluster config is valid.
+    """
+    try:
+        # Try loading local kubeconfig (~/.kube/config)
+        config.load_kube_config()
+        return True
+    except ConfigException:
+        try:
+            # Try loading in-cluster configuration
+            config.load_incluster_config()
+            return True
+        except ConfigException:
+            return False
