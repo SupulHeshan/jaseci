@@ -26,7 +26,7 @@ class JacCmd:
             code_folder = os.getenv("CODE_FOLDER", os.getcwd())
             if deployment_type == "k8":
                 build_and_push_docker(code_folder)
-                deploy_k8()
+                deploy_k8(code_folder)
 
         @cmd_registry.register
         def destroy() -> None:
