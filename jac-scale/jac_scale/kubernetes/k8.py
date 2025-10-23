@@ -110,21 +110,6 @@ def deploy_k8(code_folder: str) -> None:
     delete_if_exists(
         core_v1.delete_namespaced_service, f"{app_name}-service", namespace, "Service"
     )
-
-    if mongodb_enabled:
-        delete_if_exists(
-            apps_v1.delete_namespaced_deployment,
-            mongodb_name,
-            namespace,
-            "MongoDB Deployment",
-        )
-        delete_if_exists(
-            core_v1.delete_namespaced_service,
-            mongodb_service_name,
-            namespace,
-            "MongoDB Service",
-        )
-
     time.sleep(5)
 
     # -------------------
@@ -132,11 +117,42 @@ def deploy_k8(code_folder: str) -> None:
     # -------------------
     if mongodb_enabled:
         print("Deploying MongoDB...")
-        apps_v1.create_namespaced_stateful_set(
-            namespace=namespace, body=mongodb_deployment
+
+    # Check if StatefulSet already exists
+    try:
+        apps_v1.read_namespaced_stateful_set(name=mongodb_name, namespace=namespace)
+        print(
+            f"MongoDB StatefulSet '{mongodb_name}' already exists, skipping creation."
         )
-        core_v1.create_namespaced_service(namespace=namespace, body=mongodb_service)
-        print(f"MongoDB deployed with service '{mongodb_service_name}'")
+    except ApiException as e:
+        if e.status == 404:
+            print(
+                f"MongoDB StatefulSet '{mongodb_name}' not found. Creating new one..."
+            )
+            apps_v1.create_namespaced_stateful_set(
+                namespace=namespace, body=mongodb_deployment
+            )
+            print(f"MongoDB StatefulSet '{mongodb_name}' created.")
+        else:
+            raise
+
+    # Check if Service already exists
+    try:
+        core_v1.read_namespaced_service(name=mongodb_service_name, namespace=namespace)
+        print(
+            f"MongoDB Service '{mongodb_service_name}' already exists, skipping creation."
+        )
+    except ApiException as e:
+        if e.status == 404:
+            print(
+                f"MongoDB Service '{mongodb_service_name}' not found. Creating new one..."
+            )
+            core_v1.create_namespaced_service(namespace=namespace, body=mongodb_service)
+            print(f"MongoDB Service '{mongodb_service_name}' created.")
+        else:
+            raise
+
+    print(f"MongoDB deployed and ready (service: '{mongodb_service_name}')")
 
     print("Deploying Jaseci-app app...")
     apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
@@ -147,7 +163,3 @@ def deploy_k8(code_folder: str) -> None:
         print(
             f"MongoDB accessible at '{mongodb_service_name}:{mongodb_port}' inside cluster."
         )
-
-
-# if __name__ == "__main__":
-#     deploy_k8()
