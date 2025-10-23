@@ -92,6 +92,14 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
                 # Flat branch while probing
                 work.append((cur.flat_contents, lvl))
 
+            elif isinstance(cur, doc.LineSuffix):
+                if cur.text != ";":
+                    return False  # signal: cannot be flat at *parent*
+                # semicolon is okay in flat mode; charge width
+                remaining -= len(cur.text)
+                if remaining <= 0:
+                    return False
+
             else:
                 raise ValueError(f"Unknown DocType in probe: {type(cur)}")
 
@@ -160,24 +168,23 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
                     part, indent_level, current_line_budget, is_broken
                 )
 
-                # Trim trailing spaces when a newline begins next
+                # Trim trailing space before newline
                 if part_str.startswith("\n") and result and result[-1].endswith(" "):
                     result[-1] = result[-1].rstrip(" ")
 
                 result.append(part_str)
 
                 if "\n" in part_str:
-                    # After a newline, reset budget to full width at this indent.
                     last_line = part_str.split("\n")[-1]
                     full_budget = max(
                         0, self.MAX_LINE_LENGTH - indent_level * self.indent_size
                     )
-                    # Compute how many chars are already on the last line (after indent).
                     indent_spaces = " " * (indent_level * self.indent_size)
-                    if last_line.startswith(indent_spaces):
-                        used = len(last_line) - len(indent_spaces)
-                    else:
-                        used = len(last_line)
+                    used = (
+                        len(last_line) - len(indent_spaces)
+                        if last_line.startswith(indent_spaces)
+                        else len(last_line)
+                    )
                     current_line_budget = max(0, full_budget - used)
                 else:
                     current_line_budget = max(0, current_line_budget - len(part_str))
@@ -202,6 +209,9 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
                 child_width_budget,
                 is_broken,
             )
+
+        elif isinstance(doc_node, doc.LineSuffix):
+            return doc_node.text
 
         else:
             raise ValueError(f"Unknown DocType: {type(doc_node)}")

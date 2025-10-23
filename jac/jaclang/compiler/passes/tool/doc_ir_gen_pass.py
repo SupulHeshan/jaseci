@@ -18,6 +18,10 @@ class DocIRGenPass(UniPass):
         """Create a Text node."""
         return doc.Text(text)
 
+    def line_suffix(self, text: str) -> doc.LineSuffix:
+        """Create a LineSuffix node."""
+        return doc.LineSuffix(text)
+
     def space(self) -> doc.Text:
         """Create a space node."""
         return doc.Text(" ")
@@ -1745,16 +1749,13 @@ class DocIRGenPass(UniPass):
 
     def exit_comment_token(self, node: uni.CommentToken) -> None:
         """Generate DocIR for comment tokens."""
-        if isinstance(node.left_node, uni.CommentToken):
-            node.gen.doc_ir = self.group(
-                self.concat([self.text(node.value), self.hard_line()])
-            )
+        # Inline comment (comment starts with #*)
+        if node.value.startswith("#*"):
+            node.gen.doc_ir = self.text(node.value)
+        # Comment at the end of a line
         elif node.left_node and node.left_node.loc.last_line == node.loc.first_line:
-            node.gen.doc_ir = self.group(
-                self.concat(
-                    [self.tight_line(), self.text(node.value), self.hard_line()]
-                )
-            )
+            node.gen.doc_ir = self.line_suffix(f"  {node.value}")
+        # Full line comment
         else:
             node.gen.doc_ir = self.group(
                 self.concat([self.text(node.value), self.hard_line()])

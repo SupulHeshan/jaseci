@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Optional, Union
 
 # Define DocType for self-referential typing
-DocType = Union["Doc", "Text", "Line", "Group", "Indent", "Concat", "IfBreak", "Align"]
+DocType = Union[
+    "Doc", "Text", "Line", "Group", "Indent", "Concat", "IfBreak", "Align", "LineSuffix"
+]
 
 
 class Doc:
@@ -177,3 +179,17 @@ class Align(Doc):
         header = f"{indent}Align(n={self.n}):"
         children_repr: list[str] = [self.contents.treeprint(level + 1)]
         return f"{header}\n" + "\n".join(children_repr)
+
+
+class LineSuffix(Doc):
+    """Content that should appear at the end of the *current physical line*."""
+
+    def __init__(self, contents: str) -> None:
+        self.text: str = contents
+
+    def __str__(self) -> str:
+        return f"LineSuffix({self.text})"
+
+    def treeprint(self, level: int = 0) -> str:
+        indent = "  " * level
+        return f'{indent}LineSuffix("{self.text}")'
