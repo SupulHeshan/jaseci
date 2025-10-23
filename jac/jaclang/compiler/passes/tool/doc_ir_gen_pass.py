@@ -127,6 +127,16 @@ class DocIRGenPass(UniPass):
                 if prev_kid and self.has_gap(prev_kid, i):
                     parts.append(self.hard_line())
                 parts.append(i.gen.doc_ir)
+            elif self.is_comment(i):
+                if (
+                    isinstance(i, uni.CommentToken)
+                    and i.left_node
+                    and not self.is_comment(i.left_node)
+                ):
+                    parts.append(self.hard_line())
+                    parts.append(self.hard_line())
+                parts.append(i.gen.doc_ir)
+                continue
             else:
                 if not first_kid and not (
                     prev_kid
