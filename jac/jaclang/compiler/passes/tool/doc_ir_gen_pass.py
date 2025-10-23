@@ -265,6 +265,7 @@ class DocIRGenPass(UniPass):
             elif not in_body and isinstance(i, uni.Token) and i.name == Tok.DECOR_OP:
                 parts.append(i.gen.doc_ir)
             else:
+                parts.append(i.gen.doc_ir)
                 # Don't add space after comment tokens at the beginning of decleration
                 if not self.is_comment(i):
                     parts.append(self.space())
