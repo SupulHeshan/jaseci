@@ -2,8 +2,11 @@ import os
 
 from dotenv import dotenv_values
 
-from kubernetes import config
+from kubernetes import client, config
+from kubernetes.client.rest import ApiException
 from kubernetes.config.config_exception import ConfigException
+
+import urllib3
 
 
 def load_env_variables(code_folder: str) -> list:
@@ -22,19 +25,25 @@ def load_env_variables(code_folder: str) -> list:
     return env_list
 
 
-def is_k8s_configured() -> bool:
+def check_k8_status() -> None:
     """
-    Detects whether Kubernetes configuration is available on this machine.
-    Returns True if either a local kubeconfig or in-cluster config is valid.
+    Checks if Kubernetes config is configured and the k8 API server is reachable.
     """
     try:
-        # Try loading local kubeconfig (~/.kube/config)
+        # Try local kubeconfig first
         config.load_kube_config()
-        return True
     except ConfigException:
         try:
-            # Try loading in-cluster configuration
+            # Try in-cluster config
             config.load_incluster_config()
-            return True
         except ConfigException:
-            return False
+            raise Exception("Kubernetes is not configured on this machine.")
+
+    # Try pinging the Kubernetes API server
+    try:
+        v1 = client.CoreV1Api()
+        v1.get_api_resources()  # Simple call to check connectivity
+    except (ApiException, urllib3.exceptions.HTTPError, OSError):
+        raise Exception(
+            "Unable to connect to kubernetes APi.Check whether kubernetes cluster is up"
+        )

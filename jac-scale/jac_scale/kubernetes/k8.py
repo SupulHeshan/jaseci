@@ -8,7 +8,7 @@ from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 
 from .db import mongo_db
-from .utils import load_env_variables
+from .utils import check_k8_status, load_env_variables
 
 
 def deploy_k8(code_folder: str) -> None:
@@ -20,7 +20,7 @@ def deploy_k8(code_folder: str) -> None:
     node_port = int(os.getenv("K8_NODE_PORT", "30001"))
     docker_username = os.getenv("DOCKER_USERNAME", "juzailmlwork")
     repository_name = f"{docker_username}/{image_name}"
-    mongodb_enabled = os.getenv("MONGODB", "false").lower() == "true"
+    mongodb_enabled = os.getenv("K8_MONGODB", "false").lower() == "true"
 
     # -------------------
     # Kubernetes setup
@@ -29,6 +29,7 @@ def deploy_k8(code_folder: str) -> None:
     apps_v1 = client.AppsV1Api()
     core_v1 = client.CoreV1Api()
 
+    check_k8_status()
     env_list = load_env_variables(code_folder)
     # -------------------
     # Define MongoDB deployment/service (if needed)
@@ -131,7 +132,7 @@ def deploy_k8(code_folder: str) -> None:
     # -------------------
     if mongodb_enabled:
         print("Deploying MongoDB...")
-        apps_v1.create_namespaced_deployment(
+        apps_v1.create_namespaced_stateful_set(
             namespace=namespace, body=mongodb_deployment
         )
         core_v1.create_namespaced_service(namespace=namespace, body=mongodb_service)
