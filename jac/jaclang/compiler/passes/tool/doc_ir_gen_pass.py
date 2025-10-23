@@ -104,6 +104,22 @@ class DocIRGenPass(UniPass):
 
         return first and last
 
+    def is_tok_within_module(self, tok: uni.Token) -> bool:
+        """Check if token is within a module."""
+        return bool(
+            tok.parent
+            and tok.parent.parent
+            and isinstance(tok.parent.parent, uni.Module)
+        )
+
+    def is_tok_within_archetype(self, tok: uni.Token) -> bool:
+        """Check if token is within a archetype."""
+        return bool(
+            tok.parent
+            and tok.parent.parent
+            and isinstance(tok.parent.parent, uni.Archetype)
+        )
+
     def exit_node(self, node: uni.UniNode) -> None:
         """Empty single line handle."""
         super().exit_node(node)
@@ -119,15 +135,15 @@ class DocIRGenPass(UniPass):
                 else None
             )
 
+            # Check if there is a next terminal token and there is a gep between the
+            # two tokens, and the next token is not within a module or archetype
+            # module & archetype are handled in their respective exit functions
             if (
                 next_token
                 and next_token.line_no > node.line_no + 1
                 and not (
-                    next_token.parent
-                    and next_token.parent.parent
-                    and isinstance(
-                        next_token.parent.parent, (uni.Module, uni.Archetype)
-                    )
+                    self.is_tok_within_module(next_token)
+                    or self.is_tok_within_archetype(next_token)
                 )
             ):
                 node.gen.doc_ir = self.concat([node.gen.doc_ir, self.hard_line()])

@@ -254,6 +254,8 @@ class foo {
             return f" 'Function: ' {func_name} '(' {params} ')' ";
         }
     }
+
+    def func1(self: JacLangServer, sym_node: uni.AstSymbolNode) -> Optional[str] { }
 }
 
 
