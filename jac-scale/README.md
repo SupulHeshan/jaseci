@@ -40,7 +40,7 @@ jac scale
 
 ### Implementation
 
-- The entire `jac scale` plugin is implemented using **Python and Kubernetes client libraries**
+- The entire `jac scale` plugin is implemented using **Python and Kubernetes python client libraries**
 - **No custom Kubernetes controllers** are used → easier to deploy and maintain
 
 ### Database Provisioning
@@ -85,4 +85,10 @@ The plugin automatically:
 - Verify DockerHub credentials are correct
 - Check that the specified namespace exists or will be created
 - For database connection issues, verify StatefulSets are running: `kubectl get statefulsets -n <namespace>`
+
+## Future steps
+
+- Caching of ![base image](jac_scale/kubernetes/templates/base.Dockerfile) for quick deployment
+- Enable autoscaling capability
+- Auto creation of dockerfile using base image if not found
 
