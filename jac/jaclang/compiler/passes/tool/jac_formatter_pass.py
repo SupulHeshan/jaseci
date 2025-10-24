@@ -19,6 +19,25 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
         """Initialize pass."""
         self.indent_size = 4
         self.MAX_LINE_LENGTH = settings.max_line_length
+        self._suffix_queue: list[str] = []
+        self._anchor_idx: Optional[int] = None
+        self._SUFFIX_SEPARATORS = {"]", "}", ")", ",", ";"}
+
+    def _flush_suffix_into(
+        self, chunks: list[str], default_append: bool = True
+    ) -> None:
+        if not self._suffix_queue:
+            return
+        # IR already provides leading spaces ("  # 12"), so join as-is
+        out = "".join(self._suffix_queue)
+        self._suffix_queue.clear()
+
+        if self._anchor_idx is not None and 0 <= self._anchor_idx < len(chunks):
+            insert_pos = self._anchor_idx + 1
+            chunks.insert(insert_pos, out)
+            self._anchor_idx = insert_pos
+        elif default_append:
+            chunks.append(out)
 
     def _probe_fits(
         self,
@@ -117,7 +136,7 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
         width_remaining: Optional[int] = None,
         is_broken: bool = False,
     ) -> str:
-        """Recursively print a Doc node or a list of Doc nodes."""
+        """Recursively print a Doc node or a list of Doc nodes, supporting LineSuffix."""
         if doc_node is None:
             doc_node = self.ir_in.gen.doc_ir
 
@@ -125,16 +144,27 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
             width_remaining = self.MAX_LINE_LENGTH
 
         if isinstance(doc_node, doc.Text):
-            return doc_node.text
+            # If this text is a separator, we may need to flush queued suffixes *after* it.
+            s = doc_node.text
+            return s
 
         elif isinstance(doc_node, doc.Line):
+            # newline -> flush queued suffix before emitting it
             if is_broken or doc_node.hard:
-                return "\n" + " " * (indent_level * self.indent_size)
-            elif doc_node.literal:  # literal soft line
-                return "\n"
+                suffix = "".join(self._suffix_queue)
+                self._suffix_queue.clear()
+                s = suffix + "\n" + " " * (indent_level * self.indent_size)
+                self._anchor_idx = None
+                return s
+            elif doc_node.literal:
+                suffix = "".join(self._suffix_queue)
+                self._suffix_queue.clear()
+                s = suffix + "\n"
+                self._anchor_idx = None
+                return s
             elif doc_node.tight:
                 return ""
-            else:  # soft line, not broken
+            else:
                 return " "
 
         elif isinstance(doc_node, doc.Group):
@@ -160,20 +190,51 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
             )
 
         elif isinstance(doc_node, doc.Concat):
+            parts = doc_node.parts
             result: list[str] = []
             current_line_budget = width_remaining
 
-            for part in doc_node.parts:
+            saved_anchor = self._anchor_idx
+            self._anchor_idx = None
+
+            i = 0
+            while i < len(parts):
+                part = parts[i]
+
+                # --- Lookahead: if this is a Line, slurp following LineSuffix nodes ---
+                if isinstance(part, doc.Line):
+                    j = i + 1
+                    while j < len(parts) and isinstance(parts[j], doc.LineSuffix):
+                        self._suffix_queue.append(parts[j].text)
+                        j += 1
+                    # We will skip those suffix nodes by advancing i to j after we process this part
+
+                # Render current part
                 part_str = self.format_doc_ir(
                     part, indent_level, current_line_budget, is_broken
                 )
+
+                # If a newline will be emitted by this part, and we still somehow have queued suffixes,
+                # make sure they go into the current line at the anchor before the newline chunk
+                if "\n" in part_str and self._suffix_queue:
+                    self._flush_suffix_into(result, default_append=True)
 
                 # Trim trailing space before newline
                 if part_str.startswith("\n") and result and result[-1].endswith(" "):
                     result[-1] = result[-1].rstrip(" ")
 
+                # Append the rendered piece
                 result.append(part_str)
 
+                # If the raw part is a separator token, move the anchor to here
+                if isinstance(part, doc.Text) and part.text in self._SUFFIX_SEPARATORS:
+                    self._anchor_idx = len(result) - 1
+
+                # If newline occurred, reset anchor (anchors don’t cross lines)
+                if "\n" in part_str:
+                    self._anchor_idx = None
+
+                # Budget update
                 if "\n" in part_str:
                     last_line = part_str.split("\n")[-1]
                     full_budget = max(
@@ -181,13 +242,26 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
                     )
                     indent_spaces = " " * (indent_level * self.indent_size)
                     used = (
-                        len(last_line) - len(indent_spaces)
+                        (len(last_line) - len(indent_spaces))
                         if last_line.startswith(indent_spaces)
                         else len(last_line)
                     )
                     current_line_budget = max(0, full_budget - used)
                 else:
                     current_line_budget = max(0, current_line_budget - len(part_str))
+
+                # Advance i; if we looked ahead over LineSuffix nodes, skip them now
+                if isinstance(part, doc.Line):
+                    i = j
+                else:
+                    i += 1
+
+            # End of concat: flush any tail suffixes at the anchor (or append)
+            if self._suffix_queue:
+                self._flush_suffix_into(result, default_append=True)
+
+            self._anchor_idx = None
+            self._anchor_idx = saved_anchor
 
             return "".join(result)
 
@@ -199,10 +273,7 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
             align_spaces = doc_node.n if doc_node.n is not None else self.indent_size
             extra_levels = align_spaces // self.indent_size
             child_indent_level = indent_level + extra_levels
-
-            # On the same line, alignment "consumes" part of the current budget.
             child_width_budget = max(0, width_remaining - align_spaces)
-
             return self.format_doc_ir(
                 doc_node.contents,
                 child_indent_level,
@@ -211,7 +282,8 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
             )
 
         elif isinstance(doc_node, doc.LineSuffix):
-            return doc_node.text
+            self._suffix_queue.append(doc_node.text)
+            return ""
 
         else:
             raise ValueError(f"Unknown DocType: {type(doc_node)}")
