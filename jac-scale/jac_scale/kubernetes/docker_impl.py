@@ -24,7 +24,13 @@ def build_docker_image(
     Returns:
         Tuple[str, str]: The image name and its ID.
     """
-    docker_client = docker.from_env()
+    try:
+        docker_client = docker.from_env()
+        # Quick test to see if daemon is reachable
+        docker_client.ping()
+        print("Docker daemon is running and accessible.")
+    except Exception as e:
+        raise RuntimeError("Docker daemon is down or unreachable.") from e
 
     print(f"Building Docker image '{image_name}' from {context_path}...")
     try:

@@ -20,15 +20,15 @@ class JacCmd:
         """Create Jac CLI cmds."""
 
         @cmd_registry.register
-        def scale(deployment_type: str) -> None:
+        def scale() -> None:
             """Jac Scale functionality."""
             load_dotenv()
             code_folder = os.getenv("CODE_FOLDER", os.getcwd())
-            if deployment_type == "k8":
-                build_and_push_docker(code_folder)
-                deploy_k8(code_folder)
+            build_and_push_docker(code_folder)
+            deploy_k8(code_folder)
 
-        @cmd_registry.register
-        def destroy() -> None:
-            """Jac Destroys functionality."""
-            print("Hello, Jac learner lets stop your application!")
+        # @cmd_registry.register
+        # def destroy() -> None:
+        #     """Jac Destroys functionality."""
+        #     #TODO:Need to implement this function to delete all resources created
+        #     print("Hello, Jac learner lets stop your application!")
