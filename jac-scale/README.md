@@ -31,6 +31,11 @@ Navigate to the folder containing your JAC application and run:
 jac scale
 ```
 
+## Architecture
+
+### k8 pods structure
+![k8 pod structure](diagrams\kubernetes-architecture.png)
+
 ## Steps followd by jac sale
 
 ### 1. Create JAC Application Docker Image
@@ -69,9 +74,9 @@ The plugin automatically:
 
 ### Performance
 
-- **First-time deployment** may take longer due to database provisioning
+- **First-time deployment** may take longer due to database provisioning and image downloading
 - **Subsequent deployments** are faster since:
-  - Only the application's final Docker layer is pushed
+  - Only the application's final Docker layer is pushed and pulled
   - Only deployments are updated (databases remain unchanged)
 
 ## Usage Example
@@ -99,18 +104,3 @@ jac scale
 - Check that the specified namespace exists or will be created
 - For database connection issues, verify StatefulSets are running: `kubectl get statefulsets -n <namespace>`
 
-## Architecture
-
-```
-JAC Application
-    ↓
-Docker Image Build
-    ↓
-DockerHub Push
-    ↓
-Kubernetes Deployment
-    ├── JAC App Deployment
-    ├── MongoDB StatefulSet (if enabled)
-    ├── PostgreSQL StatefulSet (if enabled)
-    └── Redis StatefulSet (if enabled)
-```
