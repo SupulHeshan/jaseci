@@ -1,5 +1,7 @@
 """Pass to fuse comments into the AST."""
 
+from typing import Optional
+
 import jaclang.compiler.unitree as uni
 from jaclang.compiler.passes import UniPass
 
@@ -13,6 +15,15 @@ class FuseCommentsPass(UniPass):
         if isinstance(self.ir_out, uni.Module):
             self.comments = self.ir_out.source.comments
         return super().before_pass()
+
+    def get_statement_parent(self, token: uni.Token) -> Optional[uni.CodeBlockStmt]:
+        """Get the nearest statement-level parent for a token."""
+        current = token.parent
+        while current:
+            if isinstance(current, uni.CodeBlockStmt):
+                return current
+            current = current.parent
+        return None
 
     def exit_node(self, node: uni.UniNode) -> None:
         if isinstance(node, uni.Token):
@@ -110,9 +121,21 @@ class FuseCommentsPass(UniPass):
                             f"Token {next_token.pp()} without parent in AST while"
                             f" inserting comments batch"
                         )
-                    parent_node = next_token.parent
-                    insert_index = parent_node.kid.index(next_token)
-                    parent_node.insert_kids_at_pos(comment_batch, insert_index)
+
+                    # Try to find statement-level parent for more accurate insertion
+                    # If found, insert at that level
+                    # Otherwise, insert at next_token's parent level
+                    if (
+                        parent_stmt := self.get_statement_parent(next_token)
+                    ) and parent_stmt.parent:
+                        insert_index = parent_stmt.parent.kid.index(parent_stmt)
+                        parent_stmt.parent.insert_kids_at_pos(
+                            comment_batch, insert_index
+                        )
+                    else:
+                        parent_node = next_token.parent
+                        insert_index = parent_node.kid.index(next_token)
+                        parent_node.insert_kids_at_pos(comment_batch, insert_index)
 
             # Skip past all the comments we just processed
             i = next_idx
