@@ -148,6 +148,39 @@ class DocIRGenPass(UniPass):
             ):
                 node.gen.doc_ir = self.concat([node.gen.doc_ir, self.hard_line()])
 
+    def trim_trailing_line(self, parts: List[doc.DocType]) -> None:
+        """Recursively trim trailing Line (soft or hard) nodes from parts."""
+        if not parts:
+            return
+
+        while parts:
+            last = parts[-1]
+
+            if isinstance(last, doc.Line):
+                parts.pop()
+                continue  # keep trimming in case of multiple trailing lines
+
+            elif isinstance(last, doc.Concat):
+                self.trim_trailing_line(last.parts)
+                # If Concat becomes empty, remove it entirely
+                if not last.parts:
+                    parts.pop()
+                    continue
+
+            elif isinstance(last, doc.Group):
+                contents = last.contents
+                if isinstance(contents, doc.Concat):
+                    self.trim_trailing_line(contents.parts)
+                    if not contents.parts:
+                        parts.pop()
+                        continue
+                elif isinstance(contents, doc.Line):
+                    # If group only contains a trailing line, drop the group
+                    parts.pop()
+                    continue
+
+            break
+
     def exit_module(self, node: uni.Module) -> None:
         """Exit module."""
         parts: list[doc.DocType] = []
@@ -325,30 +358,33 @@ class DocIRGenPass(UniPass):
                 parts.append(i.gen.doc_ir)
                 if not isinstance(node.signature, uni.FuncSignature):
                     parts.append(self.space())
-            elif isinstance(node.body, Sequence) and i in node.body:
-                if not in_body:
-                    parts.pop()
-                    body_parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
                 body_parts.append(self.hard_line())
                 in_body = True
-            elif in_body:
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
                 in_body = False
-                body_parts.pop()
+                self.trim_trailing_line(body_parts)
                 parts.append(self.indent(self.concat(body_parts)))
-                parts.append(self.hard_line())
+                if len(body_parts) > 0:
+                    parts.append(self.hard_line())
+                else:
+                    parts.append(self.space())
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
-            elif isinstance(i, uni.Token) and i.name == Tok.SEMI:
-                parts.pop()
-                parts.append(i.gen.doc_ir)
-                parts.append(self.space())
+            elif in_body:
+                body_parts.append(i.gen.doc_ir)
+                body_parts.append(self.hard_line())
             elif (
                 i == node.kid[0] and isinstance(i, uni.Token) and i.name == Tok.COMMENT
             ):
                 has_comment = i.gen.doc_ir
             elif not in_body and isinstance(i, uni.Token) and i.name == Tok.DECOR_OP:
                 parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.SEMI:
+                parts.pop()
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
@@ -936,6 +972,13 @@ class DocIRGenPass(UniPass):
             parts.append(i.gen.doc_ir)
         node.gen.doc_ir = self.group(self.concat(parts))
 
+    def exit_formatted_value(self, node: uni.FormattedValue) -> None:
+        """Generate DocIR for formatted value expressions."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.group(self.concat(parts))
+
     def exit_if_else_expr(self, node: uni.IfElseExpr) -> None:
         """Generate DocIR for conditional expressions."""
         parts: list[doc.DocType] = []
@@ -1257,24 +1300,23 @@ class DocIRGenPass(UniPass):
                 i == node.kid[0] and isinstance(i, uni.Token) and i.name == Tok.COMMENT
             ):
                 has_comment = i.gen.doc_ir
-            elif isinstance(node.body, Sequence) and i in node.body:
-                if not in_body:
-                    parts.pop()
-                    body_parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
                 body_parts.append(self.hard_line())
                 in_body = True
-            elif in_body:
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
                 in_body = False
-                body_parts.pop()
+                self.trim_trailing_line(body_parts)
                 parts.append(self.indent(self.concat(body_parts)))
-                parts.append(self.hard_line())
+                if len(body_parts):
+                    parts.append(self.hard_line())
+                else:
+                    parts.append(self.line())
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
-            elif isinstance(i, uni.Token) and i.name == Tok.SEMI:
-                parts.pop()
-                parts.append(i.gen.doc_ir)
-                parts.append(self.space())
+            elif in_body:
+                body_parts.append(i.gen.doc_ir)
+                body_parts.append(self.hard_line())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
@@ -1489,6 +1531,43 @@ class DocIRGenPass(UniPass):
         parts.append(self.indent(self.concat([self.hard_line()] + indent_parts)))
         node.gen.doc_ir = self.group(self.concat(parts))
 
+    def exit_switch_stmt(self, node: uni.SwitchStmt) -> None:
+        """Generate DocIR for switch statements."""
+        parts: list[doc.DocType] = []
+        switch_parts: list[doc.DocType] = [self.hard_line()]
+        for i in node.kid:
+            if i == node.target:
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
+            elif isinstance(i, uni.SwitchCase):
+                switch_parts.append(i.gen.doc_ir)
+                switch_parts.append(self.hard_line())
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(self.indent(self.concat(switch_parts)))
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
+            else:
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
+        node.gen.doc_ir = self.group(self.concat(parts))
+
+    def exit_switch_case(self, node: uni.SwitchCase) -> None:
+        """Generate DocIR for switch cases."""
+        parts: list[doc.DocType] = []
+        indent_parts: list[doc.DocType] = []
+        for i in node.kid:
+            if isinstance(i, uni.Token) and i.name == Tok.COLON:
+                parts.pop()
+                parts.append(i.gen.doc_ir)
+            elif i in node.body:
+                indent_parts.append(i.gen.doc_ir)
+                indent_parts.append(self.hard_line())
+            else:
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
+        parts.append(self.indent(self.concat([self.hard_line()] + indent_parts)))
+        node.gen.doc_ir = self.group(self.concat(parts))
+
     def exit_match_value(self, node: uni.MatchValue) -> None:
         """Generate DocIR for match value patterns."""
         parts: list[doc.DocType] = []
@@ -1587,6 +1666,8 @@ class DocIRGenPass(UniPass):
     def exit_enum(self, node: uni.Enum) -> None:
         """Generate DocIR for enum declarations."""
         parts: list[doc.DocType] = []
+        body_parts: list[doc.DocType] = []
+        in_body = False
         for i in node.kid:
             if (node.doc and i is node.doc) or (
                 node.decorators and i in node.decorators
@@ -1597,6 +1678,22 @@ class DocIRGenPass(UniPass):
                 parts.pop()
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
+            elif isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+                body_parts.append(self.line())
+                in_body = True
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                in_body = False
+                if len(body_parts) and isinstance(body_parts[-1], doc.Line):
+                    body_parts.pop()
+                parts.append(self.indent(self.concat(body_parts)))
+                parts.append(self.line())
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
+            elif in_body:
+                body_parts.append(i.gen.doc_ir)
+                if isinstance(i, uni.Token) and i.name == Tok.COMMA:
+                    body_parts.append(self.line())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
@@ -1791,3 +1888,111 @@ class DocIRGenPass(UniPass):
             node.gen.doc_ir = self.group(
                 self.concat([self.text(node.value), self.hard_line()])
             )
+
+    def exit_jsx_element(self, node: uni.JsxElement) -> None:
+        """Generate DocIR for JSX elements - kid-centric beautiful formatting!"""
+        parts: list[doc.DocType] = []
+        prev = None
+
+        # Check if we have any JSX element children
+        # Use node.children instead of node.kid to avoid counting opening/closing tags
+        has_jsx_elem_children = any(
+            isinstance(k, uni.JsxElement) for k in node.children
+        )
+
+        # Only break/indent if we have JSX element children
+        # (simple text/expression children stay inline)
+        should_format_children = has_jsx_elem_children
+
+        for i in node.kid:
+            # Add line break between attributes (allows them to wrap nicely)
+            if (
+                prev
+                and isinstance(prev, (uni.JsxElementName, uni.JsxAttribute))
+                and isinstance(i, uni.JsxAttribute)
+            ):
+                parts.append(self.line())
+            # Add hard line between JSX element children, or before first child
+            elif (
+                prev
+                and (
+                    (
+                        isinstance(prev, (uni.JsxChild, uni.JsxElement))
+                        and isinstance(i, (uni.JsxChild, uni.JsxElement))
+                    )
+                    or (
+                        isinstance(prev, (uni.JsxElementName, uni.JsxAttribute))
+                        and isinstance(i, (uni.JsxChild, uni.JsxElement))
+                    )
+                )
+                and should_format_children
+            ):
+                parts.append(self.hard_line())
+
+            # Indent JSX element children, but not text/expression children
+            if isinstance(i, uni.JsxElement) and should_format_children:
+                parts.append(self.indent(i.gen.doc_ir))
+            else:
+                parts.append(i.gen.doc_ir)
+
+            prev = i
+
+        node.gen.doc_ir = self.group(self.concat(parts))
+
+    def exit_jsx_element_name(self, node: uni.JsxElementName) -> None:
+        """Generate DocIR for JSX element names."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_spread_attribute(self, node: uni.JsxSpreadAttribute) -> None:
+        """Generate DocIR for JSX spread attributes."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_normal_attribute(self, node: uni.JsxNormalAttribute) -> None:
+        """Generate DocIR for JSX normal attributes."""
+        # Normalize to ensure LBRACE/RBRACE tokens are added for expression values
+        node.normalize()
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            # Tokens created by normalize() have empty doc_ir, so regenerate it
+            if (
+                isinstance(i, uni.Token)
+                and isinstance(i.gen.doc_ir, doc.Text)
+                and not i.gen.doc_ir.text
+            ):
+                i.gen.doc_ir = self.text(i.value)
+            elif not isinstance(
+                i.gen.doc_ir,
+                (
+                    doc.Text,
+                    doc.Concat,
+                    doc.Group,
+                    doc.Indent,
+                    doc.Line,
+                    doc.Align,
+                    doc.IfBreak,
+                ),
+            ):
+                # For nodes with invalid doc_ir, generate it by visiting
+                self.enter_exit(i)
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_text(self, node: uni.JsxText) -> None:
+        """Generate DocIR for JSX text."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
+
+    def exit_jsx_expression(self, node: uni.JsxExpression) -> None:
+        """Generate DocIR for JSX expressions."""
+        parts: list[doc.DocType] = []
+        for i in node.kid:
+            parts.append(i.gen.doc_ir)
+        node.gen.doc_ir = self.concat(parts)
