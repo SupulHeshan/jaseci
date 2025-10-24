@@ -29,10 +29,10 @@ def install_and_patch_metrics_server() -> None:
     # ----------------------------
     try:
         apps_v1.read_namespaced_deployment(deployment_name, namespace)
-        print("✅ Metrics Server already installed.")
+        print("Metrics Server already installed.")
     except ApiException as e:
         if e.status == 404:
-            print("📦 Installing Metrics Server...")
+            print("Installing Metrics Server...")
             install_metrics_server_yaml()
         else:
             raise
@@ -62,12 +62,12 @@ def install_and_patch_metrics_server() -> None:
             apps_v1.patch_namespaced_deployment(
                 name=deployment_name, namespace=namespace, body=patch
             )
-            print("✅ Successfully patched Metrics Server.")
+            print("Successfully patched Metrics Server.")
         else:
-            print("ℹ️ Metrics Server already has '--kubelet-insecure-tls' enabled.")
+            print("Metrics Server already has '--kubelet-insecure-tls' enabled.")
 
     except ApiException as e:
-        print(f"❌ Failed to patch metrics-server: {e}")
+        print(f"Failed to patch metrics-server: {e}")
 
 
 def install_metrics_server_yaml() -> None:
@@ -86,11 +86,11 @@ def install_metrics_server_yaml() -> None:
         tmpfile.write(yaml_content)
         tmpfile.flush()
 
-        print("📥 Applying metrics-server manifest...")
+        print("Applying metrics-server manifest...")
         k8s_client = client.ApiClient()
         utils.create_from_yaml(k8s_client, tmpfile.name)
 
-    print("✅ Metrics Server installation applied.")
+    print("Metrics Server installation applied.")
 
 
 if __name__ == "__main__":
