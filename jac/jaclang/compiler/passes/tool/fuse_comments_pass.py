@@ -16,9 +16,39 @@ class FuseCommentsPass(UniPass):
             self.comments = self.ir_out.source.comments
         return super().before_pass()
 
-    def get_statement_parent(self, token: uni.Token) -> Optional[uni.CodeBlockStmt]:
-        """Get the nearest statement-level parent for a token."""
+    def get_comment_insertion_anchor(self, token: uni.Token) -> Optional[uni.UniNode]:
+        """
+        Find the correct AST node under which a comment should be attached.
+
+        This walks upward from the given token to locate the nearest statement-level
+        or scope-level node suitable for inserting a comment.
+
+        Rules:
+        1. If the token's direct parent is a UniScopeNode (e.g., a module body,
+            function body, or block), the comment logically belongs directly
+            under that scope — so return the token itself. This means the comment
+            appears alongside sibling statements in that scope.
+        2. Otherwise, walk upward through the parent chain until a
+            CodeBlockStmt (statement node such as ExprStmt, IfStmt, WhileStmt, etc.)
+            is found; this is considered the enclosing "statement parent"
+            appropriate for comment attachment.
+        3. If no such statement or scope parent exists (e.g., malformed AST),
+            return None.
+
+        Parameters
+        ----------
+        token : uni.Token
+            The token near which the comment should be inserted.
+
+        Returns
+        -------
+        Optional[uni.UniNode]
+            The nearest insertion anchor node (token itself if in a scope,
+            or its enclosing statement node), or None if not found.
+        """
         current = token.parent
+        if isinstance(current, uni.UniScopeNode):
+            return token
         while current:
             if isinstance(current, uni.CodeBlockStmt):
                 return current
@@ -126,7 +156,7 @@ class FuseCommentsPass(UniPass):
                     # If found, insert at that level
                     # Otherwise, insert at next_token's parent level
                     if (
-                        parent_stmt := self.get_statement_parent(next_token)
+                        parent_stmt := self.get_comment_insertion_anchor(next_token)
                     ) and parent_stmt.parent:
                         insert_index = parent_stmt.parent.kid.index(parent_stmt)
                         parent_stmt.parent.insert_kids_at_pos(
