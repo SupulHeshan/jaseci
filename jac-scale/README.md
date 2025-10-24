@@ -91,4 +91,5 @@ The plugin automatically:
 - Caching of [base image](jac_scale/kubernetes/templates/base.Dockerfile) for quick deployment
 - Enable autoscaling capability
 - Auto creation of dockerfile using base image if not found
+- Auto deletion of created k8 resources
 
