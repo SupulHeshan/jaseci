@@ -6,7 +6,7 @@
 
 ## Parameters
 
-### Required Parameters
+### Required environment variables
 
 | Parameter | Description |
 |-----------|-------------|
@@ -14,7 +14,7 @@
 | `DOCKER_USERNAME` | DockerHub username for pushing the image |
 | `DOCKER_PASSWORD` | DockerHub password or access token |
 
-### Optional Parameters
+### Optional environment variables
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -35,28 +35,6 @@ jac scale
 
 ### k8 pods structure
 ![k8 pod structure](diagrams/kubernetes-architecture.png)
-
-## Steps followd by jac sale
-
-### 1. Create JAC Application Docker Image
-
-- Build the application image from the source directory
-- Tag the image with DockerHub repository
-
-### 2. Push Docker Image to DockerHub
-
-- Authenticate using `DOCKER_USERNAME` and `DOCKER_PASSWORD`
-- Push the image to DockerHub
-- Subsequent pushes are faster since only the final image layer is pushed
-
-
-### 3. Deploy application in k8
-
-The plugin automatically:
-
-- Creates Kubernetes Deployments for the JAC application
-- Spawns necessary databases (MongoDB, PostgreSQL, Redis) as StatefulSets if requested
-- Configures networking and service exposure
 
 ## Important Notes
 
@@ -79,23 +57,27 @@ The plugin automatically:
   - Only the application's final Docker layer is pushed and pulled
   - Only deployments are updated (databases remain unchanged)
 
-## Usage Example
+## Steps followd by jac scale
 
-```bash
-# Set required environment variables
-export APP_NAME="my-jac-app"
-export DOCKER_USERNAME="myusername"
-export DOCKER_PASSWORD="mypassword"
+### 1. Create JAC Application Docker Image
 
-# Set optional parameters
-export K8_NAMESPACE="production"
-export K8_NODE_PORT="30080"
-export K8_MONGODB="True"
-export K8_REDIS="True"
+- Build the application image from the source directory
+- Tag the image with DockerHub repository
 
-# Run jac scale
-jac scale
-```
+### 2. Push Docker Image to DockerHub
+
+- Authenticate using `DOCKER_USERNAME` and `DOCKER_PASSWORD`
+- Push the image to DockerHub
+- Subsequent pushes are faster since only the final image layer is pushed
+
+
+### 3. Deploy application in k8
+
+The plugin automatically:
+
+- Creates Kubernetes Deployments for the JAC application
+- Spawns necessary databases (MongoDB, PostgreSQL, Redis) as StatefulSets if requested
+- Configures networking and service exposure
 
 ## Troubleshooting
 
