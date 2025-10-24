@@ -57,7 +57,7 @@ jac scale
   - Only the application's final Docker layer is pushed and pulled
   - Only deployments are updated (databases remain unchanged)
 
-## Steps followd by jac scale
+## Steps followed by jac scale
 
 ### 1. Create JAC Application Docker Image
 
@@ -88,7 +88,7 @@ The plugin automatically:
 
 ## Future steps
 
-- Caching of ![base image](jac_scale/kubernetes/templates/base.Dockerfile) for quick deployment
+- Caching of [base image](jac_scale/kubernetes/templates/base.Dockerfile) for quick deployment
 - Enable autoscaling capability
 - Auto creation of dockerfile using base image if not found
 
