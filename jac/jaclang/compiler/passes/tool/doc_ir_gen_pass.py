@@ -123,6 +123,11 @@ class DocIRGenPass(UniPass):
     def exit_node(self, node: uni.UniNode) -> None:
         """Empty single line handle."""
         super().exit_node(node)
+        # check for tokens that are terminals and check for their line number
+        # and insert hard lines in case of a space between the line numbers of 
+        # the tokens
+        # Note: Ignore string tokens as there might be spaces due to empty lines
+        # in the string it self
         if (
             isinstance(node, uni.Token)
             and not isinstance(node, uni.String)
