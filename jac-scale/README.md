@@ -34,7 +34,7 @@ jac scale
 ## Architecture
 
 ### k8 pods structure
-![k8 pod structure](diagrams\kubernetes-architecture.png)
+![k8 pod structure](diagrams/kubernetes-architecture.png)
 
 ## Steps followd by jac sale
 
