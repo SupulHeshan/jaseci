@@ -120,20 +120,21 @@ class DocIRGenPass(UniPass):
             and isinstance(tok.parent.parent, uni.Archetype)
         )
 
-    def exit_node(self, node: uni.UniNode) -> None:
-        """Empty single line handle."""
-        super().exit_node(node)
-        # check for tokens that are terminals and check for their line number
-        # and insert hard lines in case of a space between the line numbers of 
-        # the tokens
+    def allow_1_empty_line_break(self, current_token: uni.Token) -> None:
+        """Preserve only 1 line break if needed.
+
+        check for tokens that are terminals and check for their line number
+        and insert hard lines in case of a space between the line numbers of
+        the tokens
+        """
+
         # Note: Ignore string tokens as there might be spaces due to empty lines
         # in the string it self
         if (
-            isinstance(node, uni.Token)
-            and not isinstance(node, uni.String)
-            and node in self.ir_in.src_terminals
+            not isinstance(current_token, uni.String)
+            and current_token in self.ir_in.src_terminals
         ):
-            current_token_index = self.ir_in.src_terminals.index(node)
+            current_token_index = self.ir_in.src_terminals.index(current_token)
             next_token = (
                 self.ir_in.src_terminals[current_token_index + 1]
                 if current_token_index + 1 < len(self.ir_in.src_terminals) - 1
@@ -145,13 +146,21 @@ class DocIRGenPass(UniPass):
             # module & archetype are handled in their respective exit functions
             if (
                 next_token
-                and next_token.line_no > node.line_no + 1
+                and next_token.line_no > current_token.line_no + 1
                 and not (
                     self.is_tok_within_module(next_token)
                     or self.is_tok_within_archetype(next_token)
                 )
             ):
-                node.gen.doc_ir = self.concat([node.gen.doc_ir, self.hard_line()])
+                current_token.gen.doc_ir = self.concat(
+                    [current_token.gen.doc_ir, self.hard_line()]
+                )
+
+    def exit_node(self, node: uni.UniNode) -> None:
+        """Empty single line handle."""
+        super().exit_node(node)
+        if isinstance(node, uni.Token):
+            self.allow_1_empty_line_break(node)
 
     def trim_trailing_line(self, parts: List[doc.DocType]) -> None:
         """Recursively trim trailing Line (soft or hard) nodes from parts."""
