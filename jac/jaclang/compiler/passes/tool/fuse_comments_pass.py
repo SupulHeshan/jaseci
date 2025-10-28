@@ -18,36 +18,42 @@ class FuseCommentsPass(UniPass):
 
     def get_comment_insertion_anchor(self, token: uni.Token) -> Optional[uni.UniNode]:
         """
-        Find the correct AST node under which a comment should be attached.
+        Determine the most appropriate AST node to which a comment should be attached.
 
-        This walks upward from the given token to locate the nearest statement-level
-        or scope-level node suitable for inserting a comment.
+        This method is used during comment fusion to re-insert comment tokens into
+        the abstract syntax tree (AST) in a semantically meaningful position.
 
-        Rules:
-        1. If the token's direct parent is a UniScopeNode (e.g., a module body,
-            function body, or block), the comment logically belongs directly
-            under that scope — so return the token itself. This means the comment
-            appears alongside sibling statements in that scope.
-        2. Otherwise, walk upward through the parent chain until a
-            CodeBlockStmt (statement node such as ExprStmt, IfStmt, WhileStmt, etc.)
-            is found; this is considered the enclosing "statement parent"
-            appropriate for comment attachment.
-        3. If no such statement or scope parent exists (e.g., malformed AST),
-            return None.
+        Logic:
+        1. If the token's direct parent is a scope-level node (e.g., UniScopeNode,
+        ArchHas, or PyInlineCode), the comment is attached directly under that scope.
+        These nodes represent constructs that can be *described* by comments (e.g.,
+        modules, functions, architectures, or inline Python blocks).
+        → Return the token itself to indicate that the comment belongs alongside
+            sibling statements within this scope.
+        2. Otherwise, walk upward through the parent chain until a CodeBlockStmt
+        (a statement-level node such as ExprStmt, IfStmt, WhileStmt, etc.)
+        is found. Comments are then attached to that enclosing statement.
+        3. If no enclosing statement or describable scope is found (e.g., malformed AST),
+        return None.
 
         Parameters
         ----------
         token : uni.Token
-            The token near which the comment should be inserted.
+            The token located near the comment position.
 
         Returns
         -------
         Optional[uni.UniNode]
-            The nearest insertion anchor node (token itself if in a scope,
-            or its enclosing statement node), or None if not found.
+            The nearest node suitable for attaching the comment.
+            Returns the token itself if it lies directly within a describable scope,
+            otherwise the nearest statement-level node, or None if none exists.
         """
         current = token.parent
-        if isinstance(current, uni.UniScopeNode):
+
+        # These represent constructs that can hold descriptive comments.
+        if isinstance(
+            current, (uni.UniScopeNode, uni.ArchHas, uni.PyInlineCode)
+        ):  # These are items that are describable using comments
             return token
         while current:
             if isinstance(current, uni.CodeBlockStmt):

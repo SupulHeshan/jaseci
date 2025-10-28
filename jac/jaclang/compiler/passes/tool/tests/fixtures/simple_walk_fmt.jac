@@ -5,7 +5,7 @@ node Item {
 }
 
 
-edge Checking {}
+edge Checking { }
 
 
 walker Creator {

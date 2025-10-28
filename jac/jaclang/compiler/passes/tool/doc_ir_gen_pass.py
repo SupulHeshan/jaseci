@@ -91,6 +91,19 @@ class DocIRGenPass(UniPass):
         """Check if the node is a comment."""
         return isinstance(node, uni.Token) and node.name == Tok.COMMENT
 
+    def is_separate_comment(self, node: uni.UniNode) -> bool:
+        if not self.is_comment(node):
+            return False
+        assert isinstance(node, uni.CommentToken)
+        return not bool(
+            node.left_node and node.left_node.loc.last_line == node.loc.first_line
+        )
+
+    def is_inline_comment(self, node: uni.UniNode) -> bool:
+        if not self.is_comment(node):
+            return False
+        return not self.is_separate_comment(node)
+
     def has_gap(self, prev_kid: uni.UniNode, curr_kid: uni.UniNode) -> bool:
         """Check if there is a gap between the previous and current node."""
         return prev_kid.loc.last_line + 1 < curr_kid.loc.first_line
@@ -268,8 +281,6 @@ class DocIRGenPass(UniPass):
             elif i == node.name:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
-            elif isinstance(i, uni.Token) and i.name == Tok.LBRACE:
-                parts.append(i.gen.doc_ir)
             elif isinstance(i, uni.Token) and i.name == Tok.LPAREN:
                 parts.pop()
                 parts.append(i.gen.doc_ir)
@@ -277,24 +288,29 @@ class DocIRGenPass(UniPass):
                 parts.pop()
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
-            elif isinstance(node.body, Sequence) and i in node.body:
-                if not in_body:
-                    body_parts.append(self.hard_line())
+            elif isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+                in_body = True
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(self.indent(self.concat(body_parts)))
+                self.trim_trailing_line(body_parts)
+                if len(body_parts):
+                    parts.append(self.hard_line())
+                else:
+                    parts.append(self.line())
+                parts.append(i.gen.doc_ir)
+                in_body = False
+            elif in_body:
                 if (prev_item and type(prev_item) is not type(i)) or (
                     prev_item and not self.is_one_line(prev_item)
                 ):
                     body_parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
                 body_parts.append(self.hard_line())
-                prev_item = i
-                in_body = True
-            elif in_body:
-                in_body = False
-                body_parts.pop()
-                parts.append(self.indent(self.concat(body_parts)))
-                parts.append(self.hard_line())
-                parts.append(i.gen.doc_ir)
-                parts.append(self.space())
+                body_parts.append(i.gen.doc_ir)
+                print(i, self.is_inline_comment(i))
+                if not self.is_inline_comment(i):
+                    print(prev_item)
+                    prev_item = i
             elif isinstance(i, uni.Token) and i.name == Tok.SEMI:
                 parts.pop()
                 parts.append(i.gen.doc_ir)
@@ -337,6 +353,7 @@ class DocIRGenPass(UniPass):
                 parts.append(self.space())
             elif in_body:
                 body_parts.append(i.gen.doc_ir)
+                self.trim_trailing_line(body_parts)
                 body_parts.append(self.hard_line())
             elif not in_body and isinstance(i, uni.Token) and i.name == Tok.DECOR_OP:
                 parts.append(i.gen.doc_ir)
@@ -346,6 +363,7 @@ class DocIRGenPass(UniPass):
                 parts.append(self.space())
             else:
                 parts.append(i.gen.doc_ir)
+                # Don't add space after comment tokens at the beginning of decleration
                 if not self.is_comment(i):
                     parts.append(self.space())
         node.gen.doc_ir = self.group(self.concat(parts))
@@ -700,20 +718,34 @@ class DocIRGenPass(UniPass):
     def exit_arch_has(self, node: uni.ArchHas) -> None:
         """Generate DocIR for architecture has declarations."""
         parts: list[doc.DocType] = []
+        body_parts: list[doc.DocType] = []
+        in_body = False
         for i in node.kid:
             if i == node.doc:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.hard_line())
-            elif isinstance(i, uni.Token) and i.name == Tok.SEMI:
-                parts.pop()
-                parts.append(i.gen.doc_ir)
-            elif isinstance(i, uni.Token) and i.name == Tok.COMMA:
-                parts.pop()
-                parts.append(i.gen.doc_ir)
-                parts.append(self.indent(self.hard_line()))
-            else:
+            elif isinstance(i, uni.Token) and i.name == Tok.KW_HAS:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
+                in_body = True
+            elif in_body:
+                if isinstance(i, uni.Token) and i.name == Tok.SEMI:
+                    body_parts.pop()
+                    body_parts.append(i.gen.doc_ir)
+                    parts.append(self.indent(self.concat(body_parts)))
+                elif isinstance(i, uni.Token) and i.name == Tok.COMMA:
+                    body_parts.pop()
+                    body_parts.append(i.gen.doc_ir)
+                    body_parts.append(self.hard_line())
+                else:
+                    body_parts.append(i.gen.doc_ir)
+                    if not self.is_comment(i):
+                        body_parts.append(self.space())
+            else:
+                parts.append(i.gen.doc_ir)
+                if not self.is_comment(i):
+                    parts.append(self.space())
+
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_while_stmt(self, node: uni.WhileStmt) -> None:
@@ -869,13 +901,26 @@ class DocIRGenPass(UniPass):
     def exit_with_stmt(self, node: uni.WithStmt) -> None:
         """Generate DocIR for with statements."""
         parts: list[doc.DocType] = []
-        body_parts: list[doc.DocType] = [self.hard_line()]
+        body_parts: list[doc.DocType] = []
+        in_body = False
         for i in node.kid:
-            if isinstance(node.body, Sequence) and self.is_within(i, node.body):
-                if i == node.body[0]:
-                    parts.append(self.indent(self.concat(body_parts)))
+            if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+                body_parts.append(self.hard_line())
+                in_body = True
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                in_body = False
+                self.trim_trailing_line(body_parts)
+                parts.append(self.indent(self.concat(body_parts)))
+                if len(body_parts) > 0:
                     parts.append(self.hard_line())
+                else:
+                    parts.append(self.space())
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
+            elif in_body:
                 body_parts.append(i.gen.doc_ir)
+                self.trim_trailing_line(body_parts)
                 body_parts.append(self.hard_line())
             elif isinstance(i, uni.Token) and i.name == Tok.COMMA:
                 parts.pop()
@@ -885,7 +930,6 @@ class DocIRGenPass(UniPass):
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
         parts.pop()
-        body_parts.pop()
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_list_compr(self, node: uni.ListCompr) -> None:
@@ -1264,6 +1308,7 @@ class DocIRGenPass(UniPass):
                 parts.append(self.space())
             elif in_body:
                 body_parts.append(i.gen.doc_ir)
+                self.trim_trailing_line(body_parts)
                 body_parts.append(self.hard_line())
             else:
                 parts.append(i.gen.doc_ir)
@@ -1622,13 +1667,14 @@ class DocIRGenPass(UniPass):
                 in_body = True
             elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
                 in_body = False
-                if len(body_parts) and isinstance(body_parts[-1], doc.Line):
-                    body_parts.pop()
+                self.trim_trailing_line(body_parts)
                 parts.append(self.indent(self.concat(body_parts)))
                 parts.append(self.line())
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
             elif in_body:
+                if self.is_separate_comment(i):
+                    body_parts.append(self.line())
                 body_parts.append(i.gen.doc_ir)
                 if isinstance(i, uni.Token) and i.name == Tok.COMMA:
                     body_parts.append(self.line())
@@ -1805,8 +1851,8 @@ class DocIRGenPass(UniPass):
         # Inline comment (comment starts with #*)
         if node.value.startswith("#*"):
             node.gen.doc_ir = self.text(node.value)
-        # Comment at the end of a line
-        elif node.left_node and node.left_node.loc.last_line == node.loc.first_line:
+        # Comment at the end of a line (not a separate node)
+        elif self.is_inline_comment(node):
             node.gen.doc_ir = self.line_suffix(f"  {node.value}")
         # Full line comment
         else:
