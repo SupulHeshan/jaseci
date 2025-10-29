@@ -110,18 +110,6 @@ class MTIR:
                 raise RuntimeError(
                     "Streaming responses are only supported for str return types."
                 )
-            if tools:
-                raise RuntimeError(
-                    "Streaming responses are not supported with tool calls yet."
-                )
-
-        # TODO: Support mockllm for mocktesting.
-        # Invoke streaming request, this will result in a generator that the caller
-        # should either do .next() or .__iter__() by calling `for tok in resp: ...`
-        if is_streaming and tools:
-            raise RuntimeError(
-                "Streaming responses are not supported with tool calls yet."
-            )
 
         if len(tools) > 0:
             finish_tool = Tool.make_finish_tool(return_type or str)

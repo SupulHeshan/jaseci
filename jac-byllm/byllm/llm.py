@@ -20,7 +20,7 @@ from byllm.mtir import MTIR
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 from .llm_connector import LLMConnector
-from .types import CompletionResult
+from .types import CompletionResult, Message, MessageRole, ToolCall
 
 SYSTEM_PERSONA = """\
 This is a task you must complete by returning only the output.
@@ -77,15 +77,20 @@ class Model:
 
     def invoke(self, mtir: MTIR) -> object:
         """Invoke the LLM with the given caller and arguments."""
-        if mtir.stream:
+        # If streaming without tools, stream immediately
+        if mtir.stream and len(mtir.tools) == 0:
             return self._completion_streaming(mtir)
 
-        # Invoke the LLM and handle tool calls.
+        # Invoke the LLM and handle tool calls (ReAct loop).
         while True:
             resp = self._completion_no_streaming(mtir)
             if resp.tool_calls:
                 for tool_call in resp.tool_calls:
                     if tool_call.is_finish_call():
+                        # If streaming is enabled, make a new streaming call
+                        # to generate the final answer based on all context
+                        if mtir.stream:
+                            return self._stream_final_answer(mtir)
                         return tool_call.get_output()
                     else:
                         mtir.add_message(tool_call())
@@ -101,3 +106,35 @@ class Model:
     def _completion_streaming(self, mtir: MTIR) -> Generator[str, None, None]:
         """Perform a streaming completion request with the LLM."""
         return self.llm_connector.dispatch_streaming(mtir)
+
+    def _stream_final_answer(self, mtir: MTIR) -> Generator[str, None, None]:
+        """Stream the final answer after ReAct tool calls complete.
+        
+        This creates a new streaming LLM call with all the context from tool calls
+        to generate the final answer in real-time streaming mode.
+        
+        The difference from _stream_finish_output:
+        - This makes a REAL streaming API call to the LLM
+        - _stream_finish_output just splits an already-complete string
+        """
+        # Add a message instructing the LLM to provide the final answer
+        # based on all the tool call results gathered so far
+        final_instruction = Message(
+            role=MessageRole.USER,
+            content="Based on the tool calls and their results above, provide your final answer. "
+                   "Be comprehensive and synthesize all the information gathered.",
+        )
+        mtir.add_message(final_instruction)
+        
+        # Remove tools and make a streaming call to get the real-time answer
+        # We temporarily clear tools so the LLM just responds with text
+        original_tools = mtir.tools
+        mtir.tools = []
+        
+        try:
+            # Make the actual streaming call - this is REAL streaming from the LLM!
+            yield from self.llm_connector.dispatch_streaming(mtir)
+        finally:
+            # Restore tools (though we're done at this point)
+            mtir.tools = original_tools
+
