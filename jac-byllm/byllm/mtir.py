@@ -105,11 +105,10 @@ class MTIR:
         return_type = get_type_hints(caller).get("return")
         is_streaming = bool(call_params.get("stream", False))
 
-        if is_streaming:
-            if return_type is not str:
-                raise RuntimeError(
-                    "Streaming responses are only supported for str return types."
-                )
+        if is_streaming and return_type is not str:
+            raise RuntimeError(
+                "Streaming responses are only supported for str return types."
+            )
 
         if len(tools) > 0:
             finish_tool = Tool.make_finish_tool(return_type or str)
