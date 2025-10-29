@@ -109,10 +109,10 @@ class Model:
 
     def _stream_final_answer(self, mtir: MTIR) -> Generator[str, None, None]:
         """Stream the final answer after ReAct tool calls complete.
-        
+
         This creates a new streaming LLM call with all the context from tool calls
         to generate the final answer in real-time streaming mode.
-        
+
         The difference from _stream_finish_output:
         - This makes a REAL streaming API call to the LLM
         - _stream_finish_output just splits an already-complete string
@@ -122,19 +122,18 @@ class Model:
         final_instruction = Message(
             role=MessageRole.USER,
             content="Based on the tool calls and their results above, provide your final answer. "
-                   "Be comprehensive and synthesize all the information gathered.",
+            "Be comprehensive and synthesize all the information gathered.",
         )
         mtir.add_message(final_instruction)
-        
+
         # Remove tools and make a streaming call to get the real-time answer
         # We temporarily clear tools so the LLM just responds with text
         original_tools = mtir.tools
         mtir.tools = []
-        
+
         try:
             # Make the actual streaming call - this is REAL streaming from the LLM!
             yield from self.llm_connector.dispatch_streaming(mtir)
         finally:
             # Restore tools (though we're done at this point)
             mtir.tools = original_tools
-
