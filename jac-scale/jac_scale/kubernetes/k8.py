@@ -7,7 +7,7 @@ from typing import Callable
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 
-from .db import mongo_db
+from .database.mongo import mongo_db
 from .utils import check_k8_status, load_env_variables
 
 
@@ -21,6 +21,7 @@ def deploy_k8(code_folder: str) -> None:
     docker_username = os.getenv("DOCKER_USERNAME", "juzailmlwork")
     repository_name = f"{docker_username}/{image_name}"
     mongodb_enabled = os.getenv("K8_MONGODB", "false").lower() == "true"
+    # redis_enabled = os.getenv("K8_REDIS", "false").lower() == "true"
 
     # -------------------
     # Kubernetes setup
@@ -37,7 +38,7 @@ def deploy_k8(code_folder: str) -> None:
 
     if mongodb_enabled:
         mongodb_name = f"{app_name}-mongodb"
-        mongodb_port = 27017
+        # TODO: need to integrate namespace
         mongodb_service_name = f"{mongodb_name}-service"
         mongodb_deployment, mongodb_service = mongo_db(app_name, env_list)
 
@@ -159,7 +160,7 @@ def deploy_k8(code_folder: str) -> None:
     core_v1.create_namespaced_service(namespace=namespace, body=service)
 
     print(f"Deployment complete! Access Jaseci-app at http://localhost:{node_port}")
-    if mongodb_enabled:
-        print(
-            f"MongoDB accessible at '{mongodb_service_name}:{mongodb_port}' inside cluster."
-        )
+    # if mongodb_enabled:
+    #     print(
+    #         f"MongoDB accessible at '{mongodb_service_name}:{mongodb_port}' inside cluster."
+    #     )

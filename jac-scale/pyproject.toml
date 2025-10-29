@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [tool.poetry.plugins.jac]
-hello = "jac_scale.plugin:JacCmd"
+scale = "jac_scale.plugin:JacCmd"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
