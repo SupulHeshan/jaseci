@@ -9,6 +9,7 @@ from jaclang.runtimelib.machine import hookimpl
 
 from .kubernetes.docker_impl import build_and_push_docker
 from .kubernetes.k8 import deploy_k8
+from .kubernetes.utils import cleanup_k8_resources
 
 
 class JacCmd:
@@ -27,8 +28,8 @@ class JacCmd:
             build_and_push_docker(code_folder)
             deploy_k8(code_folder)
 
-        # @cmd_registry.register
-        # def destroy() -> None:
-        #     """Jac Destroys functionality."""
-        #     #TODO:Need to implement this function to delete all resources created
-        #     print("Hello, Jac learner lets stop your application!")
+        @cmd_registry.register
+        def destroy() -> None:
+            """Jac Destroys functionality."""
+            load_dotenv()
+            cleanup_k8_resources()

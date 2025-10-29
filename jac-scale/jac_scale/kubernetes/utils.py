@@ -1,4 +1,5 @@
 import os
+from typing import Callable
 
 from dotenv import dotenv_values
 
@@ -47,3 +48,56 @@ def check_k8_status() -> None:
         raise Exception(
             "Unable to connect to kubernetes APi.Check whether kubernetes cluster is up"
         )
+
+
+def delete_if_exists(
+    delete_func: Callable, name: str, namespace: str, kind: str
+) -> None:
+    """Deploy example."""
+    try:
+        delete_func(name, namespace)
+        print(f"Deleted existing {kind} '{name}'")
+    except ApiException as e:
+        if e.status == 404:
+            print(f"{kind} '{name}' not found, skipping delete.")
+        else:
+            raise
+
+
+def cleanup_k8_resources() -> None:
+    """Delete all K8s resources (deployment, service, etc.) created for the app."""
+    app_name = os.getenv("APP_NAME", "jaseci")
+    namespace = os.getenv("K8_NAMESPACE", "default")
+    config.load_kube_config()
+    apps_v1 = client.AppsV1Api()
+    core_v1 = client.CoreV1Api()
+
+    # Define names
+    deployment_name = app_name
+    service_name = f"{app_name}-service"
+
+    delete_if_exists(
+        apps_v1.delete_namespaced_deployment, deployment_name, namespace, "Deployment"
+    )
+    delete_if_exists(
+        core_v1.delete_namespaced_service, service_name, namespace, "Service"
+    )
+    mongodb_name = f"{app_name}-mongodb"
+    mongodb_service_name = f"{mongodb_name}-service"
+    redis_name = f"{app_name}-redis"
+    redis_service_name = f"{redis_name}-service"
+
+    delete_if_exists(
+        apps_v1.delete_namespaced_stateful_set, mongodb_name, namespace, "StatefulSet"
+    )
+    delete_if_exists(
+        core_v1.delete_namespaced_service, mongodb_service_name, namespace, "Service"
+    )
+    delete_if_exists(
+        apps_v1.delete_namespaced_deployment, redis_name, namespace, "Deployment"
+    )
+    delete_if_exists(
+        core_v1.delete_namespaced_service, redis_service_name, namespace, "Service"
+    )
+
+    print(f"All Kubernetes resources for '{app_name}' cleaned up successfully.")

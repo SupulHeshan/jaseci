@@ -6,12 +6,12 @@ def redis_db(app_name: str, env_vars: list) -> Tuple[dict, dict]:
     redis_port = 6379
     redis_service_name = f"{redis_name}-service"
 
-    redis_statefulset = {
+    # Redis Deployment (for caching — stateless)
+    redis_deployment = {
         "apiVersion": "apps/v1",
-        "kind": "StatefulSet",
+        "kind": "Deployment",
         "metadata": {"name": redis_name},
         "spec": {
-            "serviceName": redis_service_name,
             "replicas": 1,
             "selector": {"matchLabels": {"app": redis_name}},
             "template": {
@@ -22,32 +22,29 @@ def redis_db(app_name: str, env_vars: list) -> Tuple[dict, dict]:
                             "name": "redis",
                             "image": "redis:7.2",
                             "ports": [{"containerPort": redis_port}],
-                            "args": ["--appendonly", "yes"],
-                            "volumeMounts": [
-                                {"name": "redis-data", "mountPath": "/data"}
-                            ],
+                            "args": [
+                                "--save",
+                                "",
+                                "--appendonly",
+                                "no",
+                            ],  # disable persistence
+                            "resources": {
+                                "requests": {"cpu": "100m", "memory": "128Mi"},
+                                "limits": {"cpu": "500m", "memory": "256Mi"},
+                            },
                         }
-                    ],
+                    ]
                 },
             },
-            "volumeClaimTemplates": [
-                {
-                    "metadata": {"name": "redis-data"},
-                    "spec": {
-                        "accessModes": ["ReadWriteOnce"],
-                        "resources": {"requests": {"storage": "512Mi"}},
-                    },
-                }
-            ],
         },
     }
 
+    # Redis Service (ClusterIP by default)
     redis_service = {
         "apiVersion": "v1",
         "kind": "Service",
         "metadata": {"name": redis_service_name},
         "spec": {
-            "clusterIP": "None",
             "selector": {"app": redis_name},
             "ports": [
                 {"protocol": "TCP", "port": redis_port, "targetPort": redis_port}
@@ -55,6 +52,7 @@ def redis_db(app_name: str, env_vars: list) -> Tuple[dict, dict]:
         },
     }
 
+    # Add Redis connection string to environment
     env_vars.append(
         {
             "name": "REDIS_URL",
@@ -62,4 +60,4 @@ def redis_db(app_name: str, env_vars: list) -> Tuple[dict, dict]:
         }
     )
 
-    return redis_statefulset, redis_service
+    return redis_deployment, redis_service

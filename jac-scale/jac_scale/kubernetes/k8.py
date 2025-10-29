@@ -2,13 +2,13 @@
 
 import os
 import time
-from typing import Callable
 
 from kubernetes import client, config
 from kubernetes.client.exceptions import ApiException
 
 from .database.mongo import mongo_db
-from .utils import check_k8_status, load_env_variables
+from .database.redis import redis_db
+from .utils import check_k8_status, delete_if_exists, load_env_variables
 
 
 def deploy_k8(code_folder: str) -> None:
@@ -21,11 +21,13 @@ def deploy_k8(code_folder: str) -> None:
     docker_username = os.getenv("DOCKER_USERNAME", "juzailmlwork")
     repository_name = f"{docker_username}/{image_name}"
     mongodb_enabled = os.getenv("K8_MONGODB", "false").lower() == "true"
-    # redis_enabled = os.getenv("K8_REDIS", "false").lower() == "true"
+    redis_enabled = os.getenv("K8_REDIS", "false").lower() == "true"
 
     # -------------------
     # Kubernetes setup
     # -------------------
+
+    # Load the kubeconfig from default location (~/.kube/config)
     config.load_kube_config()
     apps_v1 = client.AppsV1Api()
     core_v1 = client.CoreV1Api()
@@ -35,12 +37,39 @@ def deploy_k8(code_folder: str) -> None:
     # -------------------
     # Define MongoDB deployment/service (if needed)
     # -------------------
+    init_containers = []
 
     if mongodb_enabled:
         mongodb_name = f"{app_name}-mongodb"
-        # TODO: need to integrate namespace
         mongodb_service_name = f"{mongodb_name}-service"
         mongodb_deployment, mongodb_service = mongo_db(app_name, env_list)
+        init_containers.append(
+            {
+                "name": "wait-for-mongodb",
+                "image": "busybox",
+                "command": [
+                    "sh",
+                    "-c",
+                    f"until nc -z {app_name}-mongodb-service 27017; do echo waiting for mongodb; sleep 3; done",
+                ],
+            }
+        )
+
+    if redis_enabled:
+        redis_name = f"{app_name}-redis"
+        redis_service_name = f"{redis_name}-service"
+        redis_deployment, redis_service = redis_db(app_name, env_list)
+        init_containers.append(
+            {
+                "name": "wait-for-redis",
+                "image": "busybox",
+                "command": [
+                    "sh",
+                    "-c",
+                    f"until nc -z {app_name}-redis-service 6379; do echo waiting for redis; sleep 3; done",
+                ],
+            }
+        )
 
     deployment = {
         "apiVersion": "apps/v1",
@@ -52,6 +81,7 @@ def deploy_k8(code_folder: str) -> None:
             "template": {
                 "metadata": {"labels": {"app": app_name}},
                 "spec": {
+                    "initContainers": init_containers,
                     "containers": [
                         {
                             "name": app_name,
@@ -87,22 +117,6 @@ def deploy_k8(code_folder: str) -> None:
     }
 
     # -------------------
-    # Helper to delete existing resources safely
-    # -------------------
-    def delete_if_exists(
-        delete_func: Callable, name: str, namespace: str, kind: str
-    ) -> None:
-        """Deploy example."""
-        try:
-            delete_func(name, namespace)
-            print(f"Deleted existing {kind} '{name}'")
-        except ApiException as e:
-            if e.status == 404:
-                print(f"{kind} '{name}' not found, skipping delete.")
-            else:
-                raise
-
-    # -------------------
     # Cleanup old resources
     # -------------------
     delete_if_exists(
@@ -114,53 +128,91 @@ def deploy_k8(code_folder: str) -> None:
     time.sleep(5)
 
     # -------------------
-    # Deploy resources
+    # Deploy MongoDB (if enabled)
     # -------------------
     if mongodb_enabled:
-        print("Deploying MongoDB...")
+        print("Checking MongoDB status...")
 
-    # Check if StatefulSet already exists
-    try:
-        apps_v1.read_namespaced_stateful_set(name=mongodb_name, namespace=namespace)
-        print(
-            f"MongoDB StatefulSet '{mongodb_name}' already exists, skipping creation."
-        )
-    except ApiException as e:
-        if e.status == 404:
+        try:
+            apps_v1.read_namespaced_stateful_set(name=mongodb_name, namespace=namespace)
             print(
-                f"MongoDB StatefulSet '{mongodb_name}' not found. Creating new one..."
+                f"MongoDB StatefulSet '{mongodb_name}' already exists, skipping creation."
             )
-            apps_v1.create_namespaced_stateful_set(
-                namespace=namespace, body=mongodb_deployment
-            )
-            print(f"MongoDB StatefulSet '{mongodb_name}' created.")
-        else:
-            raise
+        except ApiException as e:
+            if e.status == 404:
+                print(
+                    f"MongoDB StatefulSet '{mongodb_name}' not found. Creating new one..."
+                )
+                apps_v1.create_namespaced_stateful_set(
+                    namespace=namespace, body=mongodb_deployment
+                )
+                print(f"MongoDB StatefulSet '{mongodb_name}' created.")
+            else:
+                raise
 
-    # Check if Service already exists
-    try:
-        core_v1.read_namespaced_service(name=mongodb_service_name, namespace=namespace)
-        print(
-            f"MongoDB Service '{mongodb_service_name}' already exists, skipping creation."
-        )
-    except ApiException as e:
-        if e.status == 404:
+        try:
+            core_v1.read_namespaced_service(
+                name=mongodb_service_name, namespace=namespace
+            )
             print(
-                f"MongoDB Service '{mongodb_service_name}' not found. Creating new one..."
+                f"MongoDB Service '{mongodb_service_name}' already exists, skipping creation."
             )
-            core_v1.create_namespaced_service(namespace=namespace, body=mongodb_service)
-            print(f"MongoDB Service '{mongodb_service_name}' created.")
-        else:
-            raise
+        except ApiException as e:
+            if e.status == 404:
+                print(
+                    f"MongoDB Service '{mongodb_service_name}' not found. Creating new one..."
+                )
+                core_v1.create_namespaced_service(
+                    namespace=namespace, body=mongodb_service
+                )
+                print(f"MongoDB Service '{mongodb_service_name}' created.")
+            else:
+                raise
 
-    print(f"MongoDB deployed and ready (service: '{mongodb_service_name}')")
+        print(f"MongoDB deployed and ready (service: '{mongodb_service_name}')")
+
+    # -------------------
+    # Deploy Redis (if enabled)
+    # -------------------
+    if redis_enabled:
+        print("Checking Redis status...")
+
+        try:
+            apps_v1.read_namespaced_deployment(name=redis_name, namespace=namespace)
+            print(f"Redis Deployment '{redis_name}' already exists, skipping creation.")
+        except ApiException as e:
+            if e.status == 404:
+                print(f"Redis Deployment '{redis_name}' not found. Creating new one...")
+                apps_v1.create_namespaced_deployment(
+                    namespace=namespace, body=redis_deployment
+                )
+                print(f"Redis Deployment '{redis_name}' created.")
+            else:
+                raise
+
+        try:
+            core_v1.read_namespaced_service(
+                name=redis_service_name, namespace=namespace
+            )
+            print(
+                f"Redis Service '{redis_service_name}' already exists, skipping creation."
+            )
+        except ApiException as e:
+            if e.status == 404:
+                print(
+                    f"Redis Service '{redis_service_name}' not found. Creating new one..."
+                )
+                core_v1.create_namespaced_service(
+                    namespace=namespace, body=redis_service
+                )
+                print(f"Redis Service '{redis_service_name}' created.")
+            else:
+                raise
+
+        print(f"Redis deployed and ready (service: '{redis_service_name}')")
 
     print("Deploying Jaseci-app app...")
     apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
     core_v1.create_namespaced_service(namespace=namespace, body=service)
 
     print(f"Deployment complete! Access Jaseci-app at http://localhost:{node_port}")
-    # if mongodb_enabled:
-    #     print(
-    #         f"MongoDB accessible at '{mongodb_service_name}:{mongodb_port}' inside cluster."
-    #     )
