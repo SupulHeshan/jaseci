@@ -186,6 +186,20 @@ class JacParser(Transform[uni.Source, uni.Module]):
                 self.log_error(f"Missing {tk.name}", self.error_to_token(e))
                 return feed_current_token(iparser, e.token)
 
+            # AFAIK there is no direct way to check if we're at the top level
+            # However the special token $END is only accepted at the top-level.
+            # And the value is hardcoded throughout the lark codebase.
+            is_at_the_top_level = "$END" in iparser.accepts()
+
+            # If users write a statement at the top-level without `with entry` we need
+            # to report a meaningful error stating that the it's not allowed.
+            if is_at_the_top_level:
+                self.log_error(
+                    "Top-level statements must be inside a 'with entry' block",
+                    self.error_to_token(e),
+                )
+                return False
+
             # Ignore unexpected tokens and continue parsing till we reach a known state.
             self.log_error(
                 f"Unexpected token '{e.token.value}'", self.error_to_token(e)
