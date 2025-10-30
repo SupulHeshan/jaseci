@@ -1,5 +1,5 @@
 [project]
-name = "jac-scale"
+name = "jac-deploy"
 version = "0.1.0"
 description = ""
 authors = [
@@ -7,13 +7,16 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.12,<4.0.0"
-packages = [{include = "jac_scale"}]
+packages = [{include = "jac_deploy"}]
 dependencies = [
-    "jaclang (>=0.8.10,<0.9.0)"
+    "jaclang (>=0.8.10,<0.9.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "docker (>=7.1.0,<8.0.0)",
+    "kubernetes (>=34.1.0,<35.0.0)"
 ]
 
 [tool.poetry.plugins.jac]
-scale = "jac_scale.plugin:JacCmd"
+deploy = "jac_deploy.plugin:JacCmd"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

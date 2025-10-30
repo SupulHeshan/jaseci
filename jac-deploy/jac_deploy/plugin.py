@@ -21,7 +21,7 @@ class JacCmd:
         """Create Jac CLI cmds."""
 
         @cmd_registry.register
-        def scale() -> None:
+        def deploy() -> None:
             """Jac Scale functionality."""
             load_dotenv()
             code_folder = os.getenv("CODE_FOLDER", os.getcwd())
