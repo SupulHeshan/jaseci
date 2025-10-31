@@ -10,6 +10,7 @@ For information about changes that might require updates to your existing code, 
 #### [Jac-Cloud](jac-cloud.md)
 #### [byLLM](byllm.md)
 #### [Jac-Client](jac-client.md)
+#### [Jac-Scale](jac-scale.md)
 
 ## Latest Stable Versions
 
