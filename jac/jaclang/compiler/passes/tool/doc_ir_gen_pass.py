@@ -22,29 +22,39 @@ class DocIRGenPass(UniPass):
         """Create a space node."""
         return doc.Text(" ")
 
-    def line(self, hard: bool = False, literal: bool = False) -> doc.Line:
-        """Create a Line node."""
-        return doc.Line(hard, literal)
+    def line(self) -> doc.Line:
+        """Create a Line node.
+        
+        Regular Line() - becomes a space when flat, newline when broken.
+        -> Flat: " "
+        -> Broken: "\n"
+        """
+        return doc.Line()
 
     def hard_line(self) -> doc.Line:
-        """Create a hard line break."""
+        """Create a hard line break.
+        
+        Always becomes a newline, even when flat.
+        -> Flat: "\n"
+        -> Broken: "\n"
+        """
         return doc.Line(hard=True)
 
     def tight_line(self) -> doc.Line:
-        """Create a tight line break."""
+        """Create a tight line break.
+        
+        Becomes nothing when flat, newline when broken.
+        -> Flat: ""
+        -> Broken: "\n"
+        """
         return doc.Line(tight=True)
-
-    def literal_line(self) -> doc.Line:
-        """Create a literal line break."""
-        return doc.Line(literal=True)
 
     def group(
         self,
         contents: doc.DocType,
-        break_contiguous: bool = False,
     ) -> doc.Group:
         """Create a Group node."""
-        return doc.Group(contents, break_contiguous)
+        return doc.Group(contents)
 
     def indent(self, contents: doc.DocType) -> doc.Indent:
         """Create an Indent node."""

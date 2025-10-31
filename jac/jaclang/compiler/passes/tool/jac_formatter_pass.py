@@ -33,7 +33,7 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
 
         returns True if `node` could be printed *flat* on the current line within
         `width_remaining` columns at `indent_level`.
-        Stops early on overflow or hard/literal lines.
+        Stops early on overflow or hard lines.
         """
         # Worklist holds (node, indent_level). We only ever push FLAT in a probe.
         work: Deque[Tuple[object, int]] = deque()
@@ -55,8 +55,8 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
                     return False
 
             elif isinstance(cur, doc.Line):
-                if cur.hard or cur.literal:
-                    # Any *real* newline (hard or literal) in FLAT means "doesn't fit"
+                if cur.hard:
+                    # Any *real* newline (hard) in FLAT means "doesn't fit"
                     return False
                 if cur.tight:
                     # tight softline disappears in flat mode
@@ -122,8 +122,6 @@ class JacFormatPass(Transform[uni.Module, uni.Module]):
         elif isinstance(doc_node, doc.Line):
             if is_broken or doc_node.hard:
                 return "\n" + " " * (indent_level * self.indent_size)
-            elif doc_node.literal:  # literal soft line
-                return "\n"
             elif doc_node.tight:
                 return ""
             else:  # soft line, not broken
