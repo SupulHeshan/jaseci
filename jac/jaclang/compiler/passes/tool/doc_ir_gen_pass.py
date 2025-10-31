@@ -3,12 +3,15 @@
 This is a pass for generating DocIr for Jac code.
 """
 
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple, TypeVar
 
 import jaclang.compiler.passes.tool.doc_ir as doc
 import jaclang.compiler.unitree as uni
 from jaclang.compiler.constant import Tokens as Tok
 from jaclang.compiler.passes import UniPass
+
+
+T = TypeVar("T", bound=uni.UniNode)
 
 
 class DocIRGenPass(UniPass):
@@ -136,6 +139,100 @@ class DocIRGenPass(UniPass):
                     continue
 
             break
+
+    def _find_body_span(
+        self,
+        kids: List[T],
+        start_terminal: uni.Tok,
+        end_terminal: uni.Tok,
+    ) -> Tuple[int, int]:
+        start_idx = None
+        for i, k in enumerate(kids):
+            if not isinstance(k, uni.Token):
+                continue
+            if k.name == start_terminal:
+                if start_idx is None:
+                    start_idx = i
+            elif k.name == end_terminal and start_idx is not None:
+                return start_idx, i
+
+        raise ValueError("Missing or unbalanced start/end terminals in node children.")
+
+    def format_body(
+        self,
+        kids: List[uni.UniNode],
+        start_terminal: uni.Tok = Tok.LBRACE,
+        end_terminal: uni.Tok = Tok.RBRACE,
+    ) -> List[doc.DocType]:
+        """
+        Build DocIR for the body between the given terminals, preserving blank lines.
+        A **gap of >= 1 blank line** in source is detected via line numbers (first_line/last_line).
+        """
+        start_idx, end_idx = self._find_body_span(kids, start_terminal, end_terminal)
+        body_stmts = kids[start_idx + 1 : end_idx]
+
+        if not body_stmts:
+            return []
+
+        parts: List[doc.DocType] = [self.hard_line()]
+        last_line_no = body_stmts[0].loc.last_line
+
+        for stmt in body_stmts:
+            if stmt.loc.first_line - last_line_no > 1:
+                parts.append(self.hard_line())
+
+            parts.append(stmt.gen.doc_ir)
+            parts.append(self.hard_line())
+            last_line_no = stmt.loc.last_line
+
+        self.trim_trailing_line(parts)
+        return parts
+
+    def format_arg_list(
+        self,
+        kids: List[uni.UniNode],
+        start_terminal: uni.Tok = Tok.LPAREN,
+        end_terminal: uni.Tok = Tok.RPAREN,
+    ) -> List[doc.DocType]:
+
+        start_idx, end_idx = self._find_body_span(kids, start_terminal, end_terminal)
+        body_parts = kids[start_idx + 1 : end_idx]
+
+        if not body_parts:
+            return []
+
+        parts: List[doc.DocType] = [self.tight_line()]
+
+        for element in body_parts:
+            parts.append(element.gen.doc_ir)
+
+            if isinstance(element, uni.Token) and element.name == Tok.COMMA:
+                parts.append(self.line())
+            elif isinstance(element, uni.Token) and element.name == Tok.KW_BY:
+                parts.append(self.space())
+        return parts
+
+    def filter_body(
+        self,
+        kids: List[T],
+        start_terminal: uni.Tok = Tok.LBRACE,
+        end_terminal: uni.Tok = Tok.RBRACE,
+        optional_body: bool = False,
+    ) -> List[T]:
+        """
+        Return a copy of `kids` with the **body slice removed** (i.e., keep everything
+        up to and including the start terminal, and from the end terminal onward).
+        """
+        try:
+            start_idx, end_idx = self._find_body_span(
+                kids, start_terminal, end_terminal
+            )
+        except Exception as e:
+            if optional_body:
+                return kids
+            else:
+                raise e
+        return [x for i, x in enumerate(kids) if not (start_idx < i < end_idx)]
 
     def exit_module(self, node: uni.Module) -> None:
         """Exit module."""
@@ -351,46 +448,19 @@ class DocIRGenPass(UniPass):
     def exit_func_signature(self, node: uni.FuncSignature) -> None:
         """Generate DocIR for function signatures."""
         parts: list[doc.DocType] = []
-        indent_parts: list[doc.DocType] = []
-        in_params = False
-        has_parens = False
-        for i in node.kid:
-            if isinstance(i, uni.Token) and i.name == Tok.LPAREN and node.params:
-                in_params = True
+        for i in self.filter_body(node.kid, Tok.LPAREN, Tok.RPAREN, optional_body=True):
+            if isinstance(i, uni.Token) and i.name == Tok.LPAREN:
                 parts.append(i.gen.doc_ir)
-            elif isinstance(i, uni.Token) and i.name == Tok.RPAREN and node.params:
-                in_params = False
-                has_parens = True
-                if isinstance(indent_parts[-1], doc.Line):
-                    indent_parts.pop()
-                parts.append(
-                    self.indent(
-                        self.concat(
-                            [
-                                self.tight_line(),
-                                self.group(self.concat([*indent_parts])),
-                            ]
-                        )
-                    )
-                )
+            elif isinstance(i, uni.Token) and i.name == Tok.RPAREN:
+                parts.append(self.indent(self.concat(self.format_arg_list(node.kid))))
                 parts.append(self.tight_line())
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
-            elif isinstance(i, uni.Token) and i.name == Tok.RPAREN:
-                parts.pop()
-                parts.append(i.gen.doc_ir)
-                parts.append(self.space())
-            elif in_params:
-                if isinstance(i, uni.Token) and i.name == Tok.COMMA:
-                    indent_parts.append(i.gen.doc_ir)
-                    indent_parts.append(self.line())
-                else:
-                    indent_parts.append(i.gen.doc_ir)
             else:
                 if (
                     isinstance(i, uni.Token)
                     and i.name == Tok.RETURN_HINT
-                    and not has_parens
+                    and not len(node.params)
                 ):
                     parts.append(self.space())
                 parts.append(i.gen.doc_ir)
@@ -587,39 +657,16 @@ class DocIRGenPass(UniPass):
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Generate DocIR for function calls."""
         parts: list[doc.DocType] = []
-        indent_parts: list[doc.DocType] = []
-        in_params = False
-        for i in node.kid:
+        for i in self.filter_body(node.kid, Tok.LPAREN, Tok.RPAREN):
             if isinstance(i, uni.Token) and i.name == Tok.LPAREN and node.params:
-                in_params = True
                 parts.append(i.gen.doc_ir)
             elif isinstance(i, uni.Token) and i.name == Tok.RPAREN and node.params:
-                in_params = False
-
-                if isinstance(indent_parts[-1], doc.Line):
-                    indent_parts.pop()
-                parts.append(
-                    self.indent(
-                        self.concat(
-                            [
-                                self.tight_line(),
-                                self.group(self.concat([*indent_parts])),
-                            ]
-                        )
-                    )
-                )
+                parts.append(self.indent(self.concat(self.format_arg_list(node.kid))))
                 parts.append(self.tight_line())
                 parts.append(i.gen.doc_ir)
-            elif in_params:
-                if isinstance(i, uni.Token) and i.name == Tok.COMMA:
-                    indent_parts.append(i.gen.doc_ir)
-                    indent_parts.append(self.line())
-                else:
-                    indent_parts.append(i.gen.doc_ir)
             else:
                 parts.append(i.gen.doc_ir)
-                if isinstance(i, uni.Token) and i.name == Tok.KW_BY:
-                    parts.append(self.space())
+
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_atom_trailer(self, node: uni.AtomTrailer) -> None:
@@ -632,38 +679,39 @@ class DocIRGenPass(UniPass):
     def exit_list_val(self, node: uni.ListVal) -> None:
         """Generate DocIR for list values."""
         parts: list[doc.DocType] = []
-        for i in node.kid:
-            if isinstance(i, uni.Token) and i.name == Tok.COMMA:
+        for i in self.filter_body(node.kid, Tok.LSQUARE, Tok.RSQUARE):
+            if isinstance(i, uni.Token) and i.name == Tok.LSQUARE:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RSQUARE:
+                parts.append(
+                    self.indent(
+                        self.concat(
+                            self.format_arg_list(node.kid, Tok.LSQUARE, Tok.RSQUARE)
+                        )
+                    )
+                )
+                parts.append(self.tight_line())
+                parts.append(i.gen.doc_ir)
+            else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
-            else:
-                parts.append(i.gen.doc_ir)
-        not_broke = self.concat(parts)
-        parts = []
-        for i in node.kid:
-            if isinstance(i, uni.Token) and i.name == Tok.COMMA:
-                parts.append(i.gen.doc_ir)
-                parts.append(self.hard_line())
-            else:
-                parts.append(i.gen.doc_ir)
-        broke = self.concat(
-            [
-                parts[0],
-                self.indent(self.concat([self.hard_line(), *parts[1:-1]])),
-                self.hard_line(),
-                parts[-1],
-            ]
-        )
-        node.gen.doc_ir = self.group(self.if_break(broke, not_broke))
+        node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_dict_val(self, node: uni.DictVal) -> None:
         """Generate DocIR for dictionary values."""
         parts: list[doc.DocType] = []
-        for i in node.kid:
+        for i in self.filter_body(node.kid, Tok.LBRACE, Tok.RBRACE):
             if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
-                parts.append(self.tight_line())
                 parts.append(i.gen.doc_ir)
             elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(
+                    self.indent(
+                        self.concat(
+                            self.format_arg_list(node.kid, Tok.LBRACE, Tok.RBRACE)
+                        )
+                    )
+                )
+                parts.append(self.tight_line())
                 parts.append(i.gen.doc_ir)
             else:
                 parts.append(i.gen.doc_ir)
@@ -717,19 +765,18 @@ class DocIRGenPass(UniPass):
     def exit_while_stmt(self, node: uni.WhileStmt) -> None:
         """Generate DocIR for while statements."""
         parts: list[doc.DocType] = []
-        body_parts: list[doc.DocType] = [self.hard_line()]
-        for i in node.kid:
-            if isinstance(node.body, Sequence) and self.is_within(i, node.body):
-                if i == node.body[0]:
-                    parts.append(self.indent(self.concat(body_parts)))
-                    parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
-                body_parts.append(self.hard_line())
+        for i in self.filter_body(node.kid):
+            if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(self.indent(self.concat(self.format_body(node.kid))))
+                parts.append(self.line())
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
         parts.pop()
-        body_parts.pop()
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_in_for_stmt(self, node: uni.InForStmt) -> None:
@@ -771,83 +818,74 @@ class DocIRGenPass(UniPass):
     def exit_try_stmt(self, node: uni.TryStmt) -> None:
         """Generate DocIR for try statements."""
         parts: list[doc.DocType] = []
-        body_parts: list[doc.DocType] = [self.hard_line()]
-        for i in node.kid:
-            if isinstance(node.body, Sequence) and self.is_within(i, node.body):
-                if i == node.body[0]:
-                    parts.append(self.indent(self.concat(body_parts)))
-                    parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
-                body_parts.append(self.hard_line())
+        for i in self.filter_body(node.kid):
+            if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(self.indent(self.concat(self.format_body(node.kid))))
+                parts.append(self.line())
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
         parts.pop()
-        body_parts.pop()
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_except(self, node: uni.Except) -> None:
         """Generate DocIR for except clauses."""
         parts: list[doc.DocType] = []
-        body_parts: list[doc.DocType] = [self.hard_line()]
-        for i in node.kid:
-            if isinstance(node.body, Sequence) and self.is_within(i, node.body):
-                if i == node.body[0]:
-                    parts.append(self.indent(self.concat(body_parts)))
-                    parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
-                body_parts.append(self.hard_line())
+        for i in self.filter_body(node.kid):
+            if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(self.indent(self.concat(self.format_body(node.kid))))
+                parts.append(self.line())
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
         parts.pop()
-        body_parts.pop()
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_finally_stmt(self, node: uni.FinallyStmt) -> None:
         """Generate DocIR for finally statements."""
         parts: list[doc.DocType] = []
-        body_parts: list[doc.DocType] = [self.hard_line()]
-        for i in node.kid:
-            if isinstance(node.body, Sequence) and self.is_within(i, node.body):
-                if i == node.body[0]:
-                    parts.append(self.indent(self.concat(body_parts)))
-                    parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
-                body_parts.append(self.hard_line())
+        for i in self.filter_body(node.kid):
+            if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(self.indent(self.concat(self.format_body(node.kid))))
+                parts.append(self.line())
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
         parts.pop()
-        body_parts.pop()
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_tuple_val(self, node: uni.TupleVal) -> None:
         """Generate DocIR for tuple values."""
         parts: list[doc.DocType] = []
-        for i in node.kid:
-            if isinstance(i, uni.Token) and i.name == Tok.COMMA:
+        for i in self.filter_body(node.kid, Tok.LPAREN, Tok.RPAREN):
+            if isinstance(i, uni.Token) and i.name == Tok.LPAREN:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RPAREN:
+                parts.append(
+                    self.indent(
+                        self.concat(
+                            self.format_arg_list(node.kid, Tok.LPAREN, Tok.RPAREN)
+                        )
+                    )
+                )
+                parts.append(self.tight_line())
+                parts.append(i.gen.doc_ir)
+            else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
-            else:
-                parts.append(i.gen.doc_ir)
-        not_broke = self.concat(parts)
-        parts = []
-        for i in node.kid:
-            if isinstance(i, uni.Token) and i.name == Tok.COMMA:
-                parts.append(i.gen.doc_ir)
-                parts.append(self.hard_line())
-            else:
-                parts.append(i.gen.doc_ir)
-        broke = self.concat(
-            [
-                parts[0],
-                self.indent(self.concat([self.hard_line(), *parts[1:-1]])),
-                self.hard_line(),
-                parts[-1],
-            ]
-        )
-        node.gen.doc_ir = self.group(self.if_break(broke, not_broke))
+        node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_multi_string(self, node: uni.MultiString) -> None:
         """Generate DocIR for multiline strings."""
@@ -859,22 +897,35 @@ class DocIRGenPass(UniPass):
     def exit_set_val(self, node: uni.SetVal) -> None:
         """Generate DocIR for set values."""
         parts: list[doc.DocType] = []
-        for i in node.kid:
-            parts.append(i.gen.doc_ir)
-
+        for i in self.filter_body(node.kid, Tok.LBRACE, Tok.RBRACE):
+            if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(
+                    self.indent(
+                        self.concat(
+                            self.format_arg_list(node.kid, Tok.LBRACE, Tok.RBRACE)
+                        )
+                    )
+                )
+                parts.append(self.tight_line())
+                parts.append(i.gen.doc_ir)
+            else:
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_with_stmt(self, node: uni.WithStmt) -> None:
         """Generate DocIR for with statements."""
         parts: list[doc.DocType] = []
-        body_parts: list[doc.DocType] = [self.hard_line()]
-        for i in node.kid:
-            if isinstance(node.body, Sequence) and self.is_within(i, node.body):
-                if i == node.body[0]:
-                    parts.append(self.indent(self.concat(body_parts)))
-                    parts.append(self.hard_line())
-                body_parts.append(i.gen.doc_ir)
-                body_parts.append(self.hard_line())
+        for i in self.filter_body(node.kid):
+            if isinstance(i, uni.Token) and i.name == Tok.LBRACE:
+                parts.append(i.gen.doc_ir)
+            elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
+                parts.append(self.indent(self.concat(self.format_body(node.kid))))
+                parts.append(self.line())
+                parts.append(i.gen.doc_ir)
+                parts.append(self.space())
             elif isinstance(i, uni.Token) and i.name == Tok.COMMA:
                 parts.pop()
                 parts.append(i.gen.doc_ir)
@@ -883,7 +934,6 @@ class DocIRGenPass(UniPass):
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
         parts.pop()
-        body_parts.pop()
         node.gen.doc_ir = self.group(self.concat(parts))
 
     def exit_list_compr(self, node: uni.ListCompr) -> None:
@@ -1239,10 +1289,9 @@ class DocIRGenPass(UniPass):
     def exit_module_code(self, node: uni.ModuleCode) -> None:
         """Generate DocIR for module code."""
         parts: list[doc.DocType] = []
-        body_parts: list[doc.DocType] = []
+        body_parts: list[doc.DocType] = self.format_body(node.kid)
         has_comment: Optional[doc.DocType] = None
-        in_body = False
-        for i in node.kid:
+        for i in self.filter_body(node.kid):
             if node.doc and i is node.doc:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.hard_line())
@@ -1258,21 +1307,10 @@ class DocIRGenPass(UniPass):
                 has_comment = i.gen.doc_ir
             elif isinstance(i, uni.Token) and i.name == Tok.LBRACE:
                 parts.append(i.gen.doc_ir)
-                body_parts.append(self.hard_line())
-                in_body = True
             elif isinstance(i, uni.Token) and i.name == Tok.RBRACE:
-                in_body = False
-                self.trim_trailing_line(body_parts)
                 parts.append(self.indent(self.concat(body_parts)))
-                if len(body_parts):
-                    parts.append(self.hard_line())
-                else:
-                    parts.append(self.line())
+                parts.append(self.line())
                 parts.append(i.gen.doc_ir)
-                parts.append(self.space())
-            elif in_body:
-                body_parts.append(i.gen.doc_ir)
-                body_parts.append(self.hard_line())
             else:
                 parts.append(i.gen.doc_ir)
                 parts.append(self.space())
