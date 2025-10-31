@@ -42,6 +42,7 @@ from jaclang.runtimelib.archetype import (
     ObjectSpatialPath,
     Root as _Root,
 )
+from jaclang.runtimelib.client_bundle import ClientBundle, ClientBundleBuilder
 from jaclang.runtimelib.constructs import (
     AccessLevel,
     Anchor,
@@ -117,10 +118,6 @@ class ExecutionContext:
     def get_root(self) -> Root:
         """Get current root."""
         return cast(Root, self.root_state.archetype)
-
-    def global_system_root(self) -> NodeAnchor:
-        """Get global system root."""
-        return self.system_root
 
 
 class JacAccessValidation:
@@ -1450,6 +1447,24 @@ class JacBasics:
         return func
 
 
+class JacClientBundle:
+    """Jac Client Bundle Operations - Generic interface for client bundling."""
+
+    @staticmethod
+    def get_client_bundle_builder() -> ClientBundleBuilder:
+        """Get the client bundle builder instance."""
+        return ClientBundleBuilder()
+
+    @staticmethod
+    def build_client_bundle(
+        module: types.ModuleType,
+        force: bool = False,
+    ) -> ClientBundle:
+        """Build a client bundle for the supplied module."""
+        builder = JacMachineInterface.get_client_bundle_builder()
+        return builder.build(module, force=force)
+
+
 class JacByLLM:
     """Jac byLLM integration."""
 
@@ -1736,6 +1751,7 @@ class JacMachineInterface(
     JacBuiltin,
     JacCmd,
     JacBasics,
+    JacClientBundle,
     JacByLLM,
     JacUtils,
 ):
