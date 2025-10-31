@@ -212,6 +212,7 @@ class DocIRGenPass(UniPass):
                 parts.append(self.line())
             elif isinstance(element, uni.Token) and element.name == Tok.KW_BY:
                 parts.append(self.space())
+        self.trim_trailing_line(parts)
         return parts
 
     def filter_body(
@@ -426,7 +427,7 @@ class DocIRGenPass(UniPass):
                 parts.append(i.gen.doc_ir)
             else:
                 parts.append(i.gen.doc_ir)
-                if not (isinstance(i, uni.Token) and i.value == Tok.DECOR_OP):
+                if not (isinstance(i, uni.Token) and i.name == Tok.DECOR_OP):
                     parts.append(self.space())
         node.gen.doc_ir = self.group(self.concat(parts))
         if has_comment:
@@ -625,7 +626,7 @@ class DocIRGenPass(UniPass):
     def exit_func_call(self, node: uni.FuncCall) -> None:
         """Generate DocIR for function calls."""
         parts: list[doc.DocType] = []
-        for i in self.filter_body(node.kid, Tok.LPAREN, Tok.RPAREN):
+        for i in self.filter_body(node.kid, Tok.LPAREN, Tok.RPAREN, optional_body=True):
             if isinstance(i, uni.Token) and i.name == Tok.LPAREN and node.params:
                 parts.append(i.gen.doc_ir)
             elif isinstance(i, uni.Token) and i.name == Tok.RPAREN and node.params:
