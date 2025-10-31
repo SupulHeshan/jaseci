@@ -1,5 +1,5 @@
 [project]
-name = "jac-deploy"
+name = "jac-scale"
 version = "0.1.0"
 description = ""
 authors = [
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [tool.poetry.plugins.jac]
-deploy = "jac_deploy.plugin:JacCmd"
+scale = "jac_scale.plugin:JacCmd"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
