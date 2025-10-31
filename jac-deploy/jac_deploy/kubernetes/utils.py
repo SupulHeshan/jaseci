@@ -101,3 +101,31 @@ def cleanup_k8_resources() -> None:
     )
 
     print(f"All Kubernetes resources for '{app_name}' cleaned up successfully.")
+
+
+def ensure_namespace_exists(namespace: str) -> None:
+    """
+    Ensure that a given namespace exists in the Kubernetes cluster.
+    If it doesn't exist and is not 'default', it will be created.
+    """
+    if namespace == "default":
+        return  # No need to create the default namespace
+
+    try:
+        config.load_kube_config()
+        core_v1 = client.CoreV1Api()
+        core_v1.read_namespace(name=namespace)
+        print(f"Namespace '{namespace}' already exists.")
+    except ApiException as e:
+        if e.status == 404:
+            print(f"Namespace '{namespace}' not found. Creating it...")
+            core_v1.create_namespace(
+                body={
+                    "apiVersion": "v1",
+                    "kind": "Namespace",
+                    "metadata": {"name": namespace},
+                }
+            )
+            print(f"Namespace '{namespace}' created successfully.")
+        else:
+            raise

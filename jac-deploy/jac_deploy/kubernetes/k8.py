@@ -8,7 +8,12 @@ from kubernetes.client.exceptions import ApiException
 
 from .database.mongo import mongo_db
 from .database.redis import redis_db
-from .utils import check_k8_status, delete_if_exists, load_env_variables
+from .utils import (
+    check_k8_status,
+    delete_if_exists,
+    ensure_namespace_exists,
+    load_env_variables,
+)
 
 
 def deploy_k8(code_folder: str) -> None:
@@ -33,6 +38,7 @@ def deploy_k8(code_folder: str) -> None:
     core_v1 = client.CoreV1Api()
 
     check_k8_status()
+    ensure_namespace_exists(namespace)
     env_list = load_env_variables(code_folder)
     # -------------------
     # Define MongoDB deployment/service (if needed)
