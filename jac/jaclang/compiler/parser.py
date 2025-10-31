@@ -2277,7 +2277,7 @@ class JacParser(Transform[uni.Source, uni.Module]):
                     expr = index.values[0]
                     kid = self.cur_nodes
                 else:
-                    expr = uni.ListVal(values=index.values, kid=index.kid)
+                    expr = uni.TupleVal(values=index.values, kid=index.kid)
                     kid = [expr]
                 return uni.IndexSlice(
                     slices=[uni.IndexSlice.Slice(start=expr, stop=None, step=None)],
