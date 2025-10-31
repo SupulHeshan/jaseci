@@ -30,8 +30,8 @@ jobs:
           pip install -e jac-deploy
           pip install pytest
 
-      - name: Install Docker (needed for Kind)
-        uses: docker/setup-docker@v2
+      # - name: Install Docker (needed for Kind)
+      #   uses: docker/setup-docker@v2
 
       - name: Install Kind (Kubernetes in Docker)
         run: |
