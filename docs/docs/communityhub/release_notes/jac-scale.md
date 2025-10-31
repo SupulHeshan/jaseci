@@ -8,18 +8,16 @@ This document provides a summary of new features, improvements, and bug fixes in
 
 First release of **Jac-Scale** - a scalable runtime framework for distributed Jac applications.
 
-### New Features
+### Key Features
 
-- Distributed runtime system for running Jac applications across multiple nodes
-- Built-in load balancing and service discovery
-- Distributed walker execution with intelligent scheduling
-- Distributed graph storage with automatic partitioning
-- Performance metrics and health monitoring
-- YAML-based cluster configuration
-- Auto-scaling support based on load metrics
+- Distributed runtime with load balancing and service discovery
+- Intelligent walker scheduling across multiple nodes
+- Auto-partitioned graph storage
+- Performance monitoring and auto-scaling
+- YAML-based configuration
 
 ### Installation
 
 ```bash
-pip install jac-scale==0.1.0
+pip install jac-scale
 ```
