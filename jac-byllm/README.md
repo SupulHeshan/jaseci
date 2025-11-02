@@ -114,7 +114,7 @@ with entry {
 }
 ```
 <div align="center">
-  <video width="600" style="max-width: 100%;" controls>
+  <video style="max-width: 100%;" controls>
     <source src="/home/heshan0926/jaseci/jaseci/docs/docs/assets/Workflow.mp4" type="video/mp4">
     Your browser does not support the video tag.
   </video>
