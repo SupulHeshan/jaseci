@@ -98,6 +98,31 @@ byLLM is built using the underline priciple of Meaning Typed Programming and we 
 
 **📚 Full Documentation**: [Jac byLLM Documentation](https://www.jac-lang.org/learn/jac-byllm/with_llm/)
 
+**Workflow**
+
+Simple example to understand the byLLM workflow
+```python
+import from byllm.llm { Model }
+
+glob llm = Model(model_name = "gemini/gemini-2.5-flash", temperature=0.7);
+
+def translate_to(language: str, phrase: str) -> str by llm();
+
+with entry {
+    output = translate_to(language="Welsh", phrase="Hello world");
+    print(output);
+}
+```
+<div align="center">
+  <video width="600" style="max-width: 100%;" controls>
+    <source src="/home/heshan0926/jaseci/jaseci/docs/docs/assets/Workflow.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+  <br>
+  <em>Video: Workflow of the byLLM for above simple example.</em>
+</div><br>
+
+
 **🎮 Complete Examples**:
 - [Fantasy Trading Game](https://www.jac-lang.org/learn/examples/mtp_examples/fantasy_trading_game/) - Interactive RPG with AI-generated characters
 - [RPG Level Generator](https://www.jac-lang.org/learn/examples/mtp_examples/rpg_game/) - AI-powered game level creation
