@@ -190,6 +190,20 @@ class TestLarkParser(TestCaseMicroSuite):
         sys.stdout = sys.__stdout__
         self.assertEqual(len(prog.errors_had), 8)
 
+    def test_top_level_statent_better_error_msg(self) -> None:
+        """Test top level statement not allowed message."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        prog = JacProgram()
+        prog.compile(self.fixture_abs_path("no_with_entry_error.jac"))
+        sys.stdout = sys.__stdout__
+        alrt = prog.errors_had[0]
+        pretty = alrt.pretty_print()
+        self.assertIn(
+            "Top-level statements must be inside a 'with entry' block",
+            pretty
+        )
+
     def test_multiple_syntax_errors(self) -> None:
         """Parse param syntax jac file."""
         captured_output = io.StringIO()
