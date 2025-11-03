@@ -198,12 +198,12 @@ class JacParser(Transform[uni.Source, uni.Module]):
                     "Top-level statements must be inside a 'with entry' block",
                     self.error_to_token(e),
                 )
-                return False
 
-            # Ignore unexpected tokens and continue parsing till we reach a known state.
-            self.log_error(
-                f"Unexpected token '{e.token.value}'", self.error_to_token(e)
-            )
+            else:
+                # Ignore unexpected tokens and continue parsing till we reach a known state.
+                self.log_error(
+                    f"Unexpected token '{e.token.value}'", self.error_to_token(e)
+                )
             return True
 
         return False

@@ -62,7 +62,7 @@ class TestLangServe:
 
         try:
             await helper.open_document()
-            helper.assert_has_diagnostics(count=2, message_contains="Unexpected token 'error'")
+            helper.assert_has_diagnostics(count=2, message_contains="Top-level statements must be inside a 'with entry' block")
 
             diagnostics = helper.get_diagnostics()
             assert str(diagnostics[0].range) == "65:0-65:5"
@@ -119,7 +119,7 @@ class TestLangServe:
             )
             await helper.save_document(broken_code)
             helper.assert_semantic_tokens_count(self.EXPECTED_CIRCLE_TOKEN_COUNT)
-            helper.assert_has_diagnostics(count=2, message_contains="Unexpected token 'error'")
+            helper.assert_has_diagnostics(count=2, message_contains="Top-level statements must be inside a 'with entry' block")
         finally:
             ls.shutdown()
             test_file.cleanup()
@@ -144,7 +144,7 @@ class TestLangServe:
             # Change with syntax error
             await helper.change_document("\nerror" + test_file.code)
             helper.assert_semantic_tokens_count(self.EXPECTED_CIRCLE_TOKEN_COUNT)
-            helper.assert_has_diagnostics(count=2, message_contains="Unexpected token")
+            helper.assert_has_diagnostics(count=2, message_contains="Top-level statements must be inside a 'with entry' block")
         finally:
             ls.shutdown()
             test_file.cleanup()
@@ -195,7 +195,7 @@ class TestLangServe:
 
             # Verify initial state
             helper1.assert_no_diagnostics()
-            helper2.assert_has_diagnostics(count=2, message_contains="Unexpected token")
+            helper2.assert_has_diagnostics(count=1, message_contains="Top-level statements must be inside a 'with entry' block")
 
             # Check semantic tokens before change
             helper1.assert_semantic_tokens_count(self.EXPECTED_GLOB_TOKEN_COUNT)
