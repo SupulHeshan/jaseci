@@ -114,12 +114,12 @@ with entry {
 }
 ```
 <div align="center">
-  <video style="max-width: 100%;" controls>
+  <video style="max-width: 100%;" controls controlsList="nodownload" autoplay loop>
     <source src="/home/heshan0926/jaseci/jaseci/docs/docs/assets/Workflow.mp4" type="video/mp4">
     Your browser does not support the video tag.
   </video>
   <br>
-  <em>Video: Workflow of the byLLM for above simple example.</em>
+  <em>Video: Workflow of the byLLM for the above simple example.</em>
 </div><br>
 
 
