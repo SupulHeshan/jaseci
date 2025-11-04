@@ -9,7 +9,7 @@ node Todo {
 
 walker create_todo {
     can create with `root entry {
-        new_todo = here ++> Todo(text=visitor.text);
+        new_todo = here ++> Todo(text="Example todo");
         report new_todo;
     }
 }
@@ -43,23 +43,54 @@ walker read_todos {
 
 cl {
     # ============================================================================
+    # Shared State Management (like Redux or Zustand)
+    # ============================================================================
+    
+    let [authFormState, setAuthFormState] = createState({"username": "", "password": "", "confirmPassword": "", "error": ""});
+    let [todoState, setTodoState] = createState({"items": [], "loading": False, "error": None});
+    let [todoFormState, setTodoFormState] = createState({"inputValue": ""});
+
+    # ============================================================================
+    # Common Form Handlers
+    # ============================================================================
+    
+    def handleFormChange(field: str, value: any) -> None {
+        console.log(f"Field {field} changed:", value);
+        if field == "username" {
+            setAuthFormState({"username": value});
+        } elif field == "password" {
+            setAuthFormState({"password": value});
+        } elif field == "confirmPassword" {
+            setAuthFormState({"confirmPassword": value});
+        } elif field == "todoinput" {
+            setTodoFormState({"inputValue": value});
+        }
+    }
+    def handleTodoFormChange(value: any) -> None {
+        console.log(f"Field todo input changed:", value);
+         setTodoFormState({"inputValue": value});
+    }
+
+    def clearAuthError() -> None {
+        setAuthFormState({"error": ""});
+    }
+
+    # ============================================================================
     # Custom Hooks (like React custom hooks)
     # ============================================================================
 
     def useTodos() -> dict {
-        let [todos, setTodos] = createState({"items": [], "loading": False, "error": None});
-
         async def fetchTodos() -> None {
-            setTodos({"loading": True, "error": None});
+            setTodoState({"loading": True});
             try {
                 result = await __jacSpawn("read_todos");
                 items = [];
                 for todo in result.reports {
                     items.push({"id": todo._jac_id, "text": todo.text, "done": todo.done});
                 }
-                setTodos({"items": items, "loading": False, "error": None});
+                setTodoState({"items": items, "loading": False, "error": None});
             } except Exception as err {
-                setTodos({"loading": False, "error": str(err)});
+                setTodoState({"loading": False, "error": str(err)});
             }
         }
 
@@ -67,48 +98,52 @@ cl {
             if not text.trim() { return; }
             try {
                 result = await __jacSpawn("create_todo", {"text": text});
-                todo = result.reports[0][0] if result.reports and len(result.reports) > 0 else None;
-                if todo {
-                    state = todos();
-                    setTodos({"items": state.items.concat([{"id": todo.reports[0][0]._jac_id, "text": todo.reports[0][0].text, "done": todo.reports[0][0].done}])});
+                console.log("Add todo result:", result);
+                
+                if result.reports && result.reports.length > 0 && result.reports[0].length > 0 {
+                    todo = result.reports[0][0];
+                    currentState = todoState();
+                    newTodo = {"id": todo._jac_id, "text": todo.text, "done": todo.done};
+                    setTodoState({"items": currentState.items.concat([newTodo])});
                 }
             } except Exception as err {
-                setTodos({"error": str(err)});
+                console.log("Add todo error:", err);
+                setTodoState({"error": str(err)});
             }
         }
 
         async def toggleTodo(id: any) -> None {
             try {
                 await __jacSpawn("toggle_todo", {}, id);
-                state = todos();
+                currentState = todoState();
                 updated = [];
-                for item in state.items {
+                for item in currentState.items {
                     if item.id == id {
                         updated.push({"id": item.id, "text": item.text, "done": not item.done});
                     } else {
                         updated.push(item);
                     }
                 }
-                setTodos({"items": updated});
+                setTodoState({"items": updated});
             } except Exception as err {
-                setTodos({"error": str(err)});
+                setTodoState({"error": str(err)});
             }
         }
 
         async def deleteTodo(id: any) -> None {
             try {
                 await __jacSpawn("delete_todo", {}, id);
-                state = todos();
+                currentState = todoState();
                 remaining = [];
-                for item in state.items { if item.id != id { remaining.push(item); } }
-                setTodos({"items": remaining});
+                for item in currentState.items { if item.id != id { remaining.push(item); } }
+                setTodoState({"items": remaining});
             } except Exception as err {
-                setTodos({"error": str(err)});
+                setTodoState({"error": str(err)});
             }
         }
 
         return {
-            "todos": todos,
+            "todos": lambda -> any { return todoState(); },
             "fetchTodos": fetchTodos,
             "addTodo": addTodo,
             "toggleTodo": toggleTodo,
@@ -118,16 +153,25 @@ cl {
 
     def useAuth() -> dict {
         async def login(username: str, password: str) -> dict {
-            success = await jacLogin(username, password);
-            return {"success": success, "error": None if success else "Invalid credentials"};
+            try {
+                result = await jacLogin(username, password);
+                console.log("Login result:", result);
+                return {"success": result, "data": result, "error": None};
+            } except Exception as err {
+                return {"success": False, "error": "Invalid credentials"};
+            }
         }
 
         async def signup(username: str, password: str, confirmPassword: str) -> dict {
             if password != confirmPassword {
                 return {"success": False, "error": "Passwords do not match"};
             }
-            result = await jacSignup(username, password);
-            return {"success": result["success"] if "success" in result else False, "error": result["error"] if "error" in result else None};
+            try {
+                result = await jacSignup(username, password);
+                return {"success": result, "data": result, "error": None};
+            } except Exception as err {
+                return {"success": False, "error": str(err)};
+            }
         }
 
         def logout() -> None {
@@ -146,10 +190,14 @@ cl {
     # ============================================================================
 
     def Button(props: dict) -> any {
+        def noop() -> None { }
+        
         label = props["label"] || props["children"] || "";
-        onClick = props["onClick"];
+        onClick = props["onClick"] || noop;
         variant = props["variant"] || "primary";
         disabled = props["disabled"] || False;
+        type = props["type"] || "button";
+        style = props["style"] || {};
 
         variantStyles = {
             "primary": {"background": "#7C3AED", "color": "white"},
@@ -161,40 +209,59 @@ cl {
             "padding": "10px 20px",
             "border": "none",
             "borderRadius": "4px",
-            "cursor": "not-allowed" if disabled else "pointer",
-            "opacity": 0.6 if disabled else 1,
+            "cursor": ("not-allowed" if disabled else "pointer"),
+            "opacity": (0.6 if disabled else 1),
             "fontWeight": "500",
             "transition": "all 0.2s ease"
         };
         selectedVariant = variantStyles[variant] || variantStyles["primary"];
-        style = {};
-        for key in Object.keys(baseStyle) { style[key] = baseStyle[key]; }
-        for key in Object.keys(selectedVariant) { style[key] = selectedVariant[key]; }
+        mergedStyle = {};
+        for key in Object.keys(baseStyle) { mergedStyle[key] = baseStyle[key]; }
+        for key in Object.keys(selectedVariant) { mergedStyle[key] = selectedVariant[key]; }
+        for key in Object.keys(style) { mergedStyle[key] = style[key]; }
 
-        return <button onClick={onClick} disabled={disabled} style={style}>{label}</button>;
+        return <button onClick={onClick} disabled={disabled} type={type} style={mergedStyle}>{label}</button>;
     }
 
     def Input(props: dict) -> any {
+        def noop() -> None { }
+        
         value = props["value"] || "";
-        onChange = props["onChange"];
+        onChange = props["onChange"] || noop;
         placeholder = props["placeholder"] || "";
-        id = props["id"] || "";
         type = props["type"] || "text";
-        console.log("value inside custom input", value);
+        disabled = props["disabled"] || False;
+        style = props["style"] || {};
+        id = props["id"] || "";
+        required = props["required"] || False;
+
+        baseStyle = {
+            "padding": "12px 16px",
+            "border": "1px solid #E5E7EB",
+            "borderRadius": "8px",
+            "fontSize": "16px",
+            "background": "#FFFFFF",
+            "color": "#111827",
+            "outline": "none",
+            "boxSizing": "border-box",
+            "transition": "all 0.2s ease",
+            "opacity": (0.6 if disabled else 1),
+            "cursor": ("not-allowed" if disabled else "text")
+        };
+        
+        mergedStyle = {};
+        for key in Object.keys(baseStyle) { mergedStyle[key] = baseStyle[key]; }
+        for key in Object.keys(style) { mergedStyle[key] = style[key]; }
+
         return <input
-            id={id}
             type={type}
             value={value}
             onChange={onChange}
             placeholder={placeholder}
-            style={{
-                "width": "100%",
-                "padding": "10px",
-                "border": "1px solid #ddd",
-                "borderRadius": "4px",
-                "fontSize": "16px",
-                "boxSizing": "border-box"
-            }}
+            disabled={disabled}
+            style={mergedStyle}
+            id={id}
+            required={required}
         />;
     }
 
@@ -236,7 +303,7 @@ cl {
         onToggle = props["onToggle"];
         onDelete = props["onDelete"];
 
-        if len(items) == 0 {
+        if (items).length == 0 {
             return <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>
                 <p>No todos yet. Add one above!</p>
             </div>;
@@ -249,23 +316,24 @@ cl {
         return <ul style={{"listStyle": "none", "padding": "0", "margin": "0"}}>{children}</ul>;
     }
 
+
     def TodoForm(props: dict) -> any {
         onSubmit = props["onSubmit"];
-        let [inputValue, setInputValue] = createState("");
+        value = props["value"] || "";
+        onChange = props["onChange"];
 
         def handleSubmit(e: any) -> None {
             e.preventDefault();
-            text = inputValue().trim();
+            text = value.trim();
             if text {
                 onSubmit(text);
-                setInputValue("");
             }
         }
-
+        
         return <form onSubmit={handleSubmit} style={{"display": "flex", "gap": "8px", "marginBottom": "20px"}}>
             <Input
-                value={inputValue()}
-                onChange={lambda v: str -> None { setInputValue(v); }}
+                value={value}
+                onChange={onChange}
                 placeholder="What needs to be done?"
                 id="todo-input"
             />
@@ -295,32 +363,58 @@ cl {
     # Pages (like Next.js pages)
     # ============================================================================
 
-    def LoginPage() -> any {
+    async def handleAuthSubmit(isLogin: bool = True) -> None {
+        clearAuthError();
+        currentState = authFormState();
         auth = useAuth();
-        let [username, setUsername] = createState("");
-        let [password, setPassword] = createState("");
-        let [error, setError] = createState("");
+        
+        try {
+            result = {};
+            if isLogin {
+                result = await auth["login"](currentState.username, currentState.password);
+            } else {
+                result = await auth["signup"](currentState.username, currentState.password, currentState.confirmPassword);
+            }
+            
+            console.log("Auth result:", result);
+            if result["success"] {
+                console.log("Authentication successful");
+                # Clear form on successful authentication
+                setAuthFormState({"username": "", "password": "", "confirmPassword": "", "error": ""});
+                navigate("/todos");
+            } else {
+                setAuthFormState({"error": result["error"] if result["error"] else "Authentication failed"});
+            }
+        } except Exception as err {
+            console.log("Auth error:", err);
+            setAuthFormState({"error": str(err)});
+        }
+    }
+
+    def LoginPage() -> any {
+        currentState = authFormState();
 
         async def handleSubmit(e: any) -> None {
             e.preventDefault();
-            result = await auth["login"](username(), password());
-            if result["success"] {
-                navigate("/todos");
-            } else {
-                setError(result["error"] if result["error"] else "Login failed");
-            }
+            await handleAuthSubmit(True);
         }
 
+        errorElement = <div></div>;
+        if currentState.error {
+            errorElement = <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ currentState.error }</div>;
+        }
+       
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Welcome Back</h2>
-            {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ error() }</div>}
+            {errorElement}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
                     <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
                     <Input
                         id="login-username"
-                        value={username()}
-                        onChange={lambda v: str -> None { setUsername(v); }}
+                        value={currentState.username}
+                        onChange={lambda e: any -> None { handleFormChange("username", e.target.value); }}
+                        placeholder="Enter your username"
                     />
                 </div>
                 <div style={{"marginBottom": "20px"}}>
@@ -328,8 +422,9 @@ cl {
                     <Input
                         id="login-password"
                         type="password"
-                        value={password()}
-                        onChange={lambda v: str -> None { setPassword(v); }}
+                        value={currentState.password}
+                        onChange={lambda e: any -> None { handleFormChange("password", e.target.value); }}
+                        placeholder="Enter your password"
                     />
                 </div>
                 <Button label="Sign In" type="submit" style={{"width": "100%"}} />
@@ -341,32 +436,28 @@ cl {
     }
 
     def SignupPage() -> any {
-        auth = useAuth();
-        let [formState, setFormState] = createState({"username": "temp", "password": "", "confirmPassword": "", "error": ""});
+        currentState = authFormState();
+
         async def handleSubmit(e: any) -> None {
             e.preventDefault();
-            result = await auth["signup"](formState_state.username, formState_state.password, formState_state.confirmPassword);
-            if result["success"] {
-                navigate("/todos");
-            } else {
-                setFormState({"error": result["error"] if result["error"] else "Signup failed"});
-            }
+            await handleAuthSubmit(False);
         }
-        formState_state = formState();
 
-        def handleUsernameChange (e: any) -> None {
-            setFormState({"username": e.target.value});
+        errorElement = None;
+        if currentState.error {
+            errorElement = <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ currentState.error }</div>;
         }
+
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Create Account</h2>
-            {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ formState["error"] }</div>}
+            {errorElement}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
                     <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
                     <Input
                         id="signup-username"
-                        value={formState_state.username}
-                        onChange={lambda v: str -> None { handleUsernameChange(v); }}
+                        value={currentState.username}
+                        onChange={lambda e: any -> None { handleFormChange("username", e.target.value); }}
                     />
                 </div>
                 <div style={{"marginBottom": "16px"}}>
@@ -374,8 +465,8 @@ cl {
                     <Input
                         id="signup-password"
                         type="password"
-                        value={formState_state.password}
-                        onChange={lambda v: str -> None { setFormState({"password": v}); }}
+                        value={currentState.password}
+                        onChange={lambda e: any -> None { handleFormChange("password", e.target.value); }}
                     />
                 </div>
                 <div style={{"marginBottom": "20px"}}>
@@ -383,8 +474,8 @@ cl {
                     <Input
                         id="signup-password-confirm"
                         type="password"
-                        value={formState_state.confirmPassword}
-                        onChange={lambda v: str -> None { setFormState({"confirmPassword": v}); }}
+                        value={currentState.confirmPassword}
+                        onChange={lambda e: any -> None { handleFormChange("confirmPassword", e.target.value); }}
                     />
                 </div>
                 <Button label="Create Account" type="submit" style={{"width": "100%"}} />
@@ -404,12 +495,27 @@ cl {
         });
 
         state = todosHook["todos"]();
+        currentState = todoFormState();
+        
+        def handleTodoSubmit(text: str) -> None {
+            todosHook["addTodo"](text);
+            setTodoFormState({"inputValue": ""});
+        }
+
+        def handleTodoChange(e: any) -> None {
+            handleTodoFormChange(e.target.value);
+        }
+
+        errorElement = None;
+        if state.error {
+            errorElement = <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ state.error }</div>;
+        }
 
         return <div style={{"maxWidth": "800px", "margin": "40px auto", "padding": "0 24px"}}>
             <Card title="My Todos">
                 <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "20px"}}>
                     <span style={{"color": "#6b7280", "fontSize": "14px"}}>
-                        {len(state.items)} {"todo" if len(state.items) == 1 else "todos"}
+                        {(state.items).length} {"todo" if (state.items).length == 1 else "todos"}
                     </span>
                     <Button
                         label="Logout"
@@ -421,11 +527,13 @@ cl {
                     />
                 </div>
 
-                {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ state.error }</div>}
+                {errorElement}
 
-                <TodoForm onSubmit={todosHook["addTodo"]} />
-
-                #  <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>{ "Loading..." if state.loading else None }</div>
+                <TodoForm 
+                    onSubmit={handleTodoSubmit}
+                    value={currentState.inputValue}
+                    onChange={handleTodoChange}
+                />
 
                 {<TodoList
                     items={state.items}
@@ -446,6 +554,7 @@ cl {
 
         routes = [loginRoute, signupRoute, todosRoute];
         router = initRouter(routes, "/login");
+       
 
         return <div style={{"minHeight": "100vh", "background": "#f9fafb"}}>
             {router.render()}
