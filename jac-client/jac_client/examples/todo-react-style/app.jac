@@ -45,7 +45,7 @@ cl {
     # ============================================================================
     # Shared State Management (like Redux or Zustand)
     # ============================================================================
-    
+
     let [authFormState, setAuthFormState] = createState({"username": "", "password": "", "confirmPassword": "", "error": ""});
     let [todoState, setTodoState] = createState({"items": [], "loading": False, "error": None});
     let [todoFormState, setTodoFormState] = createState({"inputValue": ""});
@@ -53,7 +53,7 @@ cl {
     # ============================================================================
     # Common Form Handlers
     # ============================================================================
-    
+
     def handleFormChange(field: str, value: any) -> None {
         console.log(f"Field {field} changed:", value);
         if field == "username" {
@@ -99,7 +99,7 @@ cl {
             try {
                 result = await __jacSpawn("create_todo", {"text": text});
                 console.log("Add todo result:", result);
-                
+
                 if result.reports && result.reports.length > 0 && result.reports[0].length > 0 {
                     todo = result.reports[0][0];
                     currentState = todoState();
@@ -191,7 +191,7 @@ cl {
 
     def Button(props: dict) -> any {
         def noop() -> None { }
-        
+
         label = props["label"] || props["children"] || "";
         onClick = props["onClick"] || noop;
         variant = props["variant"] || "primary";
@@ -225,7 +225,7 @@ cl {
 
     def Input(props: dict) -> any {
         def noop() -> None { }
-        
+
         value = props["value"] || "";
         onChange = props["onChange"] || noop;
         placeholder = props["placeholder"] || "";
@@ -248,7 +248,7 @@ cl {
             "opacity": (0.6 if disabled else 1),
             "cursor": ("not-allowed" if disabled else "text")
         };
-        
+
         mergedStyle = {};
         for key in Object.keys(baseStyle) { mergedStyle[key] = baseStyle[key]; }
         for key in Object.keys(style) { mergedStyle[key] = style[key]; }
@@ -329,7 +329,7 @@ cl {
                 onSubmit(text);
             }
         }
-        
+
         return <form onSubmit={handleSubmit} style={{"display": "flex", "gap": "8px", "marginBottom": "20px"}}>
             <Input
                 value={value}
@@ -367,7 +367,7 @@ cl {
         clearAuthError();
         currentState = authFormState();
         auth = useAuth();
-        
+
         try {
             result = {};
             if isLogin {
@@ -375,7 +375,7 @@ cl {
             } else {
                 result = await auth["signup"](currentState.username, currentState.password, currentState.confirmPassword);
             }
-            
+
             console.log("Auth result:", result);
             if result["success"] {
                 console.log("Authentication successful");
@@ -403,7 +403,7 @@ cl {
         if currentState.error {
             errorElement = <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ currentState.error }</div>;
         }
-       
+
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Welcome Back</h2>
             {errorElement}
@@ -496,7 +496,7 @@ cl {
 
         state = todosHook["todos"]();
         currentState = todoFormState();
-        
+
         def handleTodoSubmit(text: str) -> None {
             todosHook["addTodo"](text);
             setTodoFormState({"inputValue": ""});
@@ -529,7 +529,7 @@ cl {
 
                 {errorElement}
 
-                <TodoForm 
+                <TodoForm
                     onSubmit={handleTodoSubmit}
                     value={currentState.inputValue}
                     onChange={handleTodoChange}
@@ -554,7 +554,7 @@ cl {
 
         routes = [loginRoute, signupRoute, todosRoute];
         router = initRouter(routes, "/login");
-       
+
 
         return <div style={{"minHeight": "100vh", "background": "#f9fafb"}}>
             {router.render()}
