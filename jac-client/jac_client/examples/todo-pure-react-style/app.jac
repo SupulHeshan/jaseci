@@ -424,7 +424,7 @@ cl {
                     items={todosHook["items"]}
                     onToggle={todosHook["toggleTodo"]}
                     onDelete={todosHook["deleteTodo"]}
-                /> 
+                />
             </Card>
         </div>;
     }

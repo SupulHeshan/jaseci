@@ -179,7 +179,7 @@ cl {
         onChange = props["onChange"];
         placeholder = props["placeholder"] || "";
         id = props["id"] || "";
-        type = props["type"] || "text"; 
+        type = props["type"] || "text";
         console.log("value inside custom input", value);
         return <input
             id={id}
@@ -356,8 +356,8 @@ cl {
 
         def handleUsernameChange (e: any) -> None {
             setFormState({"username": e.target.value});
-        } 
-        return <Card> 
+        }
+        return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Create Account</h2>
             {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ formState["error"] }</div>}
             <form onSubmit={handleSubmit}>
