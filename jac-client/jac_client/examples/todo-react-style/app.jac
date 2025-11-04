@@ -336,6 +336,8 @@ cl {
                 onChange={onChange}
                 placeholder="What needs to be done?"
                 id="todo-input"
+                style={{"width": "100%"}}
+
             />
             <Button label="Add Todo" type="submit" />
         </form>;
@@ -409,22 +411,26 @@ cl {
             {errorElement}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
-                    <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
+                    <label htmlFor="login-username" style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
                     <Input
                         id="login-username"
                         value={currentState.username}
                         onChange={lambda e: any -> None { handleFormChange("username", e.target.value); }}
                         placeholder="Enter your username"
+                        style={{"width": "100%"}}
+
                     />
                 </div>
                 <div style={{"marginBottom": "20px"}}>
-                    <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Password</label>
+                    <label htmlFor="login-password" style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Password</label>
                     <Input
                         id="login-password"
                         type="password"
                         value={currentState.password}
                         onChange={lambda e: any -> None { handleFormChange("password", e.target.value); }}
                         placeholder="Enter your password"
+                        style={{"width": "100%"}}
+
                     />
                 </div>
                 <Button label="Sign In" type="submit" style={{"width": "100%"}} />
@@ -453,29 +459,37 @@ cl {
             {errorElement}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
-                    <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
+                    <label htmlFor="signup-username" style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
                     <Input
                         id="signup-username"
                         value={currentState.username}
                         onChange={lambda e: any -> None { handleFormChange("username", e.target.value); }}
+                        style={{"width": "100%"}}
+                        placeholder="Enter your username"
                     />
                 </div>
                 <div style={{"marginBottom": "16px"}}>
-                    <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Password</label>
+                    <label htmlFor="signup-password" style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Password</label>
                     <Input
                         id="signup-password"
                         type="password"
                         value={currentState.password}
                         onChange={lambda e: any -> None { handleFormChange("password", e.target.value); }}
+                        style={{"width": "100%"}}
+                        placeholder="Enter your password"
+
                     />
                 </div>
                 <div style={{"marginBottom": "20px"}}>
-                    <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Confirm Password</label>
+                    <label htmlFor="signup-password-confirm" style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Confirm Password</label>
                     <Input
                         id="signup-password-confirm"
                         type="password"
                         value={currentState.confirmPassword}
                         onChange={lambda e: any -> None { handleFormChange("confirmPassword", e.target.value); }}
+                        style={{"width": "100%"}}
+                        placeholder="Enter your password confirmation"
+
                     />
                 </div>
                 <Button label="Create Account" type="submit" style={{"width": "100%"}} />
