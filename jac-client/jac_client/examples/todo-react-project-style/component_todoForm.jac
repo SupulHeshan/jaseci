@@ -4,7 +4,7 @@ cl import from .component_button { Button }
 cl def TodoForm(props: dict) -> any {
     onSubmit = props.get("onSubmit", lambda text: str -> None {});
     let [inputValue, setInputValue] = createState("");
-    
+
     def handleSubmit(e: any) -> None {
         e.preventDefault();
         text = inputValue().trim();
@@ -13,7 +13,7 @@ cl def TodoForm(props: dict) -> any {
             setInputValue("");
         }
     }
-    
+
     return <form onSubmit={handleSubmit} style={{"display": "flex", "gap": "8px", "marginBottom": "20px"}}>
         <Input
             value={inputValue()}

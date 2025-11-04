@@ -13,10 +13,10 @@ cl {
         loginRoute = {"path": "/login", "component": lambda -> any { return LoginPage(); }, "guard": None};
         signupRoute = {"path": "/signup", "component": lambda -> any { return SignupPage(); }, "guard": None};
         todosRoute = {"path": "/todos", "component": lambda -> any { return TodosPage(); }, "guard": jacIsLoggedIn};
-        
+
         routes = [loginRoute, signupRoute, todosRoute];
         router = initRouter(routes, "/login");
-        
+
         return <div style={{"minHeight": "100vh", "background": "#f9fafb"}}>
             {router.render()}
         </div>;

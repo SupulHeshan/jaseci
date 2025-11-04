@@ -148,13 +148,13 @@ cl {
         disabled = props.get("disabled", False);
         type = props.get("type", "button");
         style = props.get("style", {});
-        
+
         variantStyles = {
             "primary": {"background": "#7C3AED", "color": "white"},
             "danger": {"background": "#ef4444", "color": "white"},
             "secondary": {"background": "#6b7280", "color": "white"}
         };
-        
+
         baseStyle = {
             "padding": "10px 20px",
             "border": "none",
@@ -169,7 +169,7 @@ cl {
         for key in baseStyle { mergedStyle[key] = baseStyle[key]; }
         for key in selectedVariant { mergedStyle[key] = selectedVariant[key]; }
         for key in style { mergedStyle[key] = style[key]; }
-        
+
         return <button onClick={onClick} disabled={disabled} type={type} style={mergedStyle}>{label}</button>;
     }
 
@@ -179,7 +179,7 @@ cl {
         placeholder = props.get("placeholder", "");
         type = props.get("type", "text");
         id = props.get("id");
-        
+
         return <input
             id={id}
             type={type}
@@ -200,7 +200,7 @@ cl {
     def Card(props: dict) -> any {
         children = props.get("children");
         title = props.get("title");
-        
+
         return <div style={{
             "maxWidth": "600px",
             "margin": "0 auto",
@@ -219,7 +219,7 @@ cl {
         item = props.get("item");
         onToggle = props.get("onToggle", lambda -> None {});
         onDelete = props.get("onDelete", lambda -> None {});
-        
+
         return <li style={{
             "display": "flex",
             "gap": "12px",
@@ -252,13 +252,13 @@ cl {
         items = props.get("items", []);
         onToggle = props.get("onToggle", lambda id: any -> None {});
         onDelete = props.get("onDelete", lambda id: any -> None {});
-        
+
         if len(items) == 0 {
             return <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>
                 <p>No todos yet. Add one above!</p>
             </div>;
         }
-        
+
         children = [];
         for item in items {
             children.push(TodoItem({"item": item, "onToggle": lambda -> None { onToggle(item.id); }, "onDelete": lambda -> None { onDelete(item.id); }}));
@@ -269,7 +269,7 @@ cl {
     def TodoForm(props: dict) -> any {
         onSubmit = props.get("onSubmit", lambda text: str -> None {});
         let [inputValue, setInputValue] = useState("");
-        
+
         def handleSubmit(e: any) -> None {
             e.preventDefault();
             text = inputValue.trim();
@@ -278,7 +278,7 @@ cl {
                 setInputValue("");
             }
         }
-        
+
         return <form onSubmit={handleSubmit} style={{"display": "flex", "gap": "8px", "marginBottom": "20px"}}>
             <Input
                 value={inputValue}
@@ -295,7 +295,7 @@ cl {
         let [username, setUsername] = useState("");
         let [password, setPassword] = useState("");
         let [error, setError] = useState("");
-        
+
         async def handleSubmit(e: any) -> None {
             e.preventDefault();
             result = await auth["login"](username, password);
@@ -305,7 +305,7 @@ cl {
                 setError(result["error"] if result["error"] else "Login failed");
             }
         }
-        
+
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Welcome Back</h2>
             {error ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error}</div> : None}
@@ -341,7 +341,7 @@ cl {
         let [password, setPassword] = useState("");
         let [confirmPassword, setConfirmPassword] = useState("");
         let [error, setError] = useState("");
-        
+
         async def handleSubmit(e: any) -> None {
             e.preventDefault();
             result = await auth["signup"](username, password, confirmPassword);
@@ -351,7 +351,7 @@ cl {
                 setError(result["error"] if result["error"] else "Signup failed");
             }
         }
-        
+
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Create Account</h2>
             {error ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error}</div> : None}
@@ -393,11 +393,11 @@ cl {
     def TodosPage() -> any {
         auth = useAuth();
         todosHook = useTodos();
-        
+
         useEffect(lambda -> None {
             todosHook["fetchTodos"]();
         }, []);
-        
+
         return <div style={{"maxWidth": "800px", "margin": "40px auto", "padding": "0 24px"}}>
             <Card title="My Todos">
                 <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "20px"}}>
@@ -413,13 +413,13 @@ cl {
                         }}
                     />
                 </div>
-                
+
                 {todosHook["error"] ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{todosHook["error"]}</div> : None}
-                
+
                 <TodoForm onSubmit={todosHook["addTodo"]} />
-                
+
                 {todosHook["loading"] ? <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>Loading...</div> : None}
-                
+
                 {not todosHook["loading"] ? <TodoList
                     items={todosHook["items"]}
                     onToggle={todosHook["toggleTodo"]}
@@ -433,10 +433,10 @@ cl {
         loginRoute = {"path": "/login", "component": lambda -> any { return LoginPage(); }, "guard": None};
         signupRoute = {"path": "/signup", "component": lambda -> any { return SignupPage(); }, "guard": None};
         todosRoute = {"path": "/todos", "component": lambda -> any { return TodosPage(); }, "guard": jacIsLoggedIn};
-        
+
         routes = [loginRoute, signupRoute, todosRoute];
         router = initRouter(routes, "/login");
-        
+
         return <div style={{"minHeight": "100vh", "background": "#f9fafb"}}>
             {router.render()}
         </div>;

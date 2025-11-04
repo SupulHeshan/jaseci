@@ -8,7 +8,7 @@ cl def LoginPage() -> any {
     let [username, setUsername] = createState("");
     let [password, setPassword] = createState("");
     let [error, setError] = createState("");
-    
+
     async def handleSubmit(e: any) -> None {
         e.preventDefault();
         result = await auth["login"](username(), password());
@@ -18,7 +18,7 @@ cl def LoginPage() -> any {
             setError(result["error"] if result["error"] else "Login failed");
         }
     }
-    
+
     return <Card>
         <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Welcome Back</h2>
         {error() ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error()}</div> : None}

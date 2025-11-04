@@ -1,7 +1,7 @@
 cl def Card(props: dict) -> any {
     children = props.get("children");
     title = props.get("title");
-    
+
     return <div style={{
         "maxWidth": "600px",
         "margin": "0 auto",

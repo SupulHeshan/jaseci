@@ -8,13 +8,13 @@ cl import from .component_todoList { TodoList }
 cl def TodosPage() -> any {
     auth = useAuth();
     todosHook = useTodos();
-    
+
     onMount(lambda -> None {
         todosHook["fetchTodos"]();
     });
-    
+
     state = todosHook["todos"]();
-    
+
     return <div style={{"maxWidth": "800px", "margin": "40px auto", "padding": "0 24px"}}>
         <Card title="My Todos">
             <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "20px"}}>
@@ -30,13 +30,13 @@ cl def TodosPage() -> any {
                     }}
                 />
             </div>
-            
+
             {state.error ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{state.error}</div> : None}
-            
+
             <TodoForm onSubmit={todosHook["addTodo"]} />
-            
+
             {state.loading ? <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>Loading...</div> : None}
-            
+
             {not state.loading ? <TodoList
                 items={state.items}
                 onToggle={todosHook["toggleTodo"]}

@@ -33,7 +33,7 @@ todo-react-project-style/
 
 ### Backend (models.jac)
 - **Nodes**: `Todo` - Data model for todos
-- **Walkers**: 
+- **Walkers**:
   - `create_todo` - Creates new todos
   - `toggle_todo` - Toggles todo completion status
   - `delete_todo` - Deletes a todo

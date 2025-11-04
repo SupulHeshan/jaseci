@@ -4,7 +4,7 @@ cl def Input(props: dict) -> any {
     placeholder = props.get("placeholder", "");
     type = props.get("type", "text");
     id = props.get("id");
-    
+
     return <input
         id={id}
         type={type}

@@ -4,7 +4,7 @@ cl def TodoItem(props: dict) -> any {
     item = props.get("item");
     onToggle = props.get("onToggle", lambda -> None {});
     onDelete = props.get("onDelete", lambda -> None {});
-    
+
     return <li style={{
         "display": "flex",
         "gap": "12px",
