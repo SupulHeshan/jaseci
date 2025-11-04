@@ -67,10 +67,10 @@ cl {
             if not text.trim() { return; }
             try {
                 result = await __jacSpawn("create_todo", {"text": text});
-                todo = result._jac_id ? result : result.reports[0] if result.reports and len(result.reports) > 0 else None;
+                todo = result.reports[0][0] if result.reports and len(result.reports) > 0 else None;
                 if todo {
                     state = todos();
-                    setTodos({"items": state.items.concat([{"id": todo._jac_id, "text": todo.text, "done": todo.done}])});
+                    setTodos({"items": state.items.concat([{"id": todo.reports[0][0]._jac_id, "text": todo.reports[0][0].text, "done": todo.reports[0][0].done}])});
                 }
             } except Exception as err {
                 setTodos({"error": str(err)});
@@ -146,10 +146,10 @@ cl {
     # ============================================================================
 
     def Button(props: dict) -> any {
-        label = props.get("label", props.get("children", ""));
-        onClick = props.get("onClick", lambda -> None {});
-        variant = props.get("variant", "primary");
-        disabled = props.get("disabled", False);
+        label = props["label"] || props["children"] || "";
+        onClick = props["onClick"];
+        variant = props["variant"] || "primary";
+        disabled = props["disabled"] || False;
 
         variantStyles = {
             "primary": {"background": "#7C3AED", "color": "white"},
@@ -161,26 +161,26 @@ cl {
             "padding": "10px 20px",
             "border": "none",
             "borderRadius": "4px",
-            "cursor": disabled ? "not-allowed" : "pointer",
-            "opacity": disabled ? 0.6 : 1,
+            "cursor": "not-allowed" if disabled else "pointer",
+            "opacity": 0.6 if disabled else 1,
             "fontWeight": "500",
             "transition": "all 0.2s ease"
         };
-        selectedVariant = variantStyles.get(variant, variantStyles["primary"]);
+        selectedVariant = variantStyles[variant] || variantStyles["primary"];
         style = {};
-        for key in baseStyle { style[key] = baseStyle[key]; }
-        for key in selectedVariant { style[key] = selectedVariant[key]; }
+        for key in Object.keys(baseStyle) { style[key] = baseStyle[key]; }
+        for key in Object.keys(selectedVariant) { style[key] = selectedVariant[key]; }
 
         return <button onClick={onClick} disabled={disabled} style={style}>{label}</button>;
     }
 
     def Input(props: dict) -> any {
-        value = props.get("value");
-        onChange = props.get("onChange", lambda e: any -> None {});
-        placeholder = props.get("placeholder", "");
-        type = props.get("type", "text");
-        id = props.get("id");
-
+        value = props["value"] || "";
+        onChange = props["onChange"];
+        placeholder = props["placeholder"] || "";
+        id = props["id"] || "";
+        type = props["type"] || "text"; 
+        console.log("value inside custom input", value);
         return <input
             id={id}
             type={type}
@@ -199,9 +199,9 @@ cl {
     }
 
     def TodoItem(props: dict) -> any {
-        item = props.get("item");
-        onToggle = props.get("onToggle", lambda -> None {});
-        onDelete = props.get("onDelete", lambda -> None {});
+        item = props["item"];
+        onToggle = props["onToggle"];
+        onDelete = props["onDelete"];
 
         return <li style={{
             "display": "flex",
@@ -215,14 +215,14 @@ cl {
         }}>
             <input
                 type="checkbox"
-                checked={item.done}
-                onChange={onToggle}
+                checked={ "checked" if item.done else "unchecked"}
+                onChange={lambda -> None { onToggle(item.id); }}
                 style={{"cursor": "pointer", "width": "18px", "height": "18px"}}
             />
             <span style={{
                 "flex": "1",
-                "textDecoration": item.done ? "line-through" : "none",
-                "color": item.done ? "#9ca3af" : "#111827",
+                "textDecoration": "line-through" if item.done else "none",
+                "color": "#9ca3af" if item.done else "#111827",
                 "fontSize": "16px"
             }}>
                 {item.text}
@@ -232,9 +232,9 @@ cl {
     }
 
     def TodoList(props: dict) -> any {
-        items = props.get("items", []);
-        onToggle = props.get("onToggle", lambda id: any -> None {});
-        onDelete = props.get("onDelete", lambda id: any -> None {});
+        items = props["items"] || [];
+        onToggle = props["onToggle"];
+        onDelete = props["onDelete"];
 
         if len(items) == 0 {
             return <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>
@@ -250,7 +250,7 @@ cl {
     }
 
     def TodoForm(props: dict) -> any {
-        onSubmit = props.get("onSubmit", lambda text: str -> None {});
+        onSubmit = props["onSubmit"];
         let [inputValue, setInputValue] = createState("");
 
         def handleSubmit(e: any) -> None {
@@ -265,7 +265,7 @@ cl {
         return <form onSubmit={handleSubmit} style={{"display": "flex", "gap": "8px", "marginBottom": "20px"}}>
             <Input
                 value={inputValue()}
-                onChange={lambda e: any -> None { setInputValue(e.target.value); }}
+                onChange={lambda v: str -> None { setInputValue(v); }}
                 placeholder="What needs to be done?"
                 id="todo-input"
             />
@@ -274,8 +274,8 @@ cl {
     }
 
     def Card(props: dict) -> any {
-        children = props.get("children");
-        title = props.get("title");
+        children = props["children"];
+        title = props["title"] || "";
 
         return <div style={{
             "maxWidth": "600px",
@@ -286,7 +286,7 @@ cl {
             "boxShadow": "0 1px 3px rgba(0,0,0,0.1)",
             "fontFamily": "system-ui, -apple-system, sans-serif"
         }}>
-            {title ? <h2 style={{"marginTop": "0", "marginBottom": "20px", "color": "#111827"}}>{title}</h2> : None}
+            {<h2 style={{"marginTop": "0", "marginBottom": "20px", "color": "#111827"}}>{ title }</h2>}
             {children}
         </div>;
     }
@@ -313,14 +313,14 @@ cl {
 
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Welcome Back</h2>
-            {error() ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error()}</div> : None}
+            {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ error() }</div>}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
                     <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
                     <Input
                         id="login-username"
                         value={username()}
-                        onChange={lambda e: any -> None { setUsername(e.target.value); }}
+                        onChange={lambda v: str -> None { setUsername(v); }}
                     />
                 </div>
                 <div style={{"marginBottom": "20px"}}>
@@ -329,7 +329,7 @@ cl {
                         id="login-password"
                         type="password"
                         value={password()}
-                        onChange={lambda e: any -> None { setPassword(e.target.value); }}
+                        onChange={lambda v: str -> None { setPassword(v); }}
                     />
                 </div>
                 <Button label="Sign In" type="submit" style={{"width": "100%"}} />
@@ -342,31 +342,31 @@ cl {
 
     def SignupPage() -> any {
         auth = useAuth();
-        let [username, setUsername] = createState("");
-        let [password, setPassword] = createState("");
-        let [confirmPassword, setConfirmPassword] = createState("");
-        let [error, setError] = createState("");
-
+        let [formState, setFormState] = createState({"username": "temp", "password": "", "confirmPassword": "", "error": ""});
         async def handleSubmit(e: any) -> None {
             e.preventDefault();
-            result = await auth["signup"](username(), password(), confirmPassword());
+            result = await auth["signup"](formState_state.username, formState_state.password, formState_state.confirmPassword);
             if result["success"] {
                 navigate("/todos");
             } else {
-                setError(result["error"] if result["error"] else "Signup failed");
+                setFormState({"error": result["error"] if result["error"] else "Signup failed"});
             }
         }
+        formState_state = formState();
 
-        return <Card>
+        def handleUsernameChange (e: any) -> None {
+            setFormState({"username": e.target.value});
+        } 
+        return <Card> 
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Create Account</h2>
-            {error() ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error()}</div> : None}
+            {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ formState["error"] }</div>}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
                     <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
                     <Input
                         id="signup-username"
-                        value={username()}
-                        onChange={lambda e: any -> None { setUsername(e.target.value); }}
+                        value={formState_state.username}
+                        onChange={lambda v: str -> None { handleUsernameChange(v); }}
                     />
                 </div>
                 <div style={{"marginBottom": "16px"}}>
@@ -374,8 +374,8 @@ cl {
                     <Input
                         id="signup-password"
                         type="password"
-                        value={password()}
-                        onChange={lambda e: any -> None { setPassword(e.target.value); }}
+                        value={formState_state.password}
+                        onChange={lambda v: str -> None { setFormState({"password": v}); }}
                     />
                 </div>
                 <div style={{"marginBottom": "20px"}}>
@@ -383,8 +383,8 @@ cl {
                     <Input
                         id="signup-password-confirm"
                         type="password"
-                        value={confirmPassword()}
-                        onChange={lambda e: any -> None { setConfirmPassword(e.target.value); }}
+                        value={formState_state.confirmPassword}
+                        onChange={lambda v: str -> None { setFormState({"confirmPassword": v}); }}
                     />
                 </div>
                 <Button label="Create Account" type="submit" style={{"width": "100%"}} />
@@ -409,7 +409,7 @@ cl {
             <Card title="My Todos">
                 <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "20px"}}>
                     <span style={{"color": "#6b7280", "fontSize": "14px"}}>
-                        {len(state.items)} {len(state.items) == 1 ? "todo" : "todos"}
+                        {len(state.items)} {"todo" if len(state.items) == 1 else "todos"}
                     </span>
                     <Button
                         label="Logout"
@@ -421,17 +421,16 @@ cl {
                     />
                 </div>
 
-                {state.error ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{state.error}</div> : None}
+                {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{ state.error }</div>}
 
                 <TodoForm onSubmit={todosHook["addTodo"]} />
 
-                {state.loading ? <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>Loading...</div> : None}
+                #  <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>{ "Loading..." if state.loading else None }</div>
 
-                {not state.loading ? <TodoList
+                {<TodoList
                     items={state.items}
                     onToggle={todosHook["toggleTodo"]}
-                    onDelete={todosHook["deleteTodo"]}
-                /> : None}
+                    onDelete={todosHook["deleteTodo"]}/>}
             </Card>
         </div>;
     }

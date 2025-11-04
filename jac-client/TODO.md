@@ -58,3 +58,8 @@
 
 
 utility library code
+
+<!-- Language - support -->
+- [] ternary operator (also called a conditional operator)
+- []  {if state.loading && <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>Loading...</div>}
+- []  let [username, setUsername] = createState("temp"); > only objects are currently supporting

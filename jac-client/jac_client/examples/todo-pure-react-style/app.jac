@@ -62,7 +62,7 @@ cl {
             if not text.trim() { return; }
             try {
                 result = await __jacSpawn("create_todo", {"text": text});
-                todo = result._jac_id ? result : result.reports[0] if result.reports and len(result.reports) > 0 else None;
+                todo = result if result._jac_id else (result.reports[0] if result.reports and len(result.reports) > 0 else None);
                 if todo {
                     setItems(lambda prevItems: any -> any {
                         return prevItems.concat([{"id": todo._jac_id, "text": todo.text, "done": todo.done}]);
@@ -159,8 +159,8 @@ cl {
             "padding": "10px 20px",
             "border": "none",
             "borderRadius": "4px",
-            "cursor": disabled ? "not-allowed" : "pointer",
-            "opacity": disabled ? 0.6 : 1,
+            "cursor": "not-allowed" if disabled else "pointer",
+            "opacity": 0.6 if disabled else 1,
             "fontWeight": "500",
             "transition": "all 0.2s ease"
         };
@@ -210,7 +210,7 @@ cl {
             "boxShadow": "0 1px 3px rgba(0,0,0,0.1)",
             "fontFamily": "system-ui, -apple-system, sans-serif"
         }}>
-            {title ? <h2 style={{"marginTop": "0", "marginBottom": "20px", "color": "#111827"}}>{title}</h2> : None}
+            {<h2 style={{"marginTop": "0", "marginBottom": "20px", "color": "#111827"}}>{title}</h2>}
             {children}
         </div>;
     }
@@ -238,8 +238,8 @@ cl {
             />
             <span style={{
                 "flex": "1",
-                "textDecoration": item.done ? "line-through" : "none",
-                "color": item.done ? "#9ca3af" : "#111827",
+                "textDecoration": "line-through" if item.done else "none",
+                "color": "#9ca3af" if item.done else "#111827",
                 "fontSize": "16px"
             }}>
                 {item.text}
@@ -308,7 +308,7 @@ cl {
 
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Welcome Back</h2>
-            {error ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error}</div> : None}
+            {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error}</div>}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
                     <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
@@ -354,7 +354,7 @@ cl {
 
         return <Card>
             <h2 style={{"textAlign": "center", "marginBottom": "24px"}}>Create Account</h2>
-            {error ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error}</div> : None}
+            {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{error}</div>}
             <form onSubmit={handleSubmit}>
                 <div style={{"marginBottom": "16px"}}>
                     <label style={{"display": "block", "marginBottom": "8px", "fontWeight": "500"}}>Username</label>
@@ -402,7 +402,7 @@ cl {
             <Card title="My Todos">
                 <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginBottom": "20px"}}>
                     <span style={{"color": "#6b7280", "fontSize": "14px"}}>
-                        {len(todosHook["items"])} {len(todosHook["items"]) == 1 ? "todo" : "todos"}
+                        {len(todosHook["items"])} {"todo" if len(todosHook["items"]) == 1 else "todos"}
                     </span>
                     <Button
                         label="Logout"
@@ -414,17 +414,17 @@ cl {
                     />
                 </div>
 
-                {todosHook["error"] ? <div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{todosHook["error"]}</div> : None}
+                {<div style={{"padding": "12px", "background": "#fee2e2", "color": "#dc2626", "borderRadius": "6px", "marginBottom": "16px"}}>{todosHook["error"]}</div>}
 
                 <TodoForm onSubmit={todosHook["addTodo"]} />
 
-                {todosHook["loading"] ? <div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>Loading...</div> : None}
+                {<div style={{"textAlign": "center", "padding": "40px", "color": "#9ca3af"}}>Loading...</div>}
 
-                {not todosHook["loading"] ? <TodoList
+                <TodoList
                     items={todosHook["items"]}
                     onToggle={todosHook["toggleTodo"]}
                     onDelete={todosHook["deleteTodo"]}
-                /> : None}
+                /> 
             </Card>
         </div>;
     }
