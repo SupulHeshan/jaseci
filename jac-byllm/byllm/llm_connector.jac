@@ -12,14 +12,14 @@ import litellm;
 import from litellm._logging {_disable_debugging}
 import from openai { OpenAI}
 import from byllm.mtir { MTIR }
-import from byllm.types { 
-    CompletionResult, 
-    LiteLLMMessage, 
-    MockToolCall, 
-    ToolCall } 
+import from byllm.types {
+    CompletionResult,
+    LiteLLMMessage,
+    MockToolCall,
+    ToolCall }
 
 with entry {
-    
+
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True";
     DEFAULT_BASE_URL = "http://localhost:4000";
     MODEL_MOCK = "mockllm";
@@ -34,13 +34,13 @@ obj LLMConnector(ABC){
         self.config = kwargs;
         self.call_params: dict[str, object] = {};
     }
-    
+
     static
     def for_model(model_name:str, **kwargs: object) -> LLMConnector {
         print("init Litellm");
         if model_name.lower().strip() == MODEL_MOCK {
             return MockLLMConnector(model_name, **kwargs);
-        } 
+        }
         if kwargs.get("proxy_url"){
             kwargs["base_url"] = kwargs.pop("proxy_url");
             return LiteLLMConnector(True, model_name, **kwargs);
@@ -55,7 +55,7 @@ obj LLMConnector(ABC){
             "api_base": (
                 self.config.get("base_url")
                 or self.config.get("host")
-                or self.config.get("api_base") 
+                or self.config.get("api_base")
             ),
             "api_key": self.config.get("api_key"),
             "messages": mtir.get_msg_list(),
@@ -65,9 +65,9 @@ obj LLMConnector(ABC){
         };
         return params;
         }
-    
+
     def log_info(message: str) -> None {
-        
+
         if bool(self.config.get("verbose", False)){
             print(message);
         }
@@ -86,7 +86,7 @@ obj LLMConnector(ABC){
     }
 
 }
-    
+
 
 obj MockLLMConnector(LLMConnector){
     """LLM Connector for a mock LLM service that simulates responses."""

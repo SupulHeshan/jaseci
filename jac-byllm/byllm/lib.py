@@ -1,6 +1,5 @@
 """byLLM Package."""
 
-import jaclang
 from byllm.llm import Model
 from byllm.mtir import MTIR
 from byllm.plugin import JacMachine
