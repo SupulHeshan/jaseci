@@ -87,7 +87,7 @@ obj Model {
     def _completion_no_streaming(mtir: MTIR) -> CompletionResult {
         return self.llm_connector.dispatch_no_streaming(mtir);
     }
-    
+
     """Perform a streaming completion request with the LLM."""
     def _completion_streaming(mtir: MTIR) -> Generator[str, None, None] {
         return self.llm_connector.dispatch_streaming(mtir);
