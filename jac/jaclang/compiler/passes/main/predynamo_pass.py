@@ -124,7 +124,7 @@ class PreDynamoPass(UniPass):
                 return (call.target, name, tensor_expr, kwargs)
         return None
 
-    def _is_io_call(self, node: uni.FuncCall) -> bool:
+    def _is_io_call(self, node: uni.FuncCall) -> bool: # TODO: make sure these are not user overloaded
         """Check if a function call is an I/O operation that should be hoisted."""
         if isinstance(node.target, uni.Name):
             return node.target.value in self._HOISTABLE_CALLS

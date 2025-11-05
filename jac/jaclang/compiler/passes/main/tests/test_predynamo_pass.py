@@ -54,3 +54,20 @@ class PreDynamoPassTests(TestCase):
         unparsed_code = code_gen.unparse()
         self.assertIn("__inv_freq = torch.where(", unparsed_code)
         self.assertIn("self.register_buffer('inv_freq', __inv_freq, persistent=False);", unparsed_code)
+
+    def test_predynamo_io(self) -> None:
+        """Test I/O transformation."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        code_gen = JacProgram().compile(self.fixture_abs_path("predynamo_io.py"))
+        sys.stdout = sys.__stdout__
+        unparsed_code = code_gen.unparse()
+        settings.predynamo_pass = False
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        code_gen = JacProgram().compile(self.fixture_abs_path("predynamo_io.py"))
+        sys.stdout = sys.__stdout__
+        settings.predynamo_pass = True
+        unparsed_code_original = code_gen.unparse()
+
+        self.assertNotEqual(unparsed_code, unparsed_code_original)
