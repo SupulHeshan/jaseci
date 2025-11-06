@@ -513,25 +513,7 @@ class ModuleIntrospector:
             raise ValueError(f"Client function '{function_name}' not found")
 
         bundle_hash = self.ensure_bundle()
-        arg_order = list(self._client_manifest.get("params", {}).get(function_name, []))
-
-        globals_payload = {
-            name: JacSerializer.serialize(value)
-            for name, value in self._collect_client_globals().items()
-        }
-
-        initial_state = {
-            "module": self._module.__name__ if self._module else self.module_name,
-            "function": function_name,
-            "args": {
-                key: JacSerializer.serialize(value) for key, value in args.items()
-            },
-            "globals": globals_payload,
-            "argOrder": arg_order,
-        }
-
-        safe_initial_json = json.dumps(initial_state).replace("</", "<\\/")
-
+       
         page = (
             "<!DOCTYPE html>"
             '<html lang="en">'
@@ -540,8 +522,7 @@ class ModuleIntrospector:
             f"<title>{html.escape(function_name)}</title>"
             "</head>"
             "<body>"
-            '<div id="__jac_root"></div>'
-            f'<script id="__jac_init__" type="application/json">{safe_initial_json}</script>'
+            '<div id="root"></div>'
             f'<script src="/static/client.js?hash={bundle_hash}" defer></script>'
             "</body>"
             "</html>"

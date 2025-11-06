@@ -127,7 +127,6 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                     non_root_globals[name] = manifest.globals_values.get(name)
             collected_globals.update(non_root_globals)
 
-            exposure_js = self._generate_global_exposure_code(exports_list)
             registration_js = self._generate_registration_js(
                 module_path.stem,
                 exports_list,
@@ -137,10 +136,10 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                 f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
             )
 
-            combined_js = f"{module_js}\n{exposure_js}\n{registration_js}\n{runtime_js}\n{export_block}"
+            combined_js = f"{module_js}\n{registration_js}\n{runtime_js}\n{export_block}"
             if self.vite_package_json is not None:
                 (
-                    self.vite_package_json.parent / "temp" / f"{module_path.stem}.js"
+                    self.vite_package_json.parent / "src" / f"{module_path.stem}.js"
                 ).write_text(combined_js, encoding="utf-8")
         else:
             mod = Jac.program.mod.hub.get(str(module_path))
@@ -169,7 +168,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                     js_code = path_obj.read_text(encoding="utf-8")
                     if self.vite_package_json is not None:
                         (
-                            self.vite_package_json.parent / "temp" / path_obj.name
+                            self.vite_package_json.parent / "src" / path_obj.name
                         ).write_text(js_code, encoding="utf-8")
                 except FileNotFoundError:
                     pass
@@ -223,16 +222,26 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                 "",
             ]
         )
+        entry_file = self.vite_package_json.parent / "src" / "main.js"
+        
+        entry_content = """import React from "react";
+import { createRoot } from "react-dom/client";
+import { App } from "./app.js";
+
+const root = createRoot(document.getElementById("root"));
+root.render(<App />);
+"""
+        entry_file.write_text(entry_content, encoding="utf-8")
 
         # Add global exposure code first (before Jac initialization)
-        global_exposure_code = self._generate_global_exposure_code(client_exports)
-        bundle_pieces.append(global_exposure_code)
+        # global_exposure_code = self._generate_global_exposure_code(client_exports)
+        # bundle_pieces.append(global_exposure_code)
 
         # Add Jac runtime initialization script (includes globals)
-        jac_init_script = self._generate_jac_init_script(
-            module_path.stem, client_exports, client_globals_map
-        )
-        bundle_pieces.append(jac_init_script)
+        # jac_init_script = self._generate_jac_init_script(
+        #     module_path.stem, client_exports, client_globals_map
+        # )
+        # bundle_pieces.append(jac_init_script)
 
         # Do not add export block for root since output is iife
 
@@ -272,27 +281,23 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
 
         # Create temp directory for Vite build
         project_dir = self.vite_package_json.parent
-        temp_dir = project_dir / "temp"
-        temp_dir.mkdir(exist_ok=True)
+        src_dir = project_dir / "src"
+        src_dir.mkdir(exist_ok=True)
 
-        # Create entry file with stitched content
-        entry_file = temp_dir / "app.js"
 
-        entry_content = "\n".join(piece for piece in bundle_pieces if piece is not None)
-        entry_file.write_text(entry_content, encoding="utf-8")
-
-        # Create Vite config in the project directory (where node_modules exists)
-        vite_config = project_dir / "temp_vite.config.js"
-        output_dir = self.vite_output_dir or temp_dir / "dist"
-        output_dir.mkdir(exist_ok=True)
-
-        config_content = self._generate_vite_config(entry_file, output_dir)
-        vite_config.write_text(config_content, encoding="utf-8")
+        output_dir = self.vite_output_dir or src_dir / "dist" / "assets"
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             # Run Vite build from project directory
             # need to install packages you told in package.json inside here
-            command = ["npx", "vite", "build", "--config", str(vite_config)]
+            # first compile the code
+            command = ["npm", "run", "compile"]
+            subprocess.run(
+                command, cwd=project_dir, check=True, capture_output=True, text=True
+            )
+            # then build the code
+            command = ["npm", "run", "build"]
             subprocess.run(
                 command, cwd=project_dir, check=True, capture_output=True, text=True
             )
@@ -302,11 +307,6 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             raise ClientBundleError(
                 "npx or vite command not found. Ensure Node.js and npm are installed."
             )
-        finally:
-            # Clean up temp config file
-            if vite_config.exists():
-                vite_config.unlink()
-
         # Find the generated bundle file
         bundle_file = self._find_vite_bundle(output_dir)
         if not bundle_file:
@@ -386,7 +386,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
 
         # Find the main app function (usually the last function or one ending with '_app')
         main_app_func = (
-            "jac_app"  # this need to be always same and defined by our run time
+            "App"  # this need to be always same and defined by our run time
         )
         # for func_name in reversed(client_functions):
         #     if func_name.endswith('_app') or func_name == 'App':
@@ -433,12 +433,12 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         """
 
     def cleanup_temp_dir(self) -> None:
-        """Clean up the temp directory and its contents."""
+        """Clean up the src directory and its contents."""
         if not self.vite_package_json or not self.vite_package_json.exists():
             return
 
         project_dir = self.vite_package_json.parent
-        temp_dir = project_dir / "temp"
+        temp_dir = project_dir / "src"
 
         if temp_dir.exists():
             with contextlib.suppress(OSError):
