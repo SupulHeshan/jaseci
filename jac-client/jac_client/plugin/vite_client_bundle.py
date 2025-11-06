@@ -136,7 +136,9 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                 f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
             )
 
-            combined_js = f"{module_js}\n{registration_js}\n{runtime_js}\n{export_block}"
+            combined_js = (
+                f"{module_js}\n{registration_js}\n{runtime_js}\n{export_block}"
+            )
             if self.vite_package_json is not None:
                 (
                     self.vite_package_json.parent / "src" / f"{module_path.stem}.js"
@@ -223,7 +225,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             ]
         )
         entry_file = self.vite_package_json.parent / "src" / "main.js"
-        
+
         entry_content = """import React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app.js";
@@ -283,7 +285,6 @@ root.render(<App />);
         project_dir = self.vite_package_json.parent
         src_dir = project_dir / "src"
         src_dir.mkdir(exist_ok=True)
-
 
         output_dir = self.vite_output_dir or src_dir / "dist" / "assets"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -385,9 +386,7 @@ root.render(<App />);
         )
 
         # Find the main app function (usually the last function or one ending with '_app')
-        main_app_func = (
-            "App"  # this need to be always same and defined by our run time
-        )
+        main_app_func = "App"  # this need to be always same and defined by our run time
         # for func_name in reversed(client_functions):
         #     if func_name.endswith('_app') or func_name == 'App':
         #         main_app_func = func_name

@@ -79,7 +79,7 @@ class JacCmd:
                 # create temp folder
                 src_folder = os.path.join(project_path, "src")
                 os.makedirs(src_folder, exist_ok=True)
-                
+
                 # create build folder
                 build_folder = os.path.join(project_path, "build")
                 os.makedirs(build_folder, exist_ok=True)
@@ -98,7 +98,7 @@ class JacCmd:
                             "build": "npm run compile && vite build",
                             "dev": "vite dev",
                             "preview": "vite preview",
-                            "compile": "babel src --out-dir build --extensions \".jsx,.js\" --out-file-extension .js",                            
+                            "compile": 'babel src --out-dir build --extensions ".jsx,.js" --out-file-extension .js',
                         },
                         "devDependencies": {
                             "vite": "^6.4.1",
@@ -146,7 +146,7 @@ cl {
 
                 with open(os.path.join(project_path, "app.jac"), "w") as f:
                     f.write(main_jac_content)
-                
+
                 # create .babelrc file
                 babel_config_content = """
 {
@@ -160,7 +160,7 @@ cl {
 """
                 with open(os.path.join(project_path, ".babelrc"), "w") as f:
                     f.write(babel_config_content)
-                    
+
                 # create vite.config.js file
                 vite_config_content = """
 import { defineConfig } from "vite";

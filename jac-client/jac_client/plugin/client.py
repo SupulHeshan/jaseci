@@ -19,7 +19,7 @@ class JacClient:
         """Get the client bundle builder instance."""
         base_path = Path(Jac.base_path_dir)
         package_json_path = base_path / "package.json"
-        output_dir = base_path / "dist" 
+        output_dir = base_path / "dist"
         # Use the plugin's client_runtime.jac file
         runtime_path = Path(__file__).with_name("client_runtime.jac")
         print(f"Runtime path: {runtime_path}")

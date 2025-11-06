@@ -513,7 +513,7 @@ class ModuleIntrospector:
             raise ValueError(f"Client function '{function_name}' not found")
 
         bundle_hash = self.ensure_bundle()
-       
+
         page = (
             "<!DOCTYPE html>"
             '<html lang="en">'
