@@ -34,7 +34,7 @@ StatusCode: TypeAlias = Literal[200, 201, 400, 401, 404, 503]
 
 JWT_SECRET = os.getenv("JWT_SECRET", "supersecretkey")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXP_DELTA_MINUTES = int(os.getenv("JWT_EXP_DELTA_MINUTES", 5))
+JWT_EXP_DELTA_DAYS = int(os.getenv("JWT_EXP_DELTA_DAYS", 7))
 
 
 # Response Models
@@ -200,7 +200,7 @@ class UserManager:
     def create_jwt_token(username: str) -> str:
         payload = {
             "username": username,
-            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXP_DELTA_MINUTES),
+            "exp": datetime.utcnow() + timedelta(days=JWT_EXP_DELTA_DAYS),
             "iat": datetime.utcnow(),
         }
         return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)

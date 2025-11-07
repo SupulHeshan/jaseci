@@ -210,11 +210,11 @@ class TestServeCommand(TestCase):
         token = result["token"]
 
         # Valid token
-        username = user_mgr.validate_token(token)
+        username = user_mgr.validate_jwt_token(token)
         self.assertEqual(username, "validuser")
 
         # Invalid token
-        username = user_mgr.validate_token("invalid_token")
+        username = user_mgr.validate__jwt_token("invalid_token")
         self.assertIsNone(username)
 
     def test_server_user_creation(self) -> None:
