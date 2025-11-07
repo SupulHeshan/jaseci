@@ -113,7 +113,6 @@ class UserManager:
 
     session_path: str
     _users: dict[str, dict[str, str]] = field(default_factory=dict, init=False)
-    # _tokens: dict[str, str] = field(default_factory=dict, init=False)
     _db_path: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -127,17 +126,12 @@ class UserManager:
             with open(self._db_path, encoding="utf-8") as fh:
                 data = json.load(fh)
                 self._users = data.get("__jac_users__", {})
-                # self._tokens = data.get("__jac_tokens__", {})
         except Exception:
-            # self._users, self._tokens = {}, {}
             self._users = {}
 
     def _persist(self) -> None:
         """Save user data to persistent storage."""
         with open(self._db_path, "w", encoding="utf-8") as fh:
-            # json.dump(
-            #     {"__jac_users__": self._users, "__jac_tokens__": self._tokens}, fh
-            # )
             json.dump({"__jac_users__": self._users}, fh)
 
     def create_user(self, username: str, password: str) -> dict[str, str]:
@@ -163,10 +157,8 @@ class UserManager:
 
         self._users[username] = {
             "password_hash": password_hash,
-            # "token": token,
             "root_id": root_id,
         }
-        # self._tokens[token] = username
         self._persist()
 
         return {"username": username, "token": token, "root_id": root_id}
