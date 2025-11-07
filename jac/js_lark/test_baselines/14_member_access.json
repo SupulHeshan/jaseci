@@ -1,0 +1,393 @@
+{
+  "test_name": "14_member_access",
+  "timestamp": "2025-11-07T15:45:57.977960",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "prop"
+            },
+            "init": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "obj"
+              },
+              "property": "property",
+              "computed": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "nested"
+            },
+            "init": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "obj"
+                  },
+                  "property": "nested",
+                  "computed": false
+                },
+                "property": "deep",
+                "computed": false
+              },
+              "property": "value",
+              "computed": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "computed"
+            },
+            "init": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "obj"
+              },
+              "property": {
+                "type": "Literal",
+                "value": "property"
+              },
+              "computed": true
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "dynamic"
+            },
+            "init": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "obj"
+              },
+              "property": {
+                "type": "Identifier",
+                "name": "key"
+              },
+              "computed": true
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "result"
+            },
+            "init": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "obj"
+                },
+                "property": "method",
+                "computed": false
+              },
+              "arguments": []
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "chained"
+            },
+            "init": {
+              "type": "CallExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "MemberExpression",
+                        "object": {
+                          "type": "Identifier",
+                          "name": "obj"
+                        },
+                        "property": "method1",
+                        "computed": false
+                      },
+                      "arguments": []
+                    },
+                    "property": "method2",
+                    "computed": false
+                  },
+                  "arguments": []
+                },
+                "property": "method3",
+                "computed": false
+              },
+              "arguments": []
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "first"
+            },
+            "init": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "arr"
+              },
+              "property": {
+                "type": "Literal",
+                "value": 0
+              },
+              "computed": true
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "last"
+            },
+            "init": {
+              "type": "MemberExpression",
+              "object": {
+                "type": "Identifier",
+                "name": "arr"
+              },
+              "property": {
+                "type": "BinaryExpression",
+                "operator": "-",
+                "left": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "arr"
+                  },
+                  "property": "length",
+                  "computed": false
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 1
+                }
+              },
+              "computed": true
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "instance"
+            },
+            "init": {
+              "type": "NewExpression",
+              "callee": {
+                "type": "Identifier",
+                "name": "Constructor"
+              },
+              "arguments": []
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "withArgs"
+            },
+            "init": {
+              "type": "NewExpression",
+              "callee": {
+                "type": "Identifier",
+                "name": "MyClass"
+              },
+              "arguments": [
+                {
+                  "type": "Identifier",
+                  "name": "arg1"
+                },
+                {
+                  "type": "Identifier",
+                  "name": "arg2"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "nested"
+            },
+            "init": {
+              "type": "NewExpression",
+              "callee": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "obj"
+                },
+                "property": "Constructor",
+                "computed": false
+              },
+              "arguments": []
+            }
+          }
+        ]
+      },
+      {
+        "type": "ExpressionStatement",
+        "expression": {
+          "type": "ClassExpression",
+          "id": {
+            "type": "Identifier",
+            "name": "Child"
+          },
+          "superClass": {
+            "type": "Identifier",
+            "name": "Parent"
+          },
+          "body": {
+            "type": "ClassBody",
+            "body": [
+              {
+                "type": "MethodDefinition",
+                "value": [
+                  "constructor",
+                  {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ExpressionStatement",
+                        "expression": {
+                          "type": "CallExpression",
+                          "callee": {
+                            "type": "Super"
+                          },
+                          "arguments": []
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "FunctionDeclaration",
+        "id": {
+          "type": "Identifier",
+          "name": "context"
+        },
+        "params": [],
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ReturnStatement",
+              "argument": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "ThisExpression"
+                },
+                "property": "value",
+                "computed": false
+              }
+            }
+          ]
+        },
+        "async": false,
+        "generator": false
+      }
+    ]
+  },
+  "hash": "df5b2e1dfd254f19"
+}

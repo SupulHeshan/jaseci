@@ -1,0 +1,357 @@
+{
+  "test_name": "04_classes",
+  "timestamp": "2025-11-07T17:40:29.421226",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "ClassDeclaration",
+        "id": {
+          "type": "Identifier",
+          "name": "Person"
+        },
+        "superClass": null,
+        "body": {
+          "type": "ClassBody",
+          "body": [
+            {
+              "type": "MethodDefinition",
+              "value": [
+                "constructor",
+                {
+                  "type": "Parameters",
+                  "params": [
+                    {
+                      "type": "Parameter",
+                      "name": {
+                        "type": "Identifier",
+                        "name": "name"
+                      },
+                      "default": null
+                    },
+                    {
+                      "type": "Parameter",
+                      "name": {
+                        "type": "Identifier",
+                        "name": "age"
+                      },
+                      "default": null
+                    }
+                  ]
+                },
+                {
+                  "type": "BlockStatement",
+                  "body": [
+                    {
+                      "type": "ExpressionStatement",
+                      "expression": {
+                        "type": "AssignmentExpression",
+                        "operator": "=",
+                        "left": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "ThisExpression"
+                          },
+                          "property": "name",
+                          "computed": false
+                        },
+                        "right": {
+                          "type": "Identifier",
+                          "name": "name"
+                        }
+                      }
+                    },
+                    {
+                      "type": "ExpressionStatement",
+                      "expression": {
+                        "type": "AssignmentExpression",
+                        "operator": "=",
+                        "left": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "ThisExpression"
+                          },
+                          "property": "age",
+                          "computed": false
+                        },
+                        "right": {
+                          "type": "Identifier",
+                          "name": "age"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "MethodDefinition",
+              "value": [
+                "greet",
+                {
+                  "type": "BlockStatement",
+                  "body": [
+                    {
+                      "type": "ReturnStatement",
+                      "argument": {
+                        "type": "BinaryExpression",
+                        "operator": "+",
+                        "left": {
+                          "type": "Literal",
+                          "value": "Hello, "
+                        },
+                        "right": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "Identifier",
+                            "name": "this"
+                          },
+                          "property": "name",
+                          "computed": false
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "MethodDefinition",
+              "value": [
+                "create",
+                {
+                  "type": "Parameters",
+                  "params": [
+                    {
+                      "type": "Parameter",
+                      "name": {
+                        "type": "Identifier",
+                        "name": "name"
+                      },
+                      "default": null
+                    }
+                  ]
+                },
+                {
+                  "type": "BlockStatement",
+                  "body": [
+                    {
+                      "type": "ReturnStatement",
+                      "argument": {
+                        "type": "NewExpression",
+                        "callee": {
+                          "type": "Identifier",
+                          "name": "Person"
+                        },
+                        "arguments": [
+                          {
+                            "type": "Identifier",
+                            "name": "name"
+                          },
+                          {
+                            "type": "Literal",
+                            "value": 0
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "type": "ExpressionStatement",
+        "expression": {
+          "type": "ClassExpression",
+          "id": {
+            "type": "Identifier",
+            "name": "Employee"
+          },
+          "superClass": {
+            "type": "Identifier",
+            "name": "Person"
+          },
+          "body": {
+            "type": "ClassBody",
+            "body": [
+              {
+                "type": "MethodDefinition",
+                "value": [
+                  "constructor",
+                  {
+                    "type": "Parameters",
+                    "params": [
+                      {
+                        "type": "Parameter",
+                        "name": {
+                          "type": "Identifier",
+                          "name": "name"
+                        },
+                        "default": null
+                      },
+                      {
+                        "type": "Parameter",
+                        "name": {
+                          "type": "Identifier",
+                          "name": "age"
+                        },
+                        "default": null
+                      },
+                      {
+                        "type": "Parameter",
+                        "name": {
+                          "type": "Identifier",
+                          "name": "salary"
+                        },
+                        "default": null
+                      }
+                    ]
+                  },
+                  {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ExpressionStatement",
+                        "expression": {
+                          "type": "CallExpression",
+                          "callee": {
+                            "type": "Super"
+                          },
+                          "arguments": [
+                            {
+                              "type": "Identifier",
+                              "name": "name"
+                            },
+                            {
+                              "type": "Identifier",
+                              "name": "age"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "type": "ExpressionStatement",
+                        "expression": {
+                          "type": "AssignmentExpression",
+                          "operator": "=",
+                          "left": {
+                            "type": "MemberExpression",
+                            "object": {
+                              "type": "ThisExpression"
+                            },
+                            "property": "salary",
+                            "computed": false
+                          },
+                          "right": {
+                            "type": "Identifier",
+                            "name": "salary"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "MethodDefinition",
+                "value": [
+                  "get",
+                  "Salary",
+                  {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "ReturnStatement",
+                        "argument": {
+                          "type": "MemberExpression",
+                          "object": {
+                            "type": "ThisExpression"
+                          },
+                          "property": "salary",
+                          "computed": false
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "Animal"
+            },
+            "init": {
+              "type": "ClassExpression",
+              "id": null,
+              "superClass": null,
+              "body": {
+                "type": "ClassBody",
+                "body": [
+                  {
+                    "type": "MethodDefinition",
+                    "value": [
+                      "constructor",
+                      {
+                        "type": "Parameters",
+                        "params": [
+                          {
+                            "type": "Parameter",
+                            "name": {
+                              "type": "Identifier",
+                              "name": "type"
+                            },
+                            "default": null
+                          }
+                        ]
+                      },
+                      {
+                        "type": "BlockStatement",
+                        "body": [
+                          {
+                            "type": "ExpressionStatement",
+                            "expression": {
+                              "type": "AssignmentExpression",
+                              "operator": "=",
+                              "left": {
+                                "type": "MemberExpression",
+                                "object": {
+                                  "type": "ThisExpression"
+                                },
+                                "property": "type",
+                                "computed": false
+                              },
+                              "right": {
+                                "type": "Identifier",
+                                "name": "type"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "hash": "c5e39f425a7cf17f"
+}

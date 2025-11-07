@@ -1,0 +1,290 @@
+{
+  "test_name": "03_arrow_functions",
+  "timestamp": "2025-11-07T15:02:56.163129",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "simple"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [
+                {
+                  "type": "Identifier",
+                  "name": "x"
+                }
+              ],
+              "body": {
+                "type": "BinaryExpression",
+                "operator": "*",
+                "left": {
+                  "type": "Identifier",
+                  "name": "x"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 2
+                }
+              },
+              "async": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "withParens"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [
+                {
+                  "type": "Parameter",
+                  "name": {
+                    "type": "Identifier",
+                    "name": "a"
+                  },
+                  "default": null
+                },
+                {
+                  "type": "Parameter",
+                  "name": {
+                    "type": "Identifier",
+                    "name": "b"
+                  },
+                  "default": null
+                }
+              ],
+              "body": {
+                "type": "BinaryExpression",
+                "operator": "+",
+                "left": {
+                  "type": "Identifier",
+                  "name": "a"
+                },
+                "right": {
+                  "type": "Identifier",
+                  "name": "b"
+                }
+              },
+              "async": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "withBlock"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [
+                {
+                  "type": "Parameter",
+                  "name": {
+                    "type": "Identifier",
+                    "name": "n"
+                  },
+                  "default": null
+                }
+              ],
+              "body": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "VariableDeclaration",
+                    "kind": "const",
+                    "declarations": [
+                      {
+                        "type": "VariableDeclarator",
+                        "id": {
+                          "type": "Identifier",
+                          "name": "result"
+                        },
+                        "init": {
+                          "type": "BinaryExpression",
+                          "operator": "*",
+                          "left": {
+                            "type": "Identifier",
+                            "name": "n"
+                          },
+                          "right": {
+                            "type": "Identifier",
+                            "name": "n"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "ReturnStatement",
+                    "argument": {
+                      "type": "Identifier",
+                      "name": "result"
+                    }
+                  }
+                ]
+              },
+              "async": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "asyncArrow"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [],
+              "body": {
+                "type": "UnaryExpression",
+                "operator": "await",
+                "argument": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "fetch"
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "/api"
+                    }
+                  ]
+                }
+              },
+              "async": true
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "complex"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [
+                {
+                  "type": "Identifier",
+                  "name": "x"
+                }
+              ],
+              "body": {
+                "type": "BinaryExpression",
+                "operator": "-",
+                "left": {
+                  "type": "BinaryExpression",
+                  "operator": "+",
+                  "left": {
+                    "type": "BinaryExpression",
+                    "operator": "*",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "x"
+                    },
+                    "right": {
+                      "type": "Literal",
+                      "value": 2
+                    }
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 3
+                  }
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 1
+                }
+              },
+              "async": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "nested"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [
+                {
+                  "type": "Identifier",
+                  "name": "a"
+                }
+              ],
+              "body": {
+                "type": "ArrowFunctionExpression",
+                "params": [
+                  {
+                    "type": "Identifier",
+                    "name": "b"
+                  }
+                ],
+                "body": {
+                  "type": "BinaryExpression",
+                  "operator": "+",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "a"
+                  },
+                  "right": {
+                    "type": "Identifier",
+                    "name": "b"
+                  }
+                },
+                "async": false
+              },
+              "async": false
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "hash": "92e572ae07510679"
+}

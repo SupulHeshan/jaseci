@@ -1,0 +1,327 @@
+{
+  "test_name": "07_destructuring",
+  "timestamp": "2025-11-07T15:02:56.674142",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "ArrayExpression",
+              "elements": [
+                {
+                  "type": "Identifier",
+                  "name": "a"
+                },
+                {
+                  "type": "Identifier",
+                  "name": "b"
+                },
+                {
+                  "type": "Identifier",
+                  "name": "c"
+                }
+              ]
+            },
+            "init": {
+              "type": "ArrayExpression",
+              "elements": [
+                {
+                  "type": "Literal",
+                  "value": 1
+                },
+                {
+                  "type": "Literal",
+                  "value": 2
+                },
+                {
+                  "type": "Literal",
+                  "value": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "ArrayExpression",
+              "elements": [
+                {
+                  "type": "Identifier",
+                  "name": "first"
+                },
+                {
+                  "type": "SpreadElement",
+                  "argument": {
+                    "type": "Identifier",
+                    "name": "rest"
+                  }
+                }
+              ]
+            },
+            "init": {
+              "type": "ArrayExpression",
+              "elements": [
+                {
+                  "type": "Literal",
+                  "value": 1
+                },
+                {
+                  "type": "Literal",
+                  "value": 2
+                },
+                {
+                  "type": "Literal",
+                  "value": 3
+                },
+                {
+                  "type": "Literal",
+                  "value": 4
+                },
+                {
+                  "type": "Literal",
+                  "value": 5
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "ObjectExpression",
+              "properties": [
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "x"
+                  },
+                  "value": {
+                    "type": "Identifier",
+                    "name": "x"
+                  },
+                  "shorthand": true,
+                  "kind": "init"
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "y"
+                  },
+                  "value": {
+                    "type": "Identifier",
+                    "name": "y"
+                  },
+                  "shorthand": true,
+                  "kind": "init"
+                }
+              ]
+            },
+            "init": {
+              "type": "ObjectExpression",
+              "properties": [
+                {
+                  "type": "Property",
+                  "key": "x",
+                  "value": {
+                    "type": "Literal",
+                    "value": 10
+                  },
+                  "kind": "init"
+                },
+                {
+                  "type": "Property",
+                  "key": "y",
+                  "value": {
+                    "type": "Literal",
+                    "value": 20
+                  },
+                  "kind": "init"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "ObjectExpression",
+              "properties": [
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "name"
+                  },
+                  "value": {
+                    "type": "Identifier",
+                    "name": "name"
+                  },
+                  "shorthand": true,
+                  "kind": "init"
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "age"
+                  },
+                  "value": {
+                    "type": "Identifier",
+                    "name": "age"
+                  },
+                  "shorthand": true,
+                  "kind": "init"
+                }
+              ]
+            },
+            "init": {
+              "type": "Identifier",
+              "name": "person"
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "ArrayExpression",
+              "elements": [
+                {
+                  "type": "Identifier",
+                  "name": "p"
+                },
+                {
+                  "type": "ArrayExpression",
+                  "elements": [
+                    {
+                      "type": "Identifier",
+                      "name": "q"
+                    },
+                    {
+                      "type": "Identifier",
+                      "name": "r"
+                    }
+                  ]
+                }
+              ]
+            },
+            "init": {
+              "type": "ArrayExpression",
+              "elements": [
+                {
+                  "type": "Literal",
+                  "value": 1
+                },
+                {
+                  "type": "ArrayExpression",
+                  "elements": [
+                    {
+                      "type": "Literal",
+                      "value": 2
+                    },
+                    {
+                      "type": "Literal",
+                      "value": 3
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "ObjectExpression",
+              "properties": [
+                {
+                  "type": "Property",
+                  "key": "outer",
+                  "value": {
+                    "type": "ObjectExpression",
+                    "properties": [
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "inner"
+                        },
+                        "value": {
+                          "type": "Identifier",
+                          "name": "inner"
+                        },
+                        "shorthand": true,
+                        "kind": "init"
+                      }
+                    ]
+                  },
+                  "kind": "init"
+                }
+              ]
+            },
+            "init": {
+              "type": "ObjectExpression",
+              "properties": [
+                {
+                  "type": "Property",
+                  "key": "outer",
+                  "value": {
+                    "type": "ObjectExpression",
+                    "properties": [
+                      {
+                        "type": "Property",
+                        "key": "inner",
+                        "value": {
+                          "type": "Literal",
+                          "value": 42
+                        },
+                        "kind": "init"
+                      }
+                    ]
+                  },
+                  "kind": "init"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "hash": "16607883152ed046"
+}

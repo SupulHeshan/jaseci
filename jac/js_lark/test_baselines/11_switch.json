@@ -1,0 +1,225 @@
+{
+  "test_name": "11_switch",
+  "timestamp": "2025-11-07T15:02:57.735779",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "SwitchStatement",
+        "discriminant": {
+          "type": "Identifier",
+          "name": "value"
+        },
+        "cases": [
+          {
+            "type": "SwitchCase",
+            "test": {
+              "type": "Literal",
+              "value": 1
+            },
+            "consequent": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "log",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "one"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "BreakStatement",
+                "label": null
+              }
+            ]
+          },
+          {
+            "type": "SwitchCase",
+            "test": {
+              "type": "Literal",
+              "value": 2
+            },
+            "consequent": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "log",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "two"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "BreakStatement",
+                "label": null
+              }
+            ]
+          },
+          {
+            "type": "SwitchCase",
+            "test": {
+              "type": "Literal",
+              "value": 3
+            },
+            "consequent": []
+          },
+          {
+            "type": "SwitchCase",
+            "test": {
+              "type": "Literal",
+              "value": 4
+            },
+            "consequent": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "log",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "three or four"
+                    }
+                  ]
+                }
+              },
+              {
+                "type": "BreakStatement",
+                "label": null
+              }
+            ]
+          },
+          {
+            "type": "SwitchCase",
+            "test": null,
+            "consequent": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "log",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "other"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "SwitchStatement",
+        "discriminant": {
+          "type": "Identifier",
+          "name": "x"
+        },
+        "cases": [
+          {
+            "type": "SwitchCase",
+            "test": {
+              "type": "Literal",
+              "value": "a"
+            },
+            "consequent": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "doA"
+                  },
+                  "arguments": []
+                }
+              }
+            ]
+          },
+          {
+            "type": "SwitchCase",
+            "test": {
+              "type": "Literal",
+              "value": "b"
+            },
+            "consequent": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "doB"
+                  },
+                  "arguments": []
+                }
+              }
+            ]
+          },
+          {
+            "type": "SwitchCase",
+            "test": null,
+            "consequent": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "doDefault"
+                  },
+                  "arguments": []
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "hash": "6e84f19fcead23b6"
+}

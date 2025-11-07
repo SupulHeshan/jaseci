@@ -1,0 +1,280 @@
+{
+  "test_name": "18_misc_statements",
+  "timestamp": "2025-11-07T15:43:21.531163",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "DebuggerStatement"
+      },
+      {
+        "type": "LabeledStatement",
+        "label": {
+          "type": "Identifier",
+          "name": "loop1"
+        },
+        "body": {
+          "type": "ForStatement",
+          "init": {
+            "type": "VariableDeclaration",
+            "kind": "let",
+            "declarations": [
+              {
+                "type": "VariableDeclarator",
+                "id": {
+                  "type": "Identifier",
+                  "name": "i"
+                },
+                "init": {
+                  "type": "Literal",
+                  "value": 0
+                }
+              }
+            ]
+          },
+          "test": {
+            "type": "BinaryExpression",
+            "operator": "<",
+            "left": {
+              "type": "Identifier",
+              "name": "i"
+            },
+            "right": {
+              "type": "Literal",
+              "value": 5
+            }
+          },
+          "update": {
+            "type": "UpdateExpression",
+            "operator": "++",
+            "argument": {
+              "type": "Identifier",
+              "name": "i"
+            },
+            "prefix": false
+          },
+          "body": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "LabeledStatement",
+                "label": {
+                  "type": "Identifier",
+                  "name": "loop2"
+                },
+                "body": {
+                  "type": "ForStatement",
+                  "init": {
+                    "type": "VariableDeclaration",
+                    "kind": "let",
+                    "declarations": [
+                      {
+                        "type": "VariableDeclarator",
+                        "id": {
+                          "type": "Identifier",
+                          "name": "j"
+                        },
+                        "init": {
+                          "type": "Literal",
+                          "value": 0
+                        }
+                      }
+                    ]
+                  },
+                  "test": {
+                    "type": "BinaryExpression",
+                    "operator": "<",
+                    "left": {
+                      "type": "Identifier",
+                      "name": "j"
+                    },
+                    "right": {
+                      "type": "Literal",
+                      "value": 5
+                    }
+                  },
+                  "update": {
+                    "type": "UpdateExpression",
+                    "operator": "++",
+                    "argument": {
+                      "type": "Identifier",
+                      "name": "j"
+                    },
+                    "prefix": false
+                  },
+                  "body": {
+                    "type": "BlockStatement",
+                    "body": [
+                      {
+                        "type": "IfStatement",
+                        "test": {
+                          "type": "BinaryExpression",
+                          "operator": "&&",
+                          "left": {
+                            "type": "BinaryExpression",
+                            "operator": "===",
+                            "left": {
+                              "type": "Identifier",
+                              "name": "i"
+                            },
+                            "right": {
+                              "type": "Literal",
+                              "value": 2
+                            }
+                          },
+                          "right": {
+                            "type": "BinaryExpression",
+                            "operator": "===",
+                            "left": {
+                              "type": "Identifier",
+                              "name": "j"
+                            },
+                            "right": {
+                              "type": "Literal",
+                              "value": 2
+                            }
+                          }
+                        },
+                        "consequent": {
+                          "type": "BlockStatement",
+                          "body": [
+                            {
+                              "type": "BreakStatement",
+                              "label": {
+                                "type": "Identifier",
+                                "name": "loop1"
+                              }
+                            }
+                          ]
+                        },
+                        "alternate": null
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "WithStatement",
+        "object": {
+          "type": "Identifier",
+          "name": "obj"
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Identifier",
+                    "name": "property"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "ThrowStatement",
+        "argument": {
+          "type": "NewExpression",
+          "callee": {
+            "type": "Identifier",
+            "name": "Error"
+          },
+          "arguments": [
+            {
+              "type": "Literal",
+              "value": "Something went wrong"
+            }
+          ]
+        }
+      },
+      {
+        "type": "ThrowStatement",
+        "argument": {
+          "type": "Literal",
+          "value": "Error string"
+        }
+      },
+      {
+        "type": "FunctionDeclaration",
+        "id": {
+          "type": "Identifier",
+          "name": "test"
+        },
+        "params": [],
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ReturnStatement",
+              "argument": null
+            },
+            {
+              "type": "ReturnStatement",
+              "argument": {
+                "type": "Identifier",
+                "name": "value"
+              }
+            },
+            {
+              "type": "ReturnStatement",
+              "argument": {
+                "type": "BinaryExpression",
+                "operator": "+",
+                "left": {
+                  "type": "Identifier",
+                  "name": "a"
+                },
+                "right": {
+                  "type": "Identifier",
+                  "name": "b"
+                }
+              }
+            }
+          ]
+        },
+        "async": false,
+        "generator": false
+      },
+      {
+        "type": "EmptyStatement"
+      },
+      {
+        "type": "EmptyStatement"
+      },
+      {
+        "type": "IfStatement",
+        "test": {
+          "type": "Identifier",
+          "name": "true"
+        },
+        "consequent": {
+          "type": "EmptyStatement"
+        },
+        "alternate": null
+      }
+    ]
+  },
+  "hash": "5a9fff76cb97be16"
+}

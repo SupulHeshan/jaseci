@@ -1,0 +1,300 @@
+{
+  "test_name": "12_try_catch",
+  "timestamp": "2025-11-07T15:02:57.912330",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "TryStatement",
+        "block": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "riskyOperation"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        },
+        "handler": {
+          "type": "CatchClause",
+          "param": {
+            "type": "Identifier",
+            "name": "error"
+          },
+          "body": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "error",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Identifier",
+                      "name": "error"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "finalizer": null
+      },
+      {
+        "type": "TryStatement",
+        "block": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "doSomething"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        },
+        "handler": {
+          "type": "CatchClause",
+          "param": {
+            "type": "Identifier",
+            "name": "e"
+          },
+          "body": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "handleError"
+                  },
+                  "arguments": [
+                    {
+                      "type": "Identifier",
+                      "name": "e"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "finalizer": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "cleanup"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "TryStatement",
+        "block": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "doSomething"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        },
+        "handler": null,
+        "finalizer": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "cleanup"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "TryStatement",
+        "block": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "TryStatement",
+              "block": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "ExpressionStatement",
+                    "expression": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "Identifier",
+                        "name": "innerOperation"
+                      },
+                      "arguments": []
+                    }
+                  }
+                ]
+              },
+              "handler": {
+                "type": "CatchClause",
+                "param": {
+                  "type": "Identifier",
+                  "name": "inner"
+                },
+                "body": {
+                  "type": "BlockStatement",
+                  "body": [
+                    {
+                      "type": "ExpressionStatement",
+                      "expression": {
+                        "type": "CallExpression",
+                        "callee": {
+                          "type": "Identifier",
+                          "name": "handleInner"
+                        },
+                        "arguments": [
+                          {
+                            "type": "Identifier",
+                            "name": "inner"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              "finalizer": null
+            }
+          ]
+        },
+        "handler": {
+          "type": "CatchClause",
+          "param": {
+            "type": "Identifier",
+            "name": "outer"
+          },
+          "body": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "handleOuter"
+                  },
+                  "arguments": [
+                    {
+                      "type": "Identifier",
+                      "name": "outer"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "finalizer": null
+      },
+      {
+        "type": "TryStatement",
+        "block": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "doSomething"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        },
+        "handler": {
+          "type": "CatchClause",
+          "param": null,
+          "body": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "log",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "Error occurred"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "finalizer": null
+      }
+    ]
+  },
+  "hash": "af45702c608babc6"
+}

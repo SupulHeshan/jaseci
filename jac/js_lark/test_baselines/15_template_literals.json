@@ -1,0 +1,173 @@
+{
+  "test_name": "15_template_literals",
+  "timestamp": "2025-11-07T15:02:58.286847",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "simple"
+            },
+            "init": {
+              "type": "TemplateLiteral",
+              "parts": [
+                "`",
+                {
+                  "type": "TemplateElement",
+                  "value": "Hello, World!"
+                },
+                "`"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "withVar"
+            },
+            "init": {
+              "type": "TemplateLiteral",
+              "parts": [
+                "`",
+                {
+                  "type": "TemplateElement",
+                  "value": "Value: "
+                },
+                {
+                  "type": "TemplateExpression",
+                  "expression": "${"
+                },
+                "`"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "multiline"
+            },
+            "init": {
+              "type": "TemplateLiteral",
+              "parts": [
+                "`",
+                {
+                  "type": "TemplateElement",
+                  "value": "\n    Line 1\n    Line 2\n    Line 3\n"
+                },
+                "`"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "expr"
+            },
+            "init": {
+              "type": "TemplateLiteral",
+              "parts": [
+                "`",
+                {
+                  "type": "TemplateElement",
+                  "value": "Result: "
+                },
+                {
+                  "type": "TemplateExpression",
+                  "expression": "${"
+                },
+                "`"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "nested"
+            },
+            "init": {
+              "type": "TemplateLiteral",
+              "parts": [
+                "`",
+                {
+                  "type": "TemplateElement",
+                  "value": "Outer "
+                },
+                {
+                  "type": "TemplateExpression",
+                  "expression": "${"
+                },
+                "`"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "method"
+            },
+            "init": {
+              "type": "TemplateLiteral",
+              "parts": [
+                "`",
+                {
+                  "type": "TemplateElement",
+                  "value": "Method: "
+                },
+                {
+                  "type": "TemplateExpression",
+                  "expression": "${"
+                },
+                "`"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "hash": "eec2299debea396b"
+}

@@ -1,0 +1,435 @@
+{
+  "test_name": "10_loops",
+  "timestamp": "2025-11-07T15:02:57.552532",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "ForStatement",
+        "init": {
+          "type": "VariableDeclaration",
+          "kind": "let",
+          "declarations": [
+            {
+              "type": "VariableDeclarator",
+              "id": {
+                "type": "Identifier",
+                "name": "i"
+              },
+              "init": {
+                "type": "Literal",
+                "value": 0
+              }
+            }
+          ]
+        },
+        "test": {
+          "type": "BinaryExpression",
+          "operator": "<",
+          "left": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 10
+          }
+        },
+        "update": {
+          "type": "UpdateExpression",
+          "operator": "++",
+          "argument": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "prefix": false
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Identifier",
+                    "name": "i"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "ForStatement",
+        "init": null,
+        "test": {
+          "type": "BinaryExpression",
+          "operator": "<",
+          "left": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 20
+          }
+        },
+        "update": {
+          "type": "UpdateExpression",
+          "operator": "++",
+          "argument": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "prefix": false
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Identifier",
+                    "name": "i"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "ForInStatement",
+        "left": {
+          "type": "VariableDeclaration",
+          "kind": "let",
+          "declarations": [
+            {
+              "type": "VariableDeclarator",
+              "id": {
+                "type": "Identifier",
+                "name": "key"
+              },
+              "init": null
+            }
+          ]
+        },
+        "right": {
+          "type": "Identifier",
+          "name": "obj"
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Identifier",
+                    "name": "key"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "ForOfStatement",
+        "left": {
+          "type": "VariableDeclaration",
+          "kind": "let",
+          "declarations": [
+            {
+              "type": "VariableDeclarator",
+              "id": {
+                "type": "Identifier",
+                "name": "value"
+              },
+              "init": null
+            }
+          ]
+        },
+        "right": {
+          "type": "Identifier",
+          "name": "array"
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Identifier",
+                    "name": "value"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "await": false
+      },
+      {
+        "type": "ForOfStatement",
+        "left": {
+          "type": "VariableDeclaration",
+          "kind": "let",
+          "declarations": [
+            {
+              "type": "VariableDeclarator",
+              "id": {
+                "type": "Identifier",
+                "name": "item"
+              },
+              "init": null
+            }
+          ]
+        },
+        "right": {
+          "type": "Identifier",
+          "name": "asyncIterable"
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Identifier",
+                    "name": "item"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "await": false
+      },
+      {
+        "type": "WhileStatement",
+        "test": {
+          "type": "Identifier",
+          "name": "condition"
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "doSomething"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "DoWhileStatement",
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "Identifier",
+                  "name": "doSomething"
+                },
+                "arguments": []
+              }
+            }
+          ]
+        },
+        "test": {
+          "type": "Identifier",
+          "name": "condition"
+        }
+      },
+      {
+        "type": "ForStatement",
+        "init": {
+          "type": "VariableDeclaration",
+          "kind": "let",
+          "declarations": [
+            {
+              "type": "VariableDeclarator",
+              "id": {
+                "type": "Identifier",
+                "name": "i"
+              },
+              "init": {
+                "type": "Literal",
+                "value": 0
+              }
+            }
+          ]
+        },
+        "test": {
+          "type": "BinaryExpression",
+          "operator": "<",
+          "left": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 100
+          }
+        },
+        "update": {
+          "type": "UpdateExpression",
+          "operator": "++",
+          "argument": {
+            "type": "Identifier",
+            "name": "i"
+          },
+          "prefix": false
+        },
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "IfStatement",
+              "test": {
+                "type": "BinaryExpression",
+                "operator": "===",
+                "left": {
+                  "type": "Identifier",
+                  "name": "i"
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 10
+                }
+              },
+              "consequent": {
+                "type": "BreakStatement",
+                "label": null
+              },
+              "alternate": null
+            },
+            {
+              "type": "IfStatement",
+              "test": {
+                "type": "BinaryExpression",
+                "operator": "===",
+                "left": {
+                  "type": "BinaryExpression",
+                  "operator": "%",
+                  "left": {
+                    "type": "Identifier",
+                    "name": "i"
+                  },
+                  "right": {
+                    "type": "Literal",
+                    "value": 2
+                  }
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 0
+                }
+              },
+              "consequent": {
+                "type": "ContinueStatement",
+                "label": null
+              },
+              "alternate": null
+            },
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Identifier",
+                    "name": "i"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "hash": "c81fa7539e74dfa8"
+}

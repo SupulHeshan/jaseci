@@ -1,0 +1,108 @@
+{
+  "test_name": "17_import_export",
+  "timestamp": "2025-11-07T15:02:58.528435",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "ImportDeclaration",
+        "specifiers": [],
+        "source": null
+      },
+      {
+        "type": "ImportDeclaration",
+        "specifiers": [],
+        "source": null
+      },
+      {
+        "type": "ImportDeclaration",
+        "specifiers": [],
+        "source": null
+      },
+      {
+        "type": "ImportDeclaration",
+        "specifiers": [],
+        "source": null
+      },
+      {
+        "type": "ImportDeclaration",
+        "specifiers": [],
+        "source": null
+      },
+      {
+        "type": "ImportDeclaration",
+        "specifiers": [],
+        "source": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportNamedDeclaration",
+        "declaration": null
+      },
+      {
+        "type": "ExportDefaultDeclaration",
+        "declaration": {
+          "type": "FunctionExpression",
+          "id": null,
+          "params": [],
+          "body": {
+            "type": "BlockStatement",
+            "body": []
+          },
+          "async": false,
+          "generator": false
+        }
+      },
+      {
+        "type": "ExportDefaultDeclaration",
+        "declaration": {
+          "type": "ClassExpression",
+          "id": null,
+          "superClass": null,
+          "body": {
+            "type": "ClassBody",
+            "body": []
+          }
+        }
+      },
+      {
+        "type": "ExportDefaultDeclaration",
+        "declaration": {
+          "type": "Literal",
+          "value": 42
+        }
+      }
+    ]
+  },
+  "hash": "2920dc207aeec2d4"
+}

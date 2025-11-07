@@ -1,0 +1,8 @@
+{
+  "test_name": "19_complex_expressions",
+  "timestamp": "2025-11-07T15:02:58.963707",
+  "success": false,
+  "error": "No terminal matches '.' in the current parser context, at line 18 col 18\n\nconst deep = obj?.property?.method()?.result;\n                 ^\nExpected one of: \n\t* REGEX\n\t* TEMPLATE_STRING_START\n\t* IDENTIFIER\n\t* OF\n\t* LET\n\t* NEW\n\t* AS\n\t* NULL\n\t* SUPER\n\t* CLASS\n\t* __ANON_26\n\t* THIS\n\t* FUNCTION\n\t* TILDE\n\t* LSQB\n\t* STATIC\n\t* PLUS\n\t* STRING\n\t* DELETE\n\t* LPAR\n\t* GET\n\t* __ANON_27\n\t* VOID\n\t* BANG\n\t* LBRACE\n\t* TYPEOF\n\t* MINUS\n\t* YIELD\n\t* TRUE\n\t* FALSE\n\t* SET\n\t* AWAIT\n\t* NUMBER\n\t* ASYNC\n",
+  "ast": null,
+  "hash": "fb50f7adbffc880c"
+}

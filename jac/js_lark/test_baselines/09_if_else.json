@@ -1,0 +1,277 @@
+{
+  "test_name": "09_if_else",
+  "timestamp": "2025-11-07T15:02:57.271731",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "IfStatement",
+        "test": {
+          "type": "BinaryExpression",
+          "operator": ">",
+          "left": {
+            "type": "Identifier",
+            "name": "x"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 0
+          }
+        },
+        "consequent": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": "positive"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "alternate": null
+      },
+      {
+        "type": "IfStatement",
+        "test": {
+          "type": "BinaryExpression",
+          "operator": "<",
+          "left": {
+            "type": "Identifier",
+            "name": "y"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 0
+          }
+        },
+        "consequent": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": "negative"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "alternate": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": "non-negative"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "IfStatement",
+        "test": {
+          "type": "BinaryExpression",
+          "operator": "===",
+          "left": {
+            "type": "Identifier",
+            "name": "z"
+          },
+          "right": {
+            "type": "Literal",
+            "value": 0
+          }
+        },
+        "consequent": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "CallExpression",
+                "callee": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "console"
+                  },
+                  "property": "log",
+                  "computed": false
+                },
+                "arguments": [
+                  {
+                    "type": "Literal",
+                    "value": "zero"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "alternate": {
+          "type": "IfStatement",
+          "test": {
+            "type": "BinaryExpression",
+            "operator": ">",
+            "left": {
+              "type": "Identifier",
+              "name": "z"
+            },
+            "right": {
+              "type": "Literal",
+              "value": 0
+            }
+          },
+          "consequent": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "log",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "positive"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "alternate": {
+            "type": "BlockStatement",
+            "body": [
+              {
+                "type": "ExpressionStatement",
+                "expression": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "MemberExpression",
+                    "object": {
+                      "type": "Identifier",
+                      "name": "console"
+                    },
+                    "property": "log",
+                    "computed": false
+                  },
+                  "arguments": [
+                    {
+                      "type": "Literal",
+                      "value": "negative"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "IfStatement",
+        "test": {
+          "type": "Identifier",
+          "name": "a"
+        },
+        "consequent": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "IfStatement",
+              "test": {
+                "type": "Identifier",
+                "name": "b"
+              },
+              "consequent": {
+                "type": "BlockStatement",
+                "body": [
+                  {
+                    "type": "ExpressionStatement",
+                    "expression": {
+                      "type": "CallExpression",
+                      "callee": {
+                        "type": "MemberExpression",
+                        "object": {
+                          "type": "Identifier",
+                          "name": "console"
+                        },
+                        "property": "log",
+                        "computed": false
+                      },
+                      "arguments": [
+                        {
+                          "type": "Literal",
+                          "value": "both"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "alternate": null
+            }
+          ]
+        },
+        "alternate": null
+      }
+    ]
+  },
+  "hash": "aeccde4dcbb4bb7e"
+}

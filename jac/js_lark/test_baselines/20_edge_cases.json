@@ -1,0 +1,280 @@
+{
+  "test_name": "20_edge_cases",
+  "timestamp": "2025-11-07T15:46:04.531823",
+  "success": true,
+  "error": null,
+  "ast": {
+    "type": "Program",
+    "hashbang": null,
+    "body": [
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "emptyFunc"
+            },
+            "init": {
+              "type": "FunctionExpression",
+              "id": null,
+              "params": [],
+              "body": {
+                "type": "BlockStatement",
+                "body": []
+              },
+              "async": false,
+              "generator": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "emptyArrow"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [],
+              "body": {
+                "type": "ObjectExpression",
+                "properties": []
+              },
+              "async": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "emptyObj"
+            },
+            "init": {
+              "type": "ObjectExpression",
+              "properties": []
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "emptyArray"
+            },
+            "init": {
+              "type": "ArrayExpression",
+              "elements": []
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "oneLine"
+            },
+            "init": {
+              "type": "ArrowFunctionExpression",
+              "params": [],
+              "body": {
+                "type": "Identifier",
+                "name": "single"
+              },
+              "async": false
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "a"
+            },
+            "init": {
+              "type": "Literal",
+              "value": 1
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "b"
+            },
+            "init": {
+              "type": "Literal",
+              "value": 2
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "c"
+            },
+            "init": {
+              "type": "Literal",
+              "value": 3
+            }
+          }
+        ]
+      },
+      {
+        "type": "FunctionDeclaration",
+        "id": {
+          "type": "Identifier",
+          "name": "gen"
+        },
+        "params": [],
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "YieldExpression",
+                "argument": {
+                  "type": "Literal",
+                  "value": 1
+                },
+                "delegate": false
+              }
+            },
+            {
+              "type": "ExpressionStatement",
+              "expression": {
+                "type": "BinaryExpression",
+                "operator": "*",
+                "left": {
+                  "type": "YieldExpression",
+                  "argument": null,
+                  "delegate": false
+                },
+                "right": {
+                  "type": "CallExpression",
+                  "callee": {
+                    "type": "Identifier",
+                    "name": "other"
+                  },
+                  "arguments": []
+                }
+              }
+            }
+          ]
+        },
+        "async": false,
+        "generator": false
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "{'type': 'Identifier', 'name': 'unknown'}"
+            },
+            "init": {
+              "type": "Literal",
+              "value": 1
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "{'type': 'Identifier', 'name': 'unknown'}"
+            },
+            "init": {
+              "type": "Literal",
+              "value": 2
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "{'type': 'Identifier', 'name': 'unknown'}"
+            },
+            "init": {
+              "type": "Literal",
+              "value": 3
+            }
+          }
+        ]
+      },
+      {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "{'type': 'Identifier', 'name': 'unknown'}"
+            },
+            "init": {
+              "type": "Literal",
+              "value": 4
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "hash": "c2ab9e8db92d1945"
+}
