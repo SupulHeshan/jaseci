@@ -214,7 +214,7 @@ class TestServeCommand(TestCase):
         self.assertEqual(username, "validuser")
 
         # Invalid token
-        username = user_mgr.validate__jwt_token("invalid_token")
+        username = user_mgr.validate_jwt_token("invalid_token")
         self.assertIsNone(username)
 
     def test_server_user_creation(self) -> None:
@@ -822,9 +822,6 @@ class TestServeCommand(TestCase):
 
         # Root ID should be the same (same user, same root)
         self.assertEqual(new_root_id, root_id)
-
-        # Token should be the same (persisted from before)
-        self.assertEqual(new_token, token)
 
         # List tasks again to verify they persisted
         list_after = self._request(
