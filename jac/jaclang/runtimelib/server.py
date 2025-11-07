@@ -7,12 +7,13 @@ import html
 import inspect
 import json
 import os
-import secrets
 from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Callable, Literal, TypeAlias, get_type_hints
 from urllib.parse import parse_qs, urlparse
+
 
 from jaclang.runtimelib.client_bundle import ClientBundleError
 from jaclang.runtimelib.constructs import (
@@ -23,11 +24,17 @@ from jaclang.runtimelib.constructs import (
 )
 from jaclang.runtimelib.machine import ExecutionContext, JacMachine as Jac
 
+import jwt
+
 # Type Aliases
 JsonValue: TypeAlias = (
     None | str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"]
 )
 StatusCode: TypeAlias = Literal[200, 201, 400, 401, 404, 503]
+
+JWT_SECRET = os.getenv("JWT_SECRET", "supersecretkey")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_EXP_DELTA_MINUTES = int(os.getenv("JWT_EXP_DELTA_MINUTES", 5))
 
 
 # Response Models
@@ -106,7 +113,7 @@ class UserManager:
 
     session_path: str
     _users: dict[str, dict[str, str]] = field(default_factory=dict, init=False)
-    _tokens: dict[str, str] = field(default_factory=dict, init=False)
+    # _tokens: dict[str, str] = field(default_factory=dict, init=False)
     _db_path: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -120,16 +127,18 @@ class UserManager:
             with open(self._db_path, encoding="utf-8") as fh:
                 data = json.load(fh)
                 self._users = data.get("__jac_users__", {})
-                self._tokens = data.get("__jac_tokens__", {})
+                # self._tokens = data.get("__jac_tokens__", {})
         except Exception:
-            self._users, self._tokens = {}, {}
+            # self._users, self._tokens = {}, {}
+            self._users = {}
 
     def _persist(self) -> None:
         """Save user data to persistent storage."""
         with open(self._db_path, "w", encoding="utf-8") as fh:
-            json.dump(
-                {"__jac_users__": self._users, "__jac_tokens__": self._tokens}, fh
-            )
+            # json.dump(
+            #     {"__jac_users__": self._users, "__jac_tokens__": self._tokens}, fh
+            # )
+            json.dump({"__jac_users__": self._users}, fh)
 
     def create_user(self, username: str, password: str) -> dict[str, str]:
         """Create a new user with their own root node. Returns dict with user data or error."""
@@ -149,15 +158,15 @@ class UserManager:
             ctx.mem.close()
             Jac.set_context(ExecutionContext())
 
-        token = secrets.token_urlsafe(32)
+        token = UserManager.create_jwt_token(username)
         password_hash = hashlib.sha256(password.encode()).hexdigest()
 
         self._users[username] = {
             "password_hash": password_hash,
-            "token": token,
+            # "token": token,
             "root_id": root_id,
         }
-        self._tokens[token] = username
+        # self._tokens[token] = username
         self._persist()
 
         return {"username": username, "token": token, "root_id": root_id}
@@ -171,16 +180,13 @@ class UserManager:
         password_hash = hashlib.sha256(password.encode()).hexdigest()
 
         if user["password_hash"] == password_hash:
+            token = UserManager.create_jwt_token(username)
             return {
                 "username": username,
-                "token": user["token"],
+                "token": token,
                 "root_id": user["root_id"],
             }
         return None
-
-    def validate_token(self, token: str) -> str | None:
-        """Validate token and return username."""
-        return self._tokens.get(token)
 
     def get_root_id(self, username: str) -> str | None:
         """Get user's root node ID."""
@@ -189,6 +195,25 @@ class UserManager:
     def close(self) -> None:
         """Close and persist user data."""
         self._persist()
+
+    @staticmethod
+    def create_jwt_token(username: str) -> str:
+        payload = {
+            "username": username,
+            "exp": datetime.utcnow() + timedelta(minutes=JWT_EXP_DELTA_MINUTES),
+            "iat": datetime.utcnow(),
+        }
+        return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+    @staticmethod
+    def validate_jwt_token(token: str) -> str | None:
+        try:
+            print("the token is", token)
+            decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            print("decoded value is", decoded)
+            return decoded["username"]
+        except Exception:
+            return None
 
 
 # Execution Context Manager
@@ -803,7 +828,7 @@ class JacAPIServer:
             def _authenticate(self) -> str | None:
                 """Authenticate request and return username."""
                 token = self._get_auth_token()
-                return server.user_manager.validate_token(token) if token else None
+                return server.user_manager.validate_jwt_token(token) if token else None
 
             def _read_json(self) -> dict[str, Any]:
                 """Read and parse JSON from request body."""
