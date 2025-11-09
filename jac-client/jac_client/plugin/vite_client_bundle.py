@@ -136,9 +136,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
         )
 
-        combined_js = (
-            f"{module_js}\n{runtime_js}\n{export_block}"
-        )
+        combined_js = f"{module_js}\n{runtime_js}\n{export_block}"
         if self.vite_package_json is not None:
             (
                 self.vite_package_json.parent / "src" / f"{module_path.stem}.js"
@@ -196,20 +194,22 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         runtimeutils_exports_list = self._extract_client_exports(runtimeutils_manifest)
 
         export_block = (
-            f"export {{ {', '.join(runtimeutils_exports_list)} }};\n" if runtimeutils_exports_list else ""
+            f"export {{ {', '.join(runtimeutils_exports_list)} }};\n"
+            if runtimeutils_exports_list
+            else ""
         )
 
-        combined_js = (
-            f"{runtimeutils_js}\n{export_block}"
-        )
+        combined_js = f"{runtimeutils_js}\n{export_block}"
         # let's write the runtime.js file
-        (self.vite_package_json.parent / "src" / "runtime_utils.js").write_text(combined_js, encoding="utf-8")
+        (self.vite_package_json.parent / "src" / "runtime_utils.js").write_text(
+            combined_js, encoding="utf-8"
+        )
 
         # Collect exports/globals across root and recursive deps
         collected_exports: set[str] = set(self._extract_client_exports(manifest))
         client_globals_map = self._extract_client_globals(manifest, module)
         collected_globals: dict[str, Any] = dict(client_globals_map)
-        
+
         # Compile runtime to JS and add to temp for Vite to consume
         runtime_js, mod = self._compile_to_js(self.runtime_path)
 
