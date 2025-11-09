@@ -164,20 +164,33 @@ cl {
                 # create vite.config.js file
                 vite_config_content = """
 import { defineConfig } from "vite";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  root: ".",          // base folder
+  root: ".", // base folder
   build: {
     rollupOptions: {
-      input: "index.html",
+      input: "build/main.js", // your compiled entry file
+      output: {
+        entryFileNames: "client.[hash].js", // name of the final js file
+        assetFileNames: "[name].[ext]",
+      },
     },
-    outDir: "dist",   // final bundled output
+    outDir: "dist", // final bundled output
+    emptyOutDir: true,
   },
-  alias: {
-    "@jac-client/utils": "src/runtime_utils.js",
-    "@jac-client/runtime": "src/runtime.js",
+  publicDir: false,
+  resolve: {
+    alias: {
+      "@jac-client/utils": path.resolve(__dirname, "src/runtime_utils.js"),
+      "@jac-client/runtime": path.resolve(__dirname, "src/runtime.js"),
+    },
   },
 });
+
 """
                 with open(os.path.join(project_path, "vite.config.js"), "w") as f:
                     f.write(vite_config_content)

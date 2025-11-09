@@ -1,12 +1,12 @@
 
 # Pages
 cl import from react {useState, useEffect}
-cl import from "@jac-client/utils" {log_test}
+cl import from "@jac-client/utils" {log_test, jacSpawn, jacIsLoggedIn }
 cl {
     def App() -> any {
         let [count, setCount] = useState(0);
         useEffect(lambda -> None {
-            log_test();
+            console.log("Count: ", count);
         }, [count]);
         return <div>
             <h1>Hello, World!</h1>

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { log_test } from "@jac-client/utils";
+import { log_test, jacSpawn, jacIsLoggedIn } from "@jac-client/utils";
 function App() {
   let [count, setCount] = useState(0);
   useEffect(() => {
-    log_test();
+    console.log("Count: ", count);
   }, [count]);
   return __jacJsx("div", {}, [__jacJsx("h1", {}, ["Hello, World!"]), __jacJsx("p", {}, ["Count: ", count]), __jacJsx("button", {"onClick": e => {
     setCount(count + 1);

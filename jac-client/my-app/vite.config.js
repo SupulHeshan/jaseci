@@ -1,3 +1,4 @@
+
 import { defineConfig } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -5,7 +6,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  root: ".",          // base folder
+  root: ".", // base folder
   build: {
     rollupOptions: {
       input: "build/main.js", // your compiled entry file
@@ -14,7 +15,7 @@ export default defineConfig({
         assetFileNames: "[name].[ext]",
       },
     },
-    outDir: "dist",   // final bundled output
+    outDir: "dist", // final bundled output
     emptyOutDir: true,
   },
   publicDir: false,
@@ -25,3 +26,4 @@ export default defineConfig({
     },
   },
 });
+
