@@ -111,41 +111,38 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             return
         visited.add(module_path)
         manifest = None
-        if not is_root:
-            # Compile current module to JS and append registration
-            module_js, mod = self._compile_to_js(module_path)
-            manifest = mod.gen.client_manifest if mod else None
 
-            # Extract exports from manifest
-            exports_list = self._extract_client_exports(manifest)
-            collected_exports.update(exports_list)
+        # Compile current module to JS and append registration
+        module_js, mod = self._compile_to_js(module_path)
+        manifest = mod.gen.client_manifest if mod else None
 
-            # Build globals map using manifest.globals_values only for non-root
-            non_root_globals: dict[str, Any] = {}
-            if manifest:
-                for name in manifest.globals:
-                    non_root_globals[name] = manifest.globals_values.get(name)
-            collected_globals.update(non_root_globals)
+        # Extract exports from manifest
+        exports_list = self._extract_client_exports(manifest)
+        collected_exports.update(exports_list)
 
-            registration_js = self._generate_registration_js(
-                module_path.stem,
-                exports_list,
-                non_root_globals,
-            )
-            export_block = (
-                f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
-            )
+        # Build globals map using manifest.globals_values only for non-root
+        non_root_globals: dict[str, Any] = {}
+        if manifest:
+            for name in manifest.globals:
+                non_root_globals[name] = manifest.globals_values.get(name)
+        collected_globals.update(non_root_globals)
 
-            combined_js = (
-                f"{module_js}\n{registration_js}\n{runtime_js}\n{export_block}"
-            )
-            if self.vite_package_json is not None:
-                (
-                    self.vite_package_json.parent / "src" / f"{module_path.stem}.js"
-                ).write_text(combined_js, encoding="utf-8")
-        else:
-            mod = Jac.program.mod.hub.get(str(module_path))
-            manifest = mod.gen.client_manifest if mod else None
+        # registration_js = self._generate_registration_js(
+        #     module_path.stem,
+        #     exports_list,
+        #     non_root_globals,
+        # )
+        export_block = (
+            f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
+        )
+
+        combined_js = (
+            f"{module_js}\n{runtime_js}\n{export_block}"
+        )
+        if self.vite_package_json is not None:
+            (
+                self.vite_package_json.parent / "src" / f"{module_path.stem}.js"
+            ).write_text(combined_js, encoding="utf-8")
 
         if not manifest or not manifest.imports:
             return
@@ -192,13 +189,29 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
 
         module_js, _ = self._compile_to_js(module_path)
 
-        # Compile runtime to JS and add to temp for Vite to consume
-        runtime_js, mod = self._compile_to_js(self.runtime_path)
+        # client_runtime_utils.jac is same level as client_runtime.jac , so get paent path and add the file name
+        runtime_utils_path = self.runtime_path.parent / "client_runtime_utils.jac"
+        runtimeutils_js, mod = self._compile_to_js(runtime_utils_path)
+        runtimeutils_manifest = mod.gen.client_manifest if mod else None
+        runtimeutils_exports_list = self._extract_client_exports(runtimeutils_manifest)
+
+        export_block = (
+            f"export {{ {', '.join(runtimeutils_exports_list)} }};\n" if runtimeutils_exports_list else ""
+        )
+
+        combined_js = (
+            f"{runtimeutils_js}\n{export_block}"
+        )
+        # let's write the runtime.js file
+        (self.vite_package_json.parent / "src" / "runtime_utils.js").write_text(combined_js, encoding="utf-8")
 
         # Collect exports/globals across root and recursive deps
         collected_exports: set[str] = set(self._extract_client_exports(manifest))
         client_globals_map = self._extract_client_globals(manifest, module)
         collected_globals: dict[str, Any] = dict(client_globals_map)
+        
+        # Compile runtime to JS and add to temp for Vite to consume
+        runtime_js, mod = self._compile_to_js(self.runtime_path)
 
         # Recursively prepare dependencies and accumulate symbols
         self._compile_dependencies_recursively(

@@ -1,6 +1,7 @@
 import types
 from pathlib import Path
 from typing import Any
+import html
 
 from jaclang.runtimelib.client_bundle import ClientBundle
 from jaclang.runtimelib.machine import (
@@ -18,7 +19,36 @@ class JacClientModuleIntrospector(ModuleIntrospector):
     def render_page(
         self, function_name: str, args: dict[str, Any], username: str
     ) -> dict[str, Any]:
-        return super().render_page(function_name, args, username)
+        """Render HTML page for client function using the Vite bundle."""
+        self.load()
+
+        available_exports = set(self._client_manifest.get("exports", [])) or set(
+            self.get_client_functions().keys()
+        )
+        if function_name not in available_exports:
+            raise ValueError(f"Client function '{function_name}' not found")
+
+        bundle_hash = self.ensure_bundle()
+
+        page = (
+            "<!DOCTYPE html>"
+            '<html lang="en">'
+            "<head>"
+            '<meta charset="utf-8"/>'
+            f"<title>{html.escape(function_name)}</title>"
+            "</head>"
+            "<body>"
+            '<div id="root"></div>'
+            f'<script src="/static/client.js?hash={bundle_hash}" defer></script>'
+            "</body>"
+            "</html>"
+        )
+
+        return {
+            "html": page,
+            "bundle_hash": bundle_hash,
+            "bundle_code": self._bundle.code,
+        }
 
 
 class JacClient:

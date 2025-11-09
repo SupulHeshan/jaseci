@@ -173,6 +173,10 @@ export default defineConfig({
     },
     outDir: "dist",   // final bundled output
   },
+  alias: {
+    "@jac-client/utils": "src/runtime_utils.js",
+    "@jac-client/runtime": "src/runtime.js",
+  },
 });
 """
                 with open(os.path.join(project_path, "vite.config.js"), "w") as f:
