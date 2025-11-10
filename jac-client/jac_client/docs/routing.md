@@ -258,7 +258,7 @@ cl {
         e.preventDefault();
         username = document.getElementById("username").value;
         password = document.getElementById("password").value;
-        
+
         success = await jacLogin(username, password);
         if success {
             navigate("/dashboard");  # Navigate after successful login

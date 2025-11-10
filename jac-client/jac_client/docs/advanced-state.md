@@ -28,12 +28,12 @@ cl {
     def TodoApp() -> any {
         let [todos, setTodos] = useState([]);
         let [filter, setFilter] = useState("all");
-        
+
         useEffect(lambda -> None {
             # Load todos on mount
             loadTodos();
         }, []);
-        
+
         return <div>{/* your UI */}</div>;
     }
 }
@@ -53,7 +53,7 @@ cl {
         "items": [],
         "filter": "all"
     });
-    
+
     def TodoApp() -> any {
         s = todoState();
         return <div>{/* your UI */}</div>;

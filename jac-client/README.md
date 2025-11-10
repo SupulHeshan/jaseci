@@ -60,11 +60,11 @@ cl import from react { useState, useEffect }
 cl {
     def Counter() -> any {
         let [count, setCount] = useState(0);
-        
+
         useEffect(lambda -> None {
             console.log("Count:", count);
         }, [count]);
-        
+
         return <div>
             <h1>Count: {count}</h1>
             <button onClick={lambda e: any -> None {
