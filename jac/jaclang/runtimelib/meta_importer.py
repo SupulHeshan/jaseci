@@ -96,6 +96,15 @@ class JacMetaImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
                         continue
 
             if not byllm_found:
+                paths_to_search = get_jac_search_paths()
+                module_path_parts = fullname.split(".")
+                for search_path in paths_to_search:
+                    candidate_path = os.path.join(search_path, *module_path_parts)
+                    # Check for .jac file
+                    if os.path.isfile(candidate_path + ".jac"):
+                        return importlib.util.spec_from_file_location(
+                            fullname, candidate_path + ".jac", loader=self
+                        )
                 # If byllm is not installed, return a spec for our fallback loader
                 print(
                     f"Please install a byllm plugin, but for now patching {fullname} with NonGPT"
