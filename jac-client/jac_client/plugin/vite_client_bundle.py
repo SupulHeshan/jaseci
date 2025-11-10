@@ -52,7 +52,6 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         and local .js files we embed). Bare package specifiers (e.g., "antd") are left as real
         ES imports so Vite can resolve and bundle them.
         """
-        # TODO: return pure js files separately
         imported_js_modules: list[Path | None] = []
 
         if manifest and manifest.imports:
@@ -85,10 +84,8 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         self,
         module_path: Path,
         visited: set[Path] | None = None,
-        is_root: bool = False,
         collected_exports: set[str] | None = None,
         collected_globals: dict[str, Any] | None = None,
-        runtime_js: str | None = None,
     ) -> None:
         """Recursively compile/copy .jac/.js imports to temp, skipping bundling.
 
@@ -96,8 +93,6 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         or copying local JS (.js) into the temp directory. Bare specifiers are left
         untouched for Vite to resolve.
         """
-        from jaclang.runtimelib.machine import JacMachine as Jac
-
         if visited is None:
             visited = set()
         if collected_exports is None:
@@ -151,10 +146,8 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                 self._compile_dependencies_recursively(
                     path_obj,
                     visited,
-                    is_root=False,
                     collected_exports=collected_exports,
-                    collected_globals=collected_globals,
-                    runtime_js=runtime_js,
+                    collected_globals=collected_globals
                 )
             elif path_obj.suffix == ".js":
                 try:
@@ -174,16 +167,9 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         module: ModuleType,
         module_path: Path,
     ) -> ClientBundle:
-        """Override to use Vite bundling instead of simple concatenation."""
-        # Get manifest from JacProgram first to check for imports
-        from jaclang.runtimelib.machine import JacMachine as Jac
+        """Override to use Vite bundling instead of simple concatenation."""   
 
-        mod = Jac.program.mod.hub.get(str(module_path))
-        manifest = mod.gen.client_manifest if mod else None
-
-        module_js, _ = self._compile_to_js(module_path)
-
-        # client_runtime_utils.jac is same level as client_runtime.jac , so get paent path and add the file name
+        # client_runtime for jac client utils
         runtime_utils_path = self.runtime_path.parent / "client_runtime.jac"
         runtimeutils_js, mod = self._compile_to_js(runtime_utils_path)
         runtimeutils_manifest = mod.gen.client_manifest if mod else None
@@ -195,44 +181,29 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             else ""
         )
 
-        combined_js = f"{runtimeutils_js}\n{export_block}"
-        # let's write the runtime.js file
+        combined_runtime_utils_js = f"{runtimeutils_js}\n{export_block}"
         (self.vite_package_json.parent / "src" / "client_runtime.js").write_text(
-            combined_js, encoding="utf-8"
+            combined_runtime_utils_js, encoding="utf-8"
         )
 
+        # Get manifest from JacProgram first to check for imports
         # Collect exports/globals across root and recursive deps
-        collected_exports: set[str] = set(self._extract_client_exports(manifest))
-        client_globals_map = self._extract_client_globals(manifest, module)
+        module_js, mod = self._compile_to_js(module_path)
+        module_manifest = mod.gen.client_manifest if mod else None
+        collected_exports: set[str] = set(self._extract_client_exports(module_manifest))
+        client_globals_map = self._extract_client_globals(module_manifest, module)
         collected_globals: dict[str, Any] = dict(client_globals_map)
-
-        # Compile runtime to JS and add to temp for Vite to consume
-        runtime_js, mod = self._compile_to_js(self.runtime_path)
 
         # Recursively prepare dependencies and accumulate symbols
         self._compile_dependencies_recursively(
             module_path,
-            is_root=True,
             collected_exports=collected_exports,
-            collected_globals=collected_globals,
-            runtime_js=runtime_js,
+            collected_globals=collected_globals
         )
 
         client_exports = sorted(collected_exports)
         client_globals_map = collected_globals
 
-        bundle_pieces = []
-
-        # Add main module (without registration_js - we'll handle that in Jac init script)
-        bundle_pieces.extend(
-            [
-                "// Runtime module:",
-                runtime_js,
-                f"// Client module: {module.__name__}",
-                module_js,
-                "",
-            ]
-        )
         entry_file = self.vite_package_json.parent / "src" / "main.js"
 
         entry_content = """import React from "react";
@@ -246,7 +217,7 @@ root.render(<App />);
 
 
         bundle_code, bundle_hash = self._bundle_with_vite(
-            bundle_pieces, module.__name__, client_exports
+            module.__name__, client_exports
         )
 
         return ClientBundle(
@@ -258,12 +229,11 @@ root.render(<App />);
         )
 
     def _bundle_with_vite(
-        self, bundle_pieces: list[str], module_name: str, client_functions: list[str]
+        self, module_name: str, client_functions: list[str]
     ) -> tuple[str, str]:
         """Bundle JavaScript code using Vite for optimization.
 
         Args:
-            bundle_pieces: List of JavaScript code pieces to bundle
             module_name: Name of the module being bundled
             client_functions: List of client function names
 
