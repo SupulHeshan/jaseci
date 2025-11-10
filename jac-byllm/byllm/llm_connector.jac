@@ -37,7 +37,6 @@ obj LLMConnector(ABC){
 
     static
     def for_model(model_name:str, **kwargs: object) -> LLMConnector {
-        print("init Litellm");
         if model_name.lower().strip() == MODEL_MOCK {
             return MockLLMConnector(model_name, **kwargs);
         }
@@ -88,8 +87,13 @@ obj LLMConnector(ABC){
 }
 
 
+
+"""LLM Connector for a mock LLM service that simulates responses."""
 obj MockLLMConnector(LLMConnector){
-    """LLM Connector for a mock LLM service that simulates responses."""
+
+    def __init__(model_name:str, **kwargs:object){
+        super.__init__(model_name, **kwargs);
+    }
 
     override
     def dispatch_no_streaming(mtir: MTIR) -> CompletionResult{

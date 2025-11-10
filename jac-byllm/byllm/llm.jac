@@ -44,8 +44,8 @@ obj Model {
     with various language models through LiteLLM.
     """
 
+
     def __init__(model_name: str, **kwargs: object) -> None {
-        print("Initializing JacLLM Model...");
         self.llm_connector = LLMConnector.for_model(model_name, **kwargs);
     }
 
