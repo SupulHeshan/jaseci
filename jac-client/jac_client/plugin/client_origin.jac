@@ -82,7 +82,7 @@ def Router(props: dict) -> any {
 
     # Use React useState for path - this ensures React handles re-renders
     [pathState, setPathState] = React.useState(initialPath);
-    
+
     # Create getter function that returns current path
     def currentPath() -> str {
         return pathState;
@@ -119,7 +119,7 @@ def Router(props: dict) -> any {
 
         window.addEventListener("hashchange", handleHashChange);
         window.addEventListener("popstate", handleHashChange);
-        
+
         # Cleanup function
         return lambda -> None {
             window.removeEventListener("hashchange", handleHashChange);
@@ -270,7 +270,7 @@ def Link(props: dict) -> any {
     } else {
         fullHref = "#" + href;
     }
-    
+
     # Ensure href always starts with # to prevent full page navigation
     if not fullHref.startsWith("#") {
         fullHref = "#" + fullHref;
