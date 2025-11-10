@@ -123,7 +123,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         export_block = (
             f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
         )
-        
+
         # inport jacJsx from client_runtime_utils.jac
         jacJsx_path = 'import {__jacJsx} from "@jac-client/utils";'
 
@@ -214,7 +214,6 @@ const root = createRoot(document.getElementById("root"));
 root.render(<App />);
 """
         entry_file.write_text(entry_content, encoding="utf-8")
-
 
         bundle_code, bundle_hash = self._bundle_with_vite(
             module.__name__, client_exports
