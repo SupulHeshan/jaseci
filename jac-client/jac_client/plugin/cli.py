@@ -84,10 +84,6 @@ class JacCmd:
                 build_folder = os.path.join(project_path, "build")
                 os.makedirs(build_folder, exist_ok=True)
 
-                # create static/client/js folder
-                client_js_folder = os.path.join(project_path, "static", "client", "js")
-                os.makedirs(client_js_folder, exist_ok=True)
-
                 # Update package.json with Jac-specific configuration
                 package_data.update(
                     {

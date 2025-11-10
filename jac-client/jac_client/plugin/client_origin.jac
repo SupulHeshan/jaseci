@@ -39,248 +39,20 @@ def __jacJsx(tag: any, props: dict = {}, children: any = []) -> any {
     }
 }
 
-def renderJsxTree(node: any, container: any) -> None {
-    try {
-        ReactDOM.createRoot(container).render(node);
-    } except Exception as err {
-        console.error("[Jac] Error in renderJsxTree:", err);
-    }
-}
 
 # ============================================================================
 # Reactive State Management System
 # ============================================================================
 
-# Global reactive context for managing signals, effects, and re-renders
+# Global reactive context for managing signals and effects
+# Simplified - React Context handles re-rendering for routing
 let __jacReactiveContext = {
     "signals": [],              # Global signal storage (enables closures)
-    "pendingRenders": [],       # Batched re-renders queue
-    "flushScheduled": False,    # Debounce flag for batching
-    "rootComponent": None,      # Root function to re-render
-    "reactRoot": None,          # Store the React 18 root instance
     "currentComponent": None,   # Current component ID being rendered
     "currentEffect": None,      # Current effect for dependency tracking
-    "router": None,            # Global router instance
     "mountedComponents": {}     # Track which components have mounted (for onMount)
 };
 
-# Create a reactive signal (primitive value)
-# Returns [getter, setter] tuple for reactive primitive value
-def createSignal(initialValue: any) -> list {
-    signalId = __jacReactiveContext.signals.length;
-    signalData = {"value": initialValue, "subscribers": []};
-    __jacReactiveContext.signals.push(signalData);
-
-    def getter() -> any {
-        __jacTrackDependency(signalData.subscribers);
-        return signalData.value;
-    }
-
-    def setter(newValue: any) -> None {
-        if newValue != signalData.value {
-            signalData.value = newValue;
-            __jacNotifySubscribers(signalData.subscribers);
-        }
-    }
-
-    return [getter, setter];
-}
-
-# Create reactive state (object/dict)
-# Returns [getter, setter] tuple for reactive object
-def createState(initialState: dict) -> list {
-    signalId = __jacReactiveContext.signals.length;
-    signalData = {"value": initialState, "subscribers": []};
-    __jacReactiveContext.signals.push(signalData);
-
-    def getter() -> dict {
-        __jacTrackDependency(signalData.subscribers);
-        return signalData.value;
-    }
-
-    def setter(updates: dict) -> None {
-        # Shallow merge
-        newState = {};
-        stateValue = signalData.value;
-        for key in __objectKeys(stateValue) {
-            newState[key] = stateValue[key];
-        }
-        for key in __objectKeys(updates) {
-            newState[key] = updates[key];
-        }
-        signalData.value = newState;
-        __jacNotifySubscribers(signalData.subscribers);
-    }
-
-    return [getter, setter];
-}
-
-# Run effect when dependencies change
-# Executes effectFn and re-runs when tracked signals change
-def createEffect(effectFn: any) -> None {
-    __jacRunEffect(effectFn);
-}
-
-# Run effect once when component mounts (similar to useEffect with empty deps)
-# Executes mountFn once when the component first renders
-def onMount(mountFn: any) -> None {
-    currentComponent = __jacReactiveContext.currentComponent;
-    if not currentComponent {
-        # Not in a component context, run immediately
-        __jacRunEffect(mountFn);
-        return;
-    }
-
-    # Track mounted components
-    if not __jacReactiveContext.mountedComponents {
-        __jacReactiveContext.mountedComponents = {};
-    }
-
-    # Check if this component has already mounted
-    componentId = f"{currentComponent}";
-    if not __jacHasOwn(__jacReactiveContext.mountedComponents, componentId) {
-        # Mark as mounted and run the effect
-        __jacReactiveContext.mountedComponents[componentId] = True;
-
-        # Run in next tick to ensure component is fully rendered
-        try {
-            setTimeout(lambda -> None {
-                __jacRunEffect(mountFn);
-            }, 0);
-        } except Exception {
-            # Fallback if setTimeout not available
-            __jacRunEffect(mountFn);
-        }
-    }
-}
-
-# Internal: Track component dependencies
-def __jacTrackDependency(subscribers: list) -> None {
-    currentEffect = __jacReactiveContext.currentEffect;
-    if currentEffect {
-        alreadySubscribed = False;
-        for sub in subscribers {
-            if sub == currentEffect {
-                alreadySubscribed = True;
-            }
-        }
-        if not alreadySubscribed {
-            subscribers.push(currentEffect);
-        }
-    }
-
-    currentComponent = __jacReactiveContext.currentComponent;
-    if currentComponent {
-        alreadySubscribed = False;
-        for sub in subscribers {
-            if sub == currentComponent {
-                alreadySubscribed = True;
-            }
-        }
-        if not alreadySubscribed {
-            subscribers.push(currentComponent);
-        }
-    }
-}
-
-# Internal: Notify subscribers of state change
-def __jacNotifySubscribers(subscribers: list) -> None {
-    for subscriber in subscribers {
-        if __isFunction(subscriber) {
-            # It's an effect function - re-run it
-            __jacRunEffect(subscriber);
-        } else {
-            # It's a component ID - schedule re-render
-            __jacScheduleRerender(subscriber);
-        }
-    }
-}
-
-# Internal: Run an effect function with dependency tracking
-def __jacRunEffect(effectFn: any) -> None {
-    previousEffect = __jacReactiveContext.currentEffect;
-    __jacReactiveContext.currentEffect = effectFn;
-
-    try {
-        effectFn();
-    } except Exception as err {
-        console.error("[Jac] Error in effect:", err);
-    }
-
-    __jacReactiveContext.currentEffect = previousEffect;
-}
-
-# Schedule a re-render (batched)
-def __jacScheduleRerender(componentId: any) -> None {
-    pending = __jacReactiveContext.pendingRenders;
-
-    # Check if already scheduled
-    alreadyScheduled = False;
-    for item in pending {
-        if item == componentId {
-            alreadyScheduled = True;
-        }
-    }
-
-    if not alreadyScheduled {
-        pending.push(componentId);
-        __jacScheduleFlush();
-    }
-}
-
-# Schedule a flush of pending renders
-def __jacScheduleFlush() -> None {
-    if not __jacReactiveContext.flushScheduled {
-        __jacReactiveContext.flushScheduled = True;
-
-        # Use requestAnimationFrame for batching, fallback to setTimeout
-        try {
-            requestAnimationFrame(__jacFlushRenders);
-        } except Exception {
-            setTimeout(__jacFlushRenders, 0);
-        }
-    }
-}
-
-# Flush all pending renders
-def __jacFlushRenders() -> None {
-    pending = __jacReactiveContext.pendingRenders;
-    __jacReactiveContext.pendingRenders = [];
-    __jacReactiveContext.flushScheduled = False;
-
-    for componentId in pending {
-        __jacRerenderComponent(componentId);
-    }
-}
-
-# Re-render the root component
-def __jacRerenderComponent(componentId: any) -> None {
-    # Use the stored React 18 root for re-rendering
-    reactRoot = __jacReactiveContext.reactRoot;
-    if not reactRoot {
-        console.error("[Jac] React root not initialized. Cannot re-render.");
-        return;
-    }
-
-    rootComponent = __jacReactiveContext.rootComponent;
-    if not rootComponent {
-        return;
-    }
-
-    try {
-        previousComponent = __jacReactiveContext.currentComponent;
-        __jacReactiveContext.currentComponent = componentId;
-
-        component = rootComponent();
-
-        # FIXED: Use the stored React 18 root's render method
-        reactRoot.render(component);
-
-        __jacReactiveContext.currentComponent = previousComponent;
-    } except Exception as err {
-        console.error("[Jac] Error re-rendering component:", err);
-    }
-}
 
 # ============================================================================
 # React-Style Routing System (using React Context)
@@ -303,35 +75,59 @@ def Router(props: dict) -> any {
     if basename and initialPath.startsWith(basename) {
         initialPath = initialPath[len(basename):];
     }
+    # Normalize path to always start with /
+    if initialPath and not initialPath.startsWith("/") {
+        initialPath = "/" + initialPath;
+    }
 
-    # Create reactive signal for current path
-    [currentPath, setCurrentPath] = createSignal(initialPath);
+    # Use React useState for path - this ensures React handles re-renders
+    [pathState, setPathState] = React.useState(initialPath);
+    
+    # Create getter function that returns current path
+    def currentPath() -> str {
+        return pathState;
+    }
 
     # Navigate function
     def navigateTo(path: str) -> None {
-        fullPath = basename + path if basename else path;
+        # Normalize path to always start with /
+        normalizedPath = path;
+        if normalizedPath and not normalizedPath.startsWith("/") {
+            normalizedPath = "/" + normalizedPath;
+        }
+        fullPath = basename + normalizedPath if basename else normalizedPath;
         window.location.hash = "#" + fullPath;
-        setCurrentPath(path);
+        setPathState(normalizedPath);
     }
 
-    # Listen to hash changes - set up once on mount
-    def handleHashChange(event: any) -> None {
-        newPath = __jacGetHashPath();
-        if basename and newPath.startsWith(basename) {
-            newPath = newPath[len(basename):];
+    # Listen to hash changes using React useEffect
+    React.useEffect(lambda -> None {
+        def handleHashChange(event: any) -> None {
+            newPath = __jacGetHashPath();
+            if basename and newPath.startsWith(basename) {
+                newPath = newPath[len(basename):];
+            }
+            if not newPath {
+                newPath = defaultRoute;
+            }
+            # Normalize path to always start with /
+            if newPath and not newPath.startsWith("/") {
+                newPath = "/" + newPath;
+            }
+            setPathState(newPath);
         }
-        if not newPath {
-            newPath = defaultRoute;
-        }
-        setCurrentPath(newPath);
-    }
 
-    onMount(lambda -> None {
         window.addEventListener("hashchange", handleHashChange);
         window.addEventListener("popstate", handleHashChange);
-    });
+        
+        # Cleanup function
+        return lambda -> None {
+            window.removeEventListener("hashchange", handleHashChange);
+            window.removeEventListener("popstate", handleHashChange);
+        };
+    }, []);
 
-    # Router context value - create new object on each render to ensure reactivity
+    # Router context value - create new object with current path
     routerValue = {
         "location": currentPath,
         "navigate": navigateTo,
@@ -345,7 +141,11 @@ def Router(props: dict) -> any {
 # Route Component - renders component when path matches
 def Route(props: dict) -> any {
     path = props["path"] if "path" in props else "/";
-    element = props["element"] if "element" in props else None;
+    # Use bracket notation to avoid 'element' keyword conflict
+    elementProp = None;
+    if "element" in props {
+        elementProp = props["element"];
+    }
     component = props["component"] if "component" in props else None;
     guard = props["guard"] if "guard" in props else None;
 
@@ -371,8 +171,9 @@ def Route(props: dict) -> any {
     # Render component or element
     if component {
         return component();
-    } else if element {
-        return element;
+    }
+    if elementProp {
+        return elementProp;
     }
 
     return None;
@@ -403,7 +204,8 @@ def Routes(props: dict) -> any {
 
     for child in childrenArray {
         # Extract route props from React element
-        if child and __isObject(child) and child.props {
+        # Check if child is an object with props (React element)
+        if child and child != None and child.props {
             routePath = child.props.path if child.props.path else "/";
             if routePath == currentPath {
                 # Check guard if present
@@ -414,8 +216,12 @@ def Routes(props: dict) -> any {
                 # Render the matched route
                 if child.props.component {
                     return child.props.component();
-                } else if child.props.element {
-                    return child.props.element;
+                } else {
+                    # Check for element prop using bracket notation to avoid keyword conflict
+                    elementValue = child.props["element"] if child.props["element"] != None else None;
+                    if elementValue {
+                        return elementValue;
+                    }
                 }
             }
         }
@@ -429,6 +235,10 @@ def Routes(props: dict) -> any {
 def Link(props: dict) -> any {
     to = props["to"] if "to" in props else "/";
     href = props["href"] if "href" in props else to;
+    # Normalize href to always start with /
+    if href and not href.startsWith("/") {
+        href = "/" + href;
+    }
     children = props["children"] if "children" in props else [];
 
     # Get router context
@@ -454,10 +264,20 @@ def Link(props: dict) -> any {
         }
     }
 
-    # Get full href with basename
-    fullHref = "#" + (router.basename + href if router and router.basename else href);
+    # Get full href with basename - always ensure it starts with #
+    if router and router.basename {
+        fullHref = "#" + router.basename + href;
+    } else {
+        fullHref = "#" + href;
+    }
+    
+    # Ensure href always starts with # to prevent full page navigation
+    if not fullHref.startsWith("#") {
+        fullHref = "#" + fullHref;
+    }
 
-    return __jacJsx("a", {"href": fullHref, "onclick": handleClick}, childrenArray);
+    # Use onClick (camelCase) for React, and ensure href is hash-based
+    return __jacJsx("a", {"href": fullHref, "onClick": handleClick}, childrenArray);
 }
 
 # Navigate Component - programmatic redirect
@@ -660,16 +480,6 @@ def __removeLocalStorage(key: str) -> None {
     }
 }
 
-def __isObject(value: any) -> bool {
-    if value == None {
-        return False;
-    }
-    return Object.prototype.toString.call(value) == "[object Object]";
-}
-
-def __isFunction(value: any) -> bool {
-    return Object.prototype.toString.call(value) == "[object Function]";
-}
 
 def __objectKeys(obj: any) -> list {
     if obj == None {
@@ -684,371 +494,6 @@ def __jacHasOwn(obj: any, key: any) -> bool {
         return Object.prototype.hasOwnProperty.call(obj, key);
     } except Exception {
         return False;
-    }
-}
+    }}
 
-# Internal polyfill for Python-style dict.get on plain JS objects
-def __jacEnsureObjectGetPolyfill() -> None {
-    # No longer needed - we use standard JavaScript object access instead of .get() method
-    return;
-}
-
-# Common utility helpers
-def __jacGetDocument(scope: any) -> any {
-    try {
-        return scope.document;
-    } except Exception {}
-    try {
-        return window.document;
-    } except Exception {}
-    return None;
-}
-
-def __jacParseJsonObject(text: str) -> any {
-    try {
-        parsed = JSON.parse(text);
-        if __isObject(parsed) {
-            return parsed;
-        }
-        console.error("[Jac] Hydration payload is not an object");
-        return None;
-    } except Exception as err {
-        console.error("[Jac] Failed to parse hydration payload", err);
-        return None;
-    }
-}
-
-def __jacBuildOrderedArgs(order: list, argsDict: dict) -> list {
-    result = [];
-    if not order {
-        return result;
-    }
-    values = argsDict if __isObject(argsDict) else {};
-    for name in order {
-        result.push(values[name]);
-    }
-    return result;
-}
-
-def __jacResolveRenderer(scope: any) -> any {
-    if scope.renderJsxTree {
-        return scope.renderJsxTree;
-    }
-    if __isFunction(renderJsxTree) {
-        return renderJsxTree;
-    }
-    return None;
-}
-
-def __jacResolveTarget(
-    moduleRecord: dict,
-    registry: dict,
-    name: str
-) -> any {
-    moduleFunctions = (
-        moduleRecord.moduleFunctions
-        if moduleRecord and moduleRecord.moduleFunctions
-        else {}
-    );
-    if __jacHasOwn(moduleFunctions, name) {
-        return moduleFunctions[name];
-    }
-    registryFunctions = (
-        registry.functions
-        if registry and registry.functions
-        else {}
-    );
-    if __jacHasOwn(registryFunctions, name) {
-        return registryFunctions[name];
-    }
-    return None;
-}
-
-def __jacSafeCallTarget(
-    target: any,
-    scope: any,
-    orderedArgs: list,
-    targetName: str
-) -> dict {
-    try {
-        result = target.apply(scope, orderedArgs);
-        return {"ok": True, "value": result};
-    } except Exception as err {
-        console.error("[Jac] Error executing client function " + targetName, err);
-        return {"ok": False, "value": None};
-    }
-}
-
-# Runtime support helpers for client module registration / hydration
-def __jacGlobalScope() -> any {
-    try {
-        return globalThis;
-    } except Exception {}
-    try {
-        return window;
-    } except Exception {}
-    try {
-        return self;
-    } except Exception {}
-    return {};
-}
-
-def __jacEnsureRegistry() -> dict {
-    scope = __jacGlobalScope();
-    registry = scope.__jacClient;
-    if not registry {
-        registry = {
-            "functions": {},
-            "globals": {},
-            "modules": {},
-            "state": {"globals": {}},
-            "__hydration": {"registered": False},
-            "lastModule": None
-        };
-        scope.__jacClient = registry;
-        return registry;
-    }
-    if not registry.functions {
-        registry.functions = {};
-    }
-    if not registry.globals {
-        registry.globals = {};
-    }
-    if not registry.modules {
-        registry.modules = {};
-    }
-    if not registry.state {
-        registry.state = {"globals": {}};
-    } elif not registry.state.globals {
-        registry.state.globals = {};
-    }
-    if not registry.__hydration {
-        registry.__hydration = {"registered": False};
-    }
-    return registry;
-}
-
-def __jacApplyRender(renderer: any, container: any, node: any) -> None {
-    if not container {
-        return;
-    }
-    try {
-        # This function is now mostly legacy/fallback.
-        # The main hydration path in __jacHydrateFromDom handles React 18.
-        if renderer {
-            renderer(node, container);
-        } else {
-            console.warn("[Jac] No JSX renderer available.");
-        }
-    } except Exception as err {
-        console.error("[Jac] Failed to render JSX tree (fallback path)", err);
-    }
-}
-
-def __jacHydrateFromDom(defaultModuleName: str) -> None {
-    __jacEnsureObjectGetPolyfill();
-    scope = __jacGlobalScope();
-    documentRef = __jacGetDocument(scope);
-    if not documentRef {
-        return;
-    }
-
-    initEl = documentRef.getElementById("__jac_init__");
-    rootEl = documentRef.getElementById("__jac_root");
-    if not initEl or not rootEl {
-        return;
-    }
-
-    dataset = initEl.dataset if initEl.dataset else None;
-    if dataset and dataset.jacHydrated == "true" {
-        return;
-    }
-    if dataset {
-        dataset.jacHydrated = "true";
-    }
-
-    payloadText = initEl.textContent if initEl.textContent else "{}";
-    payload = __jacParseJsonObject(payloadText);
-    if not payload {
-        return;
-    }
-
-    targetName = payload["function"];
-    if not targetName {
-        return;
-    }
-
-    fallbackModule = defaultModuleName if defaultModuleName else "";
-    moduleCandidate = payload["module"];
-    moduleName = moduleCandidate if moduleCandidate else fallbackModule;
-
-    registry = __jacEnsureRegistry();
-    modulesStore = registry.modules if registry.modules else {};
-    moduleRecord = modulesStore[moduleName] if __jacHasOwn(modulesStore, moduleName) else None;
-    if not moduleRecord {
-        console.error("[Jac] Client module not registered: " + moduleName);
-        return;
-    }
-
-    argOrderRaw = payload["argOrder"] if payload["argOrder"] != None else [];
-    argOrder = argOrderRaw if Array.isArray(argOrderRaw) else [];
-    argsDictRaw = payload["args"] if payload["args"] != None else {};
-    argsDict = argsDictRaw if __isObject(argsDictRaw) else {};
-    orderedArgs = __jacBuildOrderedArgs(argOrder, argsDict);
-
-    payloadGlobalsRaw = payload["globals"] if payload["globals"] != None else {};
-    payloadGlobals = payloadGlobalsRaw if __isObject(payloadGlobalsRaw) else {};
-    registry.state.globals[moduleName] = payloadGlobals;
-    for gName in __objectKeys(payloadGlobals) {
-        gValue = payloadGlobals[gName];
-        scope[gName] = gValue;
-        registry.globals[gName] = gValue;
-    }
-
-    target = __jacResolveTarget(moduleRecord, registry, targetName);
-    if not target {
-        console.error("[Jac] Client function not found: " + targetName);
-        return;
-    }
-
-    # Set up reactive root component for automatic re-rendering
-    __jacReactiveContext.rootComponent = lambda -> any {
-        __jacReactiveContext.currentComponent = "__root__";
-        result = target.apply(scope, orderedArgs);
-        __jacReactiveContext.currentComponent = None;
-        return result;
-    };
-
-    renderer = __jacResolveRenderer(scope);
-    if not renderer {
-        console.warn("[Jac] renderJsxTree is not available in client bundle");
-    }
-
-    # FIX: Declare reactRoot in the function scope
-    let reactRoot = None;
-
-    # 1. Create and store the React 18 root instance
-    try {
-        reactRoot = ReactDOM.createRoot(rootEl);
-        __jacReactiveContext.reactRoot = reactRoot; # Store the root instance
-    } except Exception as err {
-        console.error("[Jac] Failed to create React root for hydration:", err);
-        return;
-    }
-
-    # 2. Initial render - call the root component
-    value = __jacReactiveContext.rootComponent();
-
-    # 3. Use the stored root for the initial render (hydration)
-    if value and __isObject(value) and __isFunction(value.then) {
-        value.then(
-            lambda node: any -> None {
-                reactRoot.render(node);
-            }
-        ).catch(
-            lambda err: any -> None {
-                console.error("[Jac] Error resolving client function promise", err);
-            }
-        );
-    } else {
-        reactRoot.render(value);
-    }
-}
-
-def __jacExecuteHydration() -> None {
-    registry = __jacEnsureRegistry();
-    defaultModule = registry.lastModule if registry.lastModule else "";
-    __jacHydrateFromDom(defaultModule);
-}
-
-def __jacEnsureHydration(moduleName: str) -> None {
-    __jacEnsureObjectGetPolyfill();
-    registry = __jacEnsureRegistry();
-    registry.lastModule = moduleName;
-
-    existingHydration = registry.__hydration if registry.__hydration else None;
-    hydration = existingHydration if existingHydration else {"registered": False};
-    registry.__hydration = hydration;
-
-    scope = __jacGlobalScope();
-    documentRef = __jacGetDocument(scope);
-    if not documentRef {
-        return;
-    }
-
-    alreadyRegistered = hydration.registered if hydration.registered else False;
-    if not alreadyRegistered {
-        hydration.registered = True;
-        documentRef.addEventListener(
-            "DOMContentLoaded",
-            lambda _event: any -> None {
-                __jacExecuteHydration();
-            },
-            {"once": True}
-        );
-    }
-}
-
-def __jacRegisterClientModule(
-    moduleName: str,
-    clientFunctions: list = [],
-    clientGlobals: dict = {}
-) -> None {
-    __jacEnsureObjectGetPolyfill();
-    scope = __jacGlobalScope();
-    registry = __jacEnsureRegistry();
-
-    moduleFunctions = {};
-    registeredFunctions = [];
-    if clientFunctions {
-        for funcName in clientFunctions {
-            funcRef = scope[funcName];
-            if not funcRef {
-                console.error("[Jac] Client function not found during registration: " + funcName);
-                continue;
-            }
-            moduleFunctions[funcName] = funcRef;
-            registry.functions[funcName] = funcRef;
-            scope[funcName] = funcRef;
-            registeredFunctions.push(funcName);
-        }
-    }
-
-    moduleGlobals = {};
-    globalNames = [];
-    globalsMap = clientGlobals if clientGlobals else {};
-    for gName in __objectKeys(globalsMap) {
-        globalNames.push(gName);
-        defaultValue = globalsMap[gName];
-        existing = scope[gName];
-        if existing == None {
-            scope[gName] = defaultValue;
-            moduleGlobals[gName] = defaultValue;
-        } else {
-            moduleGlobals[gName] = existing;
-        }
-        registry.globals[gName] = scope[gName];
-    }
-
-    modulesStore = registry.modules if registry.modules else {};
-    existingRecord = modulesStore[moduleName] if __jacHasOwn(modulesStore, moduleName) else None;
-    moduleRecord = existingRecord if existingRecord else {};
-    moduleRecord.moduleFunctions = moduleFunctions;
-    moduleRecord.moduleGlobals = moduleGlobals;
-    moduleRecord.functions = registeredFunctions;
-    moduleRecord.globals = globalNames;
-    moduleRecord.defaults = globalsMap;
-
-
-    # 1. Ensure the module is written to the registry FIRST.
-    registry.modules[moduleName] = moduleRecord;
-
-    stateGlobals = registry.state.globals;
-    if not __jacHasOwn(stateGlobals, moduleName) {
-        stateGlobals[moduleName] = {};
-    }
-
-    # 2. ONLY THEN, trigger the hydration/lookup process.
-    __jacEnsureHydration(moduleName);
-}
 }
