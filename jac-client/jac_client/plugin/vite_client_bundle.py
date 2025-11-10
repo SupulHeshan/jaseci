@@ -147,7 +147,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
                     path_obj,
                     visited,
                     collected_exports=collected_exports,
-                    collected_globals=collected_globals
+                    collected_globals=collected_globals,
                 )
             elif path_obj.suffix == ".js":
                 try:
@@ -167,7 +167,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         module: ModuleType,
         module_path: Path,
     ) -> ClientBundle:
-        """Override to use Vite bundling instead of simple concatenation."""   
+        """Override to use Vite bundling instead of simple concatenation."""
 
         # client_runtime for jac client utils
         runtime_utils_path = self.runtime_path.parent / "client_runtime.jac"
@@ -198,7 +198,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         self._compile_dependencies_recursively(
             module_path,
             collected_exports=collected_exports,
-            collected_globals=collected_globals
+            collected_globals=collected_globals,
         )
 
         client_exports = sorted(collected_exports)
