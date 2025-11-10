@@ -104,6 +104,7 @@ class LanguageServerTestHelper:
             )
         )
         await did_open(self.ls, params)
+        await self.ls.wait_till_idle()
 
     async def save_document(self, code: Optional[str] = None) -> None:
         """Save a document in the language server."""
@@ -122,6 +123,7 @@ class LanguageServerTestHelper:
             text=content
         )
         await did_save(self.ls, params)
+        await self.ls.wait_till_idle()
 
     async def change_document(self, code: str) -> None:
         """Change document content in the language server."""
@@ -138,6 +140,7 @@ class LanguageServerTestHelper:
             content_changes=[{"text": code}],  # type: ignore
         )
         await did_change(self.ls, params)
+        await self.ls.wait_till_idle()
 
     def _update_workspace(self, code: str, version: int) -> None:
         """Update workspace with new document content."""
