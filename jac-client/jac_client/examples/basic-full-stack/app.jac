@@ -224,8 +224,8 @@ cl {
                         "textAlign": "center",
                         "color": "#9ca3af"
                     }}>
-                        {("No todos yet. Add one above!" if filter == "all" else 
-                         ("No active todos!" if filter == "active" else 
+                        {("No todos yet. Add one above!" if filter == "all" else
+                         ("No active todos!" if filter == "active" else
                          "No completed todos!"))}
                     </div>) if filteredTodos.length == 0 else (
                     filteredTodos.map(lambda todo: any -> any {
