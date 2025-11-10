@@ -7,7 +7,7 @@ node Todo {
 }
 
 walker create_todo {
-    has text:str ="Example Todo";
+    has text:str;
     can create with `root entry {
         new_todo = here ++> Todo(text= self.text);
         report new_todo;
