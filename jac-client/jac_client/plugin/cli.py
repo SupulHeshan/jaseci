@@ -126,7 +126,7 @@ class JacCmd:
 # Pages
 cl import from react {useState, useEffect}
 cl {
-    def App() -> any {
+    def app() -> any {
         let [count, setCount] = useState(0);
         useEffect(lambda -> None {
             console.log("Count: ", count);

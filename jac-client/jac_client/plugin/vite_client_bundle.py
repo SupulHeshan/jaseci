@@ -208,7 +208,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
 
         entry_content = """import React from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./app.js";
+import { app as App } from "./app.js";
 
 const root = createRoot(document.getElementById("root"));
 root.render(<App />);

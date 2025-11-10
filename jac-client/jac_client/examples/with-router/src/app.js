@@ -13,7 +13,7 @@ function Contact() {
 function Navigation() {
   return __jacJsx("nav", {"style": {"padding": "1rem", "backgroundColor": "#f0f0f0", "marginBottom": "1rem"}}, [__jacJsx(Link, {"to": "/"}, ["Home"]), " | ", __jacJsx(Link, {"to": "/about"}, ["About"]), " | ", __jacJsx(Link, {"to": "/contact"}, ["Contact"])]);
 }
-function App() {
+function app() {
   return __jacJsx(Router, {"defaultRoute": "/"}, [__jacJsx("div", {}, [__jacJsx(Navigation, {}, []), __jacJsx(Routes, {}, [__jacJsx(Route, {"path": "/", "component": Home}, []), __jacJsx(Route, {"path": "/about", "component": About}, []), __jacJsx(Route, {"path": "/contact", "component": Contact}, [])])])]);
 }
-export { About, App, Contact, Home, Navigation };
+export { About, Contact, Home, Navigation, app };

@@ -41,7 +41,7 @@ cl {
         </nav>;
     }
     # Main App Component with Routing
-    def App() -> any {
+    def app() -> any {
         return <Router defaultRoute="/">
             <div>
                 <Navigation />
