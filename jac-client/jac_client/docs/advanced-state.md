@@ -1,16 +1,70 @@
 # Advanced State Management in Jac
 
-Learn how to combine multiple `createState()` calls, manage complex state patterns, and build scalable state architectures.
+Learn how to manage complex state in Jac using React hooks or Jac's `createState()`, combining multiple state instances, and building scalable state architectures.
 
 ---
 
 ## 📚 Table of Contents
 
+- [Choosing Your State Approach](#choosing-your-state-approach)
 - [Multiple State Instances](#multiple-state-instances)
 - [State Composition Patterns](#state-composition-patterns)
 - [Derived State](#derived-state)
 - [State Management Patterns](#state-management-patterns)
 - [Best Practices](#best-practices)
+
+---
+
+## Choosing Your State Approach
+
+Jac supports two approaches to state management:
+
+### React Hooks (Recommended)
+
+```jac
+cl import from react { useState, useEffect }
+
+cl {
+    def TodoApp() -> any {
+        let [todos, setTodos] = useState([]);
+        let [filter, setFilter] = useState("all");
+        
+        useEffect(lambda -> None {
+            # Load todos on mount
+            loadTodos();
+        }, []);
+        
+        return <div>{/* your UI */}</div>;
+    }
+}
+```
+
+**Pros:**
+- Familiar to React developers
+- Access to full React ecosystem
+- Well-documented patterns
+- Granular state updates
+
+### Jac's createState()
+
+```jac
+cl {
+    let [todoState, setTodoState] = createState({
+        "items": [],
+        "filter": "all"
+    });
+    
+    def TodoApp() -> any {
+        s = todoState();
+        return <div>{/* your UI */}</div>;
+    }
+}
+```
+
+**Pros:**
+- Simple Jac-native approach
+- Automatic shallow merging
+- Less boilerplate for simple cases
 
 ---
 

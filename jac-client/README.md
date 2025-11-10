@@ -43,14 +43,45 @@ Visit `http://localhost:8000` to see your app!
 For detailed guides and tutorials, see the **[docs folder](jac_client/docs/)**:
 
 - **[Getting Started Guide](jac_client/docs/README.md)** - Complete beginner's guide
-- **[Routing](jac_client/docs/routing.md)** - Multi-page applications with `initRouter()`
-- **[Lifecycle Hooks](jac_client/docs/lifecycle-hooks.md)** - Using `onMount()` for initialization
-- **[Advanced State](jac_client/docs/advanced-state.md)** - Managing complex state
-- **[Imports](jac_client/docs/imports.md)** - Importing libraries, Jac files, and JavaScript modules
+- **[Routing](jac_client/docs/routing.md)** - Multi-page applications with declarative routing (`<Router>`, `<Routes>`, `<Route>`)
+- **[Lifecycle Hooks](jac_client/docs/lifecycle-hooks.md)** - Using `onMount()` and React hooks
+- **[Advanced State](jac_client/docs/advanced-state.md)** - Managing complex state with React hooks or `createState()`
+- **[Imports](jac_client/docs/imports.md)** - Importing third-party libraries (React, Ant Design, Lodash), Jac files, and JavaScript modules
 
 ---
 
-## 💡 Example
+## 💡 Examples
+
+### Using React Hooks
+
+```jac
+cl import from react { useState, useEffect }
+
+cl {
+    def Counter() -> any {
+        let [count, setCount] = useState(0);
+        
+        useEffect(lambda -> None {
+            console.log("Count:", count);
+        }, [count]);
+        
+        return <div>
+            <h1>Count: {count}</h1>
+            <button onClick={lambda e: any -> None {
+                setCount(count + 1);
+            }}>
+                Increment
+            </button>
+        </div>;
+    }
+
+    def app() -> any {
+        return Counter();
+    }
+}
+```
+
+### Using Jac's createState()
 
 ```jac
 cl {

@@ -21,7 +21,9 @@ Lifecycle hooks are functions that let you run code at specific points in a comp
 - **When component updates**: React to state changes
 - **When component unmounts**: Clean up resources
 
-In Jac, the primary lifecycle hook is `onMount()`, which runs code once when a component first renders.
+Jac supports two approaches:
+1. **React's useEffect**: Full-featured lifecycle management from React
+2. **Jac's onMount()**: Simple one-time initialization hook
 
 **Key Benefits:**
 - **Initialization**: Load data when component appears
@@ -31,7 +33,67 @@ In Jac, the primary lifecycle hook is `onMount()`, which runs code once when a c
 
 ---
 
-## The `onMount()` Hook
+## React's useEffect Hook
+
+React's `useEffect` hook is the recommended approach for modern Jac applications. It provides full lifecycle management including mount, update, and cleanup.
+
+### Basic Usage
+
+```jac
+cl import from react { useState, useEffect }
+
+cl {
+    def MyComponent() -> any {
+        let [count, setCount] = useState(0);
+        
+        useEffect(lambda -> None {
+            console.log("Component mounted!");
+            # Load initial data
+            loadData();
+        }, []);  # Empty array means run only on mount
+        
+        return <div>Count: {count}</div>;
+    }
+}
+```
+
+**Key Points:**
+- Import `useEffect` from `react`
+- First argument: function to run
+- Second argument: dependency array
+  - `[]` - run only on mount
+  - `[count]` - run when `count` changes
+  - No array - run on every render
+
+### useEffect with Dependencies
+
+```jac
+cl import from react { useState, useEffect }
+
+cl {
+    def Counter() -> any {
+        let [count, setCount] = useState(0);
+        
+        useEffect(lambda -> None {
+            console.log("Count changed to:", count);
+            # React to count changes
+        }, [count]);  # Run when count changes
+        
+        return <div>
+            <h1>Count: {count}</h1>
+            <button onClick={lambda e: any -> None {
+                setCount(count + 1);
+            }}>
+                Increment
+            </button>
+        </div>;
+    }
+}
+```
+
+---
+
+## The `onMount()` Hook (Jac-Native)
 
 ### Basic Usage
 

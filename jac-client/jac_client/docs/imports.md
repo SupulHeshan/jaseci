@@ -121,75 +121,122 @@ npm install antd
 ```jac
 """Importing Ant Design components."""
 
-cl import from antd {
-    Button,
-    Card,
-    Input,
-    Space
-}
+cl import from antd { Button, Input, Card, Typography, Space }
 
-cl def MyApp() -> any {
-    return <div>
-        <Space direction="vertical" size="large">
-            <Card title="Welcome">
-                <Input placeholder="Enter text..." />
-                <Button type="primary">Submit</Button>
+cl {
+    def MyApp() -> any {
+        return <div>
+            <Card title="Welcome" style={{"maxWidth": "400px", "margin": "50px auto"}}>
+                <Card.Meta title="Hello" description="Welcome to Jac!" />
+                <Space direction="vertical" style={{"width": "100%"}}>
+                    <Input placeholder="Enter text..." />
+                    <Button type="primary" style={{"width": "100%"}}>Submit</Button>
+                    <Button color="default" variant="dashed">Dashed</Button>
+                    <Button color="default" variant="filled">Filled</Button>
+                    <Button color="default" variant="text">Text</Button>
+                    <Button color="default" variant="link">Link</Button>
+                </Space>
             </Card>
-        </Space>
-    </div>;
-}
+        </div>;
+    }
 
-cl def jac_app() -> any {
-    return MyApp();
+    def jac_app() -> any {
+        return MyApp();
+    }
 }
 ```
 
-### Example: Importing React Icons
+### Example: Importing React Hooks
+
+React hooks can be imported and used directly in Jac:
 
 ```bash
-# Install React Icons
-npm install react-icons
+# React is typically included by default, but if needed:
+npm install react
 ```
 
 ```jac
-"""Importing React Icons."""
+"""Using React hooks in Jac."""
 
-cl import from 'react-icons' {
-    FaHome,
-    FaUser,
-    FaSettings
-}
+cl import from react { useState, useEffect }
 
-cl def Navigation() -> any {
-    return <nav>
-        <FaHome />
-        <FaUser />
-        <FaSettings />
-    </nav>;
+cl {
+    def Counter() -> any {
+        let [count, setCount] = useState(0);
+        
+        useEffect(lambda -> None {
+            console.log("Count: ", count);
+        }, [count]);
+        
+        return <div>
+            <h1>Count: {count}</h1>
+            <button onClick={lambda e: any -> None {
+                setCount(count + 1);
+            }}>
+                Increment
+            </button>
+        </div>;
+    }
 }
 ```
 
 ### Example: Importing Utility Libraries
 
+Lodash is a popular utility library with many helpful functions:
+
 ```bash
-# Install utility libraries
-npm install date-fns lodash
+# Install lodash
+npm install lodash
 ```
 
 ```jac
-"""Importing utility functions."""
+"""Importing lodash utilities."""
 
-cl import from 'date-fns' {
-    format,
-    parseISO,
-    differenceInDays
+cl import from lodash { * as _ }
+
+cl {
+    def RandomQuoteCard() -> any {
+        suggestions = ['good luck', 'have fun', 'enjoy the ride'];
+        randomSuggestion = _.sample(suggestions);  # Pick random item
+        
+        return <div>
+            <h2>{randomSuggestion}</h2>
+            <p>Powered by Lodash!</p>
+        </div>;
+    }
 }
+```
 
-cl import from lodash {
-    debounce,
-    throttle
+### Example: Importing Specialized Libraries
+
+You can import specialized libraries like pluralize or animation libraries:
+
+```bash
+# Install packages
+npm install pluralize
+npm install react-animated-components
+```
+
+```jac
+"""Importing specialized libraries."""
+
+cl import from pluralize { default as pluralize }
+cl import from 'react-animated-components' { Rotate }
+
+cl {
+    def AnimatedDemo() -> any {
+        word = "tweet";
+        count = 5;
+        pluralWord = pluralize(word, count);
+        
+        return <div>
+            <h1>{count} {pluralWord}</h1>
+            <Rotate>
+                <span style={{"fontSize": "48px"}}>😂</span>
+            </Rotate>
+        </div>;
+    }
 }
-
 ```
 
 ### Example: Importing Multiple Components
