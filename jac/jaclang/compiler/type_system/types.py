@@ -214,7 +214,7 @@ class ClassType(TypeBase):
 
     def lookup_member_symbol(self, member: str) -> Symbol | None:
         """Lookup a member in the class type."""
-        return self.shared.symbol_table.lookup(member, deep=True)
+        return self.shared.symbol_table.chain_lookup(member, deep=True)
 
     def is_builtin(self, class_name: str | None = None) -> bool:
         """

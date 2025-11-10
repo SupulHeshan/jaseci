@@ -245,3 +245,18 @@ class TestJacLangServer(TestCase):
             for expected in expected_refs:
                 self.assertIn(expected, references)
 
+    def test_class_attr(self) -> None:
+        """Test that the go to definition is correct."""
+        lsp = JacLangServer()
+        workspace_path = self.fixture_abs_path("")
+        workspace = Workspace(workspace_path, lsp)
+        lsp.lsp._workspace = workspace
+        import_file = uris.from_fs_path(self.fixture_abs_path("class_attr.jac"))
+        lsp.type_check_file(import_file)
+        self.assertIn(
+            'fixtures/class_attr.jac:11:4-11:11',
+            str(lsp.get_definition(import_file, lspt.Position(16, 9))),
+        )
+        self.assertIsNone(
+            lsp.get_definition(import_file, lspt.Position(16, 30)),
+        )

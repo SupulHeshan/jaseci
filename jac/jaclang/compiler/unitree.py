@@ -334,6 +334,16 @@ class UniScopeNode(UniNode):
             return self.parent_scope.lookup(name, deep)
         return None
 
+    def chain_lookup(self, name: str, deep: bool = True) -> Optional[Symbol]:
+        """Lookup a variable in the symbol table."""
+        if self.sym_tab.scope_name == "builtins":
+            return None
+        if name in self.names_in_scope:
+            return self.names_in_scope[name]
+        if deep and self.parent_scope:
+            return self.parent_scope.chain_lookup(name, deep)
+        return None
+
     def insert(
         self,
         node: AstSymbolNode,
