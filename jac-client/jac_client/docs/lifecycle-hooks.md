@@ -45,13 +45,13 @@ cl import from react { useState, useEffect }
 cl {
     def MyComponent() -> any {
         let [count, setCount] = useState(0);
-        
+
         useEffect(lambda -> None {
             console.log("Component mounted!");
             # Load initial data
             loadData();
         }, []);  # Empty array means run only on mount
-        
+
         return <div>Count: {count}</div>;
     }
 }
@@ -73,12 +73,12 @@ cl import from react { useState, useEffect }
 cl {
     def Counter() -> any {
         let [count, setCount] = useState(0);
-        
+
         useEffect(lambda -> None {
             console.log("Count changed to:", count);
             # React to count changes
         }, [count]);  # Run when count changes
-        
+
         return <div>
             <h1>Count: {count}</h1>
             <button onClick={lambda e: any -> None {

@@ -163,11 +163,11 @@ cl import from react { useState, useEffect }
 cl {
     def Counter() -> any {
         let [count, setCount] = useState(0);
-        
+
         useEffect(lambda -> None {
             console.log("Count: ", count);
         }, [count]);
-        
+
         return <div>
             <h1>Count: {count}</h1>
             <button onClick={lambda e: any -> None {
@@ -198,7 +198,7 @@ cl {
     def RandomQuoteCard() -> any {
         suggestions = ['good luck', 'have fun', 'enjoy the ride'];
         randomSuggestion = _.sample(suggestions);  # Pick random item
-        
+
         return <div>
             <h2>{randomSuggestion}</h2>
             <p>Powered by Lodash!</p>
@@ -228,7 +228,7 @@ cl {
         word = "tweet";
         count = 5;
         pluralWord = pluralize(word, count);
-        
+
         return <div>
             <h1>{count} {pluralWord}</h1>
             <Rotate>
