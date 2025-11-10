@@ -185,8 +185,7 @@ export default defineConfig({
   publicDir: false,
   resolve: {
     alias: {
-      "@jac-client/utils": path.resolve(__dirname, "src/runtime_utils.js"),
-      "@jac-client/runtime": path.resolve(__dirname, "src/runtime.js"),
+      "@jac-client/utils": path.resolve(__dirname, "src/client_runtime.js"),
     },
   },
 });

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import json
 import shutil
 import subprocess
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Sequence, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from jaclang.runtimelib.client_bundle import (
     ClientBundle,
@@ -126,17 +125,14 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
             for name in manifest.globals:
                 non_root_globals[name] = manifest.globals_values.get(name)
         collected_globals.update(non_root_globals)
-
-        # registration_js = self._generate_registration_js(
-        #     module_path.stem,
-        #     exports_list,
-        #     non_root_globals,
-        # )
         export_block = (
             f"export {{ {', '.join(exports_list)} }};\n" if exports_list else ""
         )
+        
+        # inport jacJsx from client_runtime_utils.jac
+        jacJsx_path = 'import {__jacJsx} from "@jac-client/utils";'
 
-        combined_js = f"{module_js}\n{runtime_js}\n{export_block}"
+        combined_js = f"{jacJsx_path}\n{module_js}\n{export_block}"
         if self.vite_package_json is not None:
             (
                 self.vite_package_json.parent / "src" / f"{module_path.stem}.js"
@@ -188,7 +184,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         module_js, _ = self._compile_to_js(module_path)
 
         # client_runtime_utils.jac is same level as client_runtime.jac , so get paent path and add the file name
-        runtime_utils_path = self.runtime_path.parent / "client_runtime_utils.jac"
+        runtime_utils_path = self.runtime_path.parent / "client_runtime.jac"
         runtimeutils_js, mod = self._compile_to_js(runtime_utils_path)
         runtimeutils_manifest = mod.gen.client_manifest if mod else None
         runtimeutils_exports_list = self._extract_client_exports(runtimeutils_manifest)
@@ -201,7 +197,7 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
 
         combined_js = f"{runtimeutils_js}\n{export_block}"
         # let's write the runtime.js file
-        (self.vite_package_json.parent / "src" / "runtime_utils.js").write_text(
+        (self.vite_package_json.parent / "src" / "client_runtime.js").write_text(
             combined_js, encoding="utf-8"
         )
 
@@ -248,19 +244,7 @@ root.render(<App />);
 """
         entry_file.write_text(entry_content, encoding="utf-8")
 
-        # Add global exposure code first (before Jac initialization)
-        # global_exposure_code = self._generate_global_exposure_code(client_exports)
-        # bundle_pieces.append(global_exposure_code)
 
-        # Add Jac runtime initialization script (includes globals)
-        # jac_init_script = self._generate_jac_init_script(
-        #     module_path.stem, client_exports, client_globals_map
-        # )
-        # bundle_pieces.append(jac_init_script)
-
-        # Do not add export block for root since output is iife
-
-        # Use Vite bundling instead of simple concatenation
         bundle_code, bundle_hash = self._bundle_with_vite(
             bundle_pieces, module.__name__, client_exports
         )
@@ -369,81 +353,6 @@ root.render(<App />);
             return file
         return None
 
-    def _generate_jac_init_script(
-        self,
-        module_name: str,
-        client_functions: list[str],
-        client_globals: dict[str, Any],
-    ) -> str:
-        """Generate Jac runtime initialization script."""
-        if not client_functions:
-            return ""
-
-        # Generate function map dynamically
-        map_entries = []
-        for func_name in client_functions:
-            map_entries.append(f'    "{func_name}": {func_name}')
-        function_map_str = "{\n" + ",\n".join(map_entries) + "\n}"
-
-        # Generate globals map
-        globals_entries = []
-        for name, value in client_globals.items():
-            identifier = json.dumps(name)
-            try:
-                value_literal = json.dumps(value)
-            except TypeError:
-                value_literal = "null"
-            globals_entries.append(f"{identifier}: {value_literal}")
-        globals_literal = (
-            "{ " + ", ".join(globals_entries) + " }" if globals_entries else "{}"
-        )
-
-        # Find the main app function (usually the last function or one ending with '_app')
-        main_app_func = "App"  # this need to be always same and defined by our run time
-        # for func_name in reversed(client_functions):
-        #     if func_name.endswith('_app') or func_name == 'App':
-        #         main_app_func = func_name
-        #         break
-
-        return f"""
-            // --- JAC CLIENT INITIALIZATION SCRIPT ---
-            // Expose functions globally for Jac runtime registration
-            const clientFunctions = {client_functions};
-            const functionMap = {function_map_str};
-            for (const funcName of clientFunctions) {{
-                globalThis[funcName] = functionMap[funcName];
-            }}
-            __jacRegisterClientModule("{module_name}", clientFunctions, {globals_literal});
-            globalThis.start_app = {main_app_func};
-            // Call the start function immediately if we're not hydrating from the server
-            if (!document.getElementById('__jac_init__')) {{
-                globalThis.start_app();
-            }}
-            // --- END JAC CLIENT INITIALIZATION SCRIPT ---
-        """
-
-    def _generate_global_exposure_code(self, client_functions: list[str]) -> str:
-        """Generate code to expose functions globally for Vite IIFE."""
-        if not client_functions:
-            return ""
-
-        # Generate function map dynamically
-        map_entries = []
-        for func_name in client_functions:
-            map_entries.append(f'    "{func_name}": {func_name}')
-        function_map_str = "{\n" + ",\n".join(map_entries) + "\n}"
-
-        return f"""
-            // --- GLOBAL EXPOSURE FOR VITE IIFE ---
-            // Expose functions globally so they're available on globalThis
-            const globalClientFunctions = {client_functions};
-            const globalFunctionMap = {function_map_str};
-            for (const funcName of globalClientFunctions) {{
-                globalThis[funcName] = globalFunctionMap[funcName];
-            }}
-            // --- END GLOBAL EXPOSURE ---
-        """
-
     def cleanup_temp_dir(self) -> None:
         """Clean up the src directory and its contents."""
         if not self.vite_package_json or not self.vite_package_json.exists():
@@ -455,28 +364,3 @@ root.render(<App />);
         if temp_dir.exists():
             with contextlib.suppress(OSError):
                 shutil.rmtree(temp_dir)
-
-    @staticmethod
-    def _generate_registration_js(
-        module_name: str,
-        client_functions: Sequence[str],
-        client_globals: dict[str, Any],
-    ) -> str:
-        """Generate registration code that exposes client symbols globally."""
-        globals_entries: list[str] = []
-        for name, value in client_globals.items():
-            identifier = json.dumps(name)
-            try:
-                value_literal = json.dumps(value)
-            except TypeError:
-                value_literal = "null"
-            globals_entries.append(f"{identifier}: {value_literal}")
-
-        globals_literal = (
-            "{ " + ", ".join(globals_entries) + " }" if globals_entries else "{}"
-        )
-        functions_literal = json.dumps(list(client_functions))
-        module_literal = json.dumps(module_name)
-
-        # Use the registration function from client_runtime.jac
-        return f"__jacRegisterClientModule({module_literal}, {functions_literal}, {globals_literal});"
