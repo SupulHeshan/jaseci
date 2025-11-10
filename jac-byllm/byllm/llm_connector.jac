@@ -59,6 +59,7 @@ obj LLMConnector(ABC){
             "api_key": self.config.get("api_key"),
             "messages": mtir.get_msg_list(),
             "tool": mtir.get_tool_list() or None,
+            "response_format": mtir.get_output_schema(),
             "temperature": self.config.get("temperature", 0.7),
             "max_tokens": self.config.get("max_tokens"),
         };
@@ -174,8 +175,8 @@ obj LiteLLMConnector(LLMConnector){
         #
         # TODO: Handle stream output (type ignoring stream response)
         message: LiteLLMMessage = response.choices[0].message;  # type: ignore
+        print(message);
         mtir.add_message(message);
-
         output_content: str = message.content or "" ; # type: ignore
         self.log_info(f"LLM call completed with response:\n{output_content}");
         output_value = mtir.parse_response(output_content);
