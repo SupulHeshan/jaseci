@@ -168,6 +168,12 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         module_path: Path,
     ) -> ClientBundle:
         """Override to use Vite bundling instead of simple concatenation."""
+        
+        # Check if package.json exists before proceeding
+        if not self.vite_package_json or not self.vite_package_json.exists():
+            raise ClientBundleError(
+                "Vite package.json not found. Set vite_package_json when using ViteClientBundleBuilder"
+            )
 
         # client_runtime for jac client utils
         runtime_utils_path = self.runtime_path.parent / "client_runtime.jac"
