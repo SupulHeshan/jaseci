@@ -15,12 +15,12 @@ import from enum {StrEnum}
 import from io {BytesIO}
 import from typing {Callable, TypeAlias, get_type_hints}
 import from PIL.Image {open as open_image}
-import from litellm.types.utils {Message as LiteLLMMessage} 
-import from pydantic {TypeAdapter} 
-import from .schema {tool_to_schema} 
+import from litellm.types.utils {Message as LiteLLMMessage}
+import from pydantic {TypeAdapter}
+import from .schema {tool_to_schema}
 
 with entry{
-    
+
 # The message can be a jaclang defined message or what ever the llm
 # returned object that was feed back to the llm as it was given (dict).
 has MessageType: TypeAlias = "Message | LiteLLMMessage";
@@ -40,7 +40,7 @@ obj Message{
 
     has role: MessageRole;
     has content: "str | list[Media]";
-    
+
     """Convert the message to a dictionary."""
     def to_dict() -> dict[str, object]{
         if isinstance(self.content, str){
@@ -91,14 +91,14 @@ obj Tool{
     has params_desc: dict[str, str] = None ; # type: ignore
 
     """Post-initialization to validate the function."""
-    def __post_init__() -> None{ 
+    def __post_init__() -> None{
         annotations = get_type_hints(self.func);
         with suppress(Exception){
             self.func.__annotations__ = annotations;
         }
 
         self.description = Tool.get_func_description(self.func);
-        
+
         if hasattr(self.func, "_jac_semstr_inner"){
             self.params_desc = self.func._jac_semstr_inner ; # type: ignore
         }else{
@@ -120,7 +120,7 @@ obj Tool{
             # and make decision based on that.
             return str(e);
         }
-    }   
+    }
 
     """Return the name of the tool function."""
     def get_name() -> str{
@@ -261,7 +261,7 @@ obj Media{
 
 """Class representing text content in a message."""
 obj Text(Media){
-   
+
     has text: str;
 
     """Convert the text content to a dictionary."""
@@ -272,7 +272,7 @@ obj Text(Media){
 
  """Class representing an image."""
 obj Image(Media){
-   
+
     has url: str;
     has mime_type: str | None = None;
 
@@ -371,7 +371,7 @@ obj Video(Media){
 
       """Convert the video to a dictionary."""
     def to_dict() -> list[dict]{
-      
+
         if self._base64frames is None{
             self.load_frames();
         }
