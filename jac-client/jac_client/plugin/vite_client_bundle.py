@@ -125,9 +125,9 @@ class ViteClientBundleBuilder(ClientBundleBuilder):
         )
 
         # inport jacJsx from client_runtime_utils.jac
-        jacJsx_path = 'import {__jacJsx} from "@jac-client/utils";'
+        jac_jsx_path = 'import {__jacJsx} from "@jac-client/utils";'
 
-        combined_js = f"{jacJsx_path}\n{module_js}\n{export_block}"
+        combined_js = f"{jac_jsx_path}\n{module_js}\n{export_block}"
         if self.vite_package_json is not None:
             (
                 self.vite_package_json.parent / "src" / f"{module_path.stem}.js"

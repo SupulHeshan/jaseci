@@ -1,7 +1,7 @@
+import html
 import types
 from pathlib import Path
 from typing import Any
-import html
 
 from jaclang.runtimelib.client_bundle import ClientBundle
 from jaclang.runtimelib.machine import (
