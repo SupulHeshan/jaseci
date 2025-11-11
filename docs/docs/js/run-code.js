@@ -87,15 +87,17 @@ function loadMonacoEditor() {
     if (monacoLoadPromise) return monacoLoadPromise;
 
     monacoLoadPromise = new Promise((resolve, reject) => {
-        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs' } });
-        require(['vs/editor/editor.main'], function () {
+        const requireAMD = typeof require !== 'undefined' && require.config ? require : globalThis.require;
+        requireAMD.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs' } });
+        requireAMD(['vs/editor/editor.main'], function () {
             monacoLoaded = true;
             monaco.languages.register({ id: 'jac' });
             monaco.languages.setMonarchTokensProvider('jac', window.jaclangMonarchSyntax);
 
             fetch('/../playground/language-configuration.json')
                 .then(resp => resp.json())
-                .then(config => monaco.languages.setLanguageConfiguration('jac', config));
+                .then(config => monaco.languages.setLanguageConfiguration('jac', config))
+                .catch(() => {});
             monaco.editor.defineTheme('jac-theme', {
                 base: 'vs-dark',
                 inherit: true,
