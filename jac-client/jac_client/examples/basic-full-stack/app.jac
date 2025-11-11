@@ -8,18 +8,27 @@ node Todo {
 
 walker create_todo {
     has text:str;
+    class __specs__ {
+        has auth: bool = False;
+    }
     can create with `root entry {
         new_todo = here ++> Todo(text= self.text);
         report new_todo;
     }
 }
 walker toggle_todo {
+    class __specs__ {
+        has auth: bool = False;
+    }
     can toggle with Todo entry {
         here.done = not here.done;
         report here;
     }
 }
 walker read_todos {
+    class __specs__ {
+        has auth: bool = False;
+    }
     can read with `root entry {
         visit [-->(`?Todo)];
     }
@@ -36,7 +45,7 @@ cl {
 
         useEffect(lambda -> None {
             async def loadTodos() -> None {
-                todos = await __jacSpawn("read_todos");
+                todos = await __jacSpawn("read_todos","",{});
                 console.log(todos);
                 setTodos(todos.reports);
             }
@@ -51,20 +60,23 @@ cl {
                 "text": inputValue.trim(),
                 "done": False
             };
-            await __jacSpawn("create_todo", {"text": inputValue.trim()});
+            await __jacSpawn("create_todo","", {"text": inputValue.trim()});
             newTodos = todos.concat([newTodo]);
             setTodos(newTodos);
             setInputValue("");
         }
 
         # Toggle todo completion status
-        def toggleTodo(id: any) -> None {
+        async def toggleTodo(id: any) -> None {
+
+            await __jacSpawn("toggle_todo",id, {});
             setTodos(todos.map(lambda todo: any -> any {
-                if todo.id == id {
+                if todo._jac_id == id {
                     updatedTodo = {
-                        "id": todo.id,
+                        "_jac_id": todo._jac_id,
                         "text": todo.text,
-                        "done": not todo.done
+                        "done": not todo.done,
+                        "id": todo.id
                     };
                     return updatedTodo;
                 }
@@ -96,6 +108,7 @@ cl {
         activeCount = todos.filter(lambda todo: any -> bool { return not todo.done; }).length;
 
         filteredTodos = getFilteredTodos();
+
 
         return <div style={{
             "maxWidth": "600px",
@@ -230,7 +243,7 @@ cl {
                     </div>) if filteredTodos.length == 0 else (
                     filteredTodos.map(lambda todo: any -> any {
                         return <div
-                            key={todo.id}
+                            key={todo._jac_id}
                             style={{
                                 "display": "flex",
                                 "alignItems": "center",
@@ -243,7 +256,7 @@ cl {
                             <input
                                 type="checkbox"
                                 checked={todo.done}
-                                onChange={lambda -> None { toggleTodo(todo.id); }}
+                                onChange={lambda -> None { toggleTodo(todo._jac_id); }}
                                 style={{
                                     "width": "20px",
                                     "height": "20px",
@@ -259,7 +272,7 @@ cl {
                                 {todo.text}
                             </span>
                             <button
-                                onClick={lambda -> None { deleteTodo(todo.id); }}
+                                onClick={lambda -> None { deleteTodo(todo.__jac_id); }}
                                 style={{
                                     "padding": "6px 12px",
                                     "background": "#ef4444",
