@@ -1,6 +1,5 @@
 import { describe, it, beforeEach, expect } from 'vitest';
 
-// Create a code block with optional extra classes
 function createCodeBlock(extra = '') {
     const el = document.createElement('div')
     el.className = `code-block ${extra}`.trim()
