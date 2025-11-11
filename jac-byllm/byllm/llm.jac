@@ -36,20 +36,36 @@ output. Only use tools.
 """;  # noqa E501
 }
 
+"""A wrapper class that abstracts LiteLLM functionality.
 
+This class provides a simplified and enhanced interface for interacting
+with various language models through LiteLLM.
+"""
 obj Model {
-    """A wrapper class that abstracts LiteLLM functionality.
 
-    This class provides a simplified and enhanced interface for interacting
-    with various language models through LiteLLM.
+    """Initialize the JacLLM instance.
+    Args:
+        model: The model name to use (e.g., "gpt-3.5-turbo", "claude-3-sonnet-20240229")
+        api_key: API key for the model provider
+        **kwargs: Additional configuration options
     """
-
-
     def __init__(model_name: str, **kwargs: object) -> None {
         self.llm_connector = LLMConnector.for_model(model_name, **kwargs);
     }
 
-    """Construct the call parameters and return self (factory pattern)."""
+    """Construct the call parameters and return self (factory pattern).
+        Example:
+            ```jaclang
+            llm = JacLLM(model="gpt-3.5-turbo", api_key="your_api_key")
+
+            # The bellow call will construct the parameter and return self.
+            def answer_user_query(query: str) -> str by
+                llm(
+                    temperature=0.7,
+                    max_tokens=100,
+                );
+            ```
+    """
     def __call__(**kwargs: object) -> Model {
         self.llm_connector.call_params = kwargs;
         return self;
@@ -66,6 +82,7 @@ obj Model {
         if mtir.stream {
             return self._completion_streaming(mtir);
         }
+        # Invoke the LLM and handle tool calls.
         while True {
             resp = self._completion_no_streaming(mtir);
             if resp.tool_calls {
