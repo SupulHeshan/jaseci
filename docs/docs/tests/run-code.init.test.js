@@ -44,7 +44,11 @@ async function loadModuleNCreateCodeblock(className, isRunAvailable = true, isSe
 
     buttons.forEach(({ element, available }) => {
         expect(element).toBeTruthy();
-        expect(element.style.display).toBe(available ? 'none' : 'none');
+        if (available) {
+            expect(element.style.display).not.toBe('none');
+        } else {
+            expect(element.style.display).toBe('none');
+        }
     });
 
     return block;
@@ -58,22 +62,62 @@ describe('code block initialization (intersection-driven)', () => {
     });
 
     it('initializes a default .code-block and shows default run button', async () => {
-        loadModuleNCreateCodeblock('', true, false, false);
+        await loadModuleNCreateCodeblock('', true, false, false);
     });
 
     it('initializes a .code-block.serve and shows only serve button', async () => {
-        loadModuleNCreateCodeblock('serve-only', false, true, false);
+        await loadModuleNCreateCodeblock('serve-only', false, true, false);
     });
 
     it('initializes a .code-block.dot and shows run-serve ', async () => {
-        loadModuleNCreateCodeblock('run-serve', false, false, true);
+        await loadModuleNCreateCodeblock('run-serve', true, true, false);
     });
 
     it('initializes a .code-block.dot and shows serve-dot', async () => {
-        loadModuleNCreateCodeblock('serve-dot', false, true, true);
+        await loadModuleNCreateCodeblock('serve-dot', false, true, true);
     });
 
     it('initializes a .code-block.dot and shows all buttons', async () => {
-        loadModuleNCreateCodeblock('run-dot-serve', true, true, true);
+        await loadModuleNCreateCodeblock('run-dot-serve', true, true, true);
+    });
+});
+
+
+describe('Monaco Editor Integration', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        monaco.editor.create.mockClear();
+        
+        window.jaclangMonarchSyntax = {};
+        window.jacThemeRules = [];
+        window.jacThemeColors = {};
+    });
+
+    it('creates and configures monaco editor for code blocks', async () => {
+        await import('../js/run-code.js');
+        
+        const block = createCodeBlock();
+        triggerIntersection(block);
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        expect(monaco.editor.create).toHaveBeenCalled();
+        const editorConfig = monaco.editor.create.mock.calls[0][1];
+        
+        expect(editorConfig.language).toBe('jac');
+        expect(editorConfig.theme).toBe('jac-theme');        
+    });
+
+    it('prevents duplicate editor initialization', async () => {
+        await import('../js/run-code.js');
+    
+        const block = createCodeBlock();
+        const initialCallCount = monaco.editor.create.mock.calls.length;
+        
+        triggerIntersection(block);
+        triggerIntersection(block);
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
+        expect(monaco.editor.create.mock.calls.length).toBe(initialCallCount + 1);
     });
 });
