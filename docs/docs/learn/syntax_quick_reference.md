@@ -196,7 +196,7 @@ def learnOSP(){
     # edges and nodes can be queried with filters
 
     # returns all outgoing nodes with friend edges since 2018
-    old_friend_nodes = [node a ->:Friend:since > 2018:->]; 
+    old_friend_nodes = [node a ->:Friend:since > 2018:->];
 
     # returns all outgoing friend edges since 2018
     old_friend_edges = [edge a->:Friend:since > 2017:->];
