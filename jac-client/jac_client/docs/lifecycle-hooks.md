@@ -592,9 +592,9 @@ useEffect(lambda -> any {
     def handleResize() -> None {
         setWidth(window.innerWidth);
     }
-    
+
     window.addEventListener("resize", handleResize);
-    
+
     return lambda -> None {
         window.removeEventListener("resize", handleResize);
     };
@@ -673,7 +673,7 @@ useEffect(lambda -> any {
     intervalId = setInterval(lambda -> None {
         setCount(lambda prev: int -> int { return prev + 1; });
     }, 1000);
-    
+
     return lambda -> None {
         clearInterval(intervalId);
     };
