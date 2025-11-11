@@ -92,7 +92,7 @@ cl {
             password = document.getElementById("password").value;
 
             success = await jacLogin(username, password);
-            
+
             if success {
                 navigate("/dashboard");
             } else {
@@ -281,7 +281,7 @@ cl {
             password = document.getElementById("password").value;
 
             success = await jacLogin(username, password);
-            
+
             if success {
                 navigate("/dashboard");
             } else {

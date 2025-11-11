@@ -1061,7 +1061,7 @@ cl import from react { useState, useMemo }
 # ✅ Good: Memoize expensive calculations
 def TodoApp() -> any {
     let [todos, setTodos] = useState([]);
-    
+
     activeTodos = useMemo(lambda -> list {
         return todos.filter(lambda t: any -> bool { return not t.done; });
     }, [todos]);
@@ -1070,7 +1070,7 @@ def TodoApp() -> any {
 # ❌ Avoid: Computing on every render
 def TodoApp() -> any {
     let [todos, setTodos] = useState([]);
-    
+
     # This runs on every render, even if todos hasn't changed
     activeTodos = todos.filter(lambda t: any -> bool { return not t.done; });
 }
@@ -1107,7 +1107,7 @@ def TodoApp() -> any {
         }
         return state;
     }
-    
+
     let [state, dispatch] = useReducer(reducer, {"todos": [], "count": 0});
 }
 
@@ -1160,7 +1160,7 @@ cl import from react { useState, useCallback }
 # ✅ Good: Memoized callbacks prevent unnecessary re-renders
 def TodoApp() -> any {
     let [todos, setTodos] = useState([]);
-    
+
     handleToggle = useCallback(lambda id: str -> None {
         setTodos(todos.map(lambda t: any -> any {
             if t._jac_id == id { return {...t, "done": not t.done}; }
