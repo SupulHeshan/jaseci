@@ -193,16 +193,21 @@ export default defineConfig({
                 # Create README.md
                 readme_content = f"""# {name}
 
-                ## Running Jac Code
+## Running Jac Code
 
-                To run your Jac code, use the Jac CLI:
+make sure node modules are installed:
+```bash
+npm install
+```
 
-                ```bash
-                jac serve app.jac
-                ```
+To run your Jac code, use the Jac CLI:
 
-                Happy coding with Jac!
-                """
+```bash
+jac serve app.jac
+```
+
+Happy coding with Jac!
+"""
 
                 with open(os.path.join(project_path, "README.md"), "w") as f:
                     f.write(readme_content)

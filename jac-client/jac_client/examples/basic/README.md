@@ -1,11 +1,16 @@
 # my-app
+make sure node modules are installed:
+```bash
+npm install
+```
 
-                ## Running Jac Code
 
-                To run your Jac code, use the Jac CLI:
+## Running Jac Code
 
-                ```bash
-                jac serve app.jac
-                ```
+To run your Jac code, use the Jac CLI:
 
-                Happy coding with Jac!
+```bash
+jac serve app.jac
+```
+
+Happy coding with Jac!
