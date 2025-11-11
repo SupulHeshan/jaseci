@@ -584,13 +584,13 @@ cl {
         useEffect(lambda -> None {
             todosHook["loadTodos"]();
         }, []);
-        
+
 
         state = todosHook["state"]();
         filteredTodos = todosHook["getFilteredTodos"]();
         activeCount = todosHook["getActiveCount"]();
-        
-        
+
+
 
         loadingBanner = None;
         if state["loading"] {
@@ -675,7 +675,7 @@ cl {
         </div>;
     }
 
-   
+
 
     def AppHeader() -> any {
         navigate = useNavigate();
