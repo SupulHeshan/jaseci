@@ -41,7 +41,7 @@ obj LLMConnector(ABC) {
         self.call_params: dict[str, object] = {};
     }
 
-    static 
+    static
     def for_model(model_name: str, **kwargs: object) -> LLMConnector {
         if model_name.lower().strip() == MODEL_MOCK {
             return MockLLMConnector(model_name=model_name, config=kwargs);
@@ -100,7 +100,7 @@ obj LLMConnector(ABC) {
 obj MockLLMConnector(LLMConnector) {
 
     """Dispatch the mock LLM call with the given request."""
-    override 
+    override
     def dispatch_no_streaming(mtir: MTIR) -> CompletionResult {
         output = self.config["outputs"].pop(0);  # type: ignore
 
@@ -117,7 +117,7 @@ obj MockLLMConnector(LLMConnector) {
     }
 
     """Dispatch the mock LLM call with the given request."""
-    override 
+    override
     def dispatch_streaming(mtir: MTIR) -> Generator[str, None, None] {
         output = self.config["outputs"].pop(0);  # type: ignore
         if mtir.stream {
@@ -128,7 +128,7 @@ obj MockLLMConnector(LLMConnector) {
                 output = output[chunk_len:];
             }
         }
-    } 
+    }
 }
 
 # -----------------------------------------------------------------------------
@@ -138,7 +138,7 @@ obj MockLLMConnector(LLMConnector) {
 
 """LLM Connector for LiteLLM, a lightweight wrapper around OpenAI API."""
 obj LiteLLMConnector(LLMConnector) {
-    
+
     has proxy: bool;
     has model_name: str;
     has config: dict[str, object];
@@ -152,7 +152,7 @@ obj LiteLLMConnector(LLMConnector) {
     }
 
     """Dispatch the LLM call without streaming."""
-    override 
+    override
     def dispatch_no_streaming(mtir: MTIR) -> CompletionResult {
         # Construct the parameters for the LLM call
         params = self.make_model_params(mtir);
@@ -198,7 +198,7 @@ obj LiteLLMConnector(LLMConnector) {
     }
 
     """Dispatch the LLM call with streaming."""
-    override 
+    override
     def dispatch_streaming(mtir: MTIR) -> Generator[str, None, None] {
         # Construct the parameters for the LLM call
         params = self.make_model_params(mtir);
