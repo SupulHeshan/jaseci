@@ -770,7 +770,7 @@ cl {
     #                 </nav>
     #                 <main style={{"maxWidth": "1080px", "margin": "0 auto", "width": "100%", "padding": "32px 16px"}}>
     #                     <Routes>
-                           
+
     #                         <Route path="/colour" component={ColourPage} />
     #                         <Route path="/count" component={CountPage} />
     #                     </Routes>

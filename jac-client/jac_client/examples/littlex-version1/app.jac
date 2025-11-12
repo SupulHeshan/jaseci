@@ -203,10 +203,10 @@ cl {
     }
     def app() -> any {
 
-        async def handleSearch() -> any { 
+        async def handleSearch() -> any {
             searchUsers = await search_users("alice");
             console.log("Search Users Result:", searchUsers);
-            
+
         }
 
         bearsStore = useBearStore();
@@ -223,7 +223,7 @@ cl {
            handleSearch();
         }, []);
 
-       
+
         return <div>
             <h1 className="text-3xl text-blue-500">Hello, World!</h1>
             <p>Count: {count}</p>
