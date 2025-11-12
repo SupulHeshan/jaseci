@@ -2,26 +2,26 @@ import { vi } from 'vitest'
 
 // Observers (jsdom doesn't have these)
 class IO {
-  constructor(cb) { 
+  constructor(cb) {
     this.cb = cb;
     IO._instances = IO._instances || [];
     IO._instances.push(this);
   }
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() { }
+  unobserve() { }
+  disconnect() { }
 }
 global.IntersectionObserver = IO
 
 class MO {
   constructor(cb) { this.cb = cb }
-  observe() {}
-  disconnect() {}
+  observe() { }
+  disconnect() { }
 }
 global.MutationObserver = MO
 
 // AMD require used by loadMonacoEditor()
-global.require = function(deps, cb) {
+global.require = function (deps, cb) {
   if (cb) setTimeout(cb, 0)
 }
 global.require.config = vi.fn()
@@ -68,7 +68,7 @@ class FakeWorker {
   onmessage = null
   onerror = null
   #listeners = new Set()
-  postMessage(_msg) {}
+  postMessage = vi.fn()
   addEventListener(type, fn) { if (type === 'message') this.#listeners.add(fn) }
   removeEventListener(type, fn) { this.#listeners.delete(fn) }
   emit(data) {
@@ -77,4 +77,9 @@ class FakeWorker {
   }
 }
 global.Worker = FakeWorker
+global.SharedArrayBuffer = class SharedArrayBuffer {
+  constructor(length) { this.byteLength = length }
+}
+global.Int32Array = Int32Array
+global.Uint8Array = Uint8Array
 global.Atomics = { store: vi.fn(), notify: vi.fn(), wait: vi.fn() }
