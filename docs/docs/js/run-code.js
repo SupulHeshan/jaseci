@@ -4,6 +4,8 @@ let pyodideInitPromise = null;
 let monacoLoaded = false;
 let monacoLoadPromise = null;
 let sab = null;
+let ctrl = null;
+let dataBytes = null;
 const initializedBlocks = new WeakSet();
 
 // Initialize Pyodide Worker
@@ -539,3 +541,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     observer.observe(document.body, { childList: true, subtree: true });
 });
+
+// Export for testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { initPyodideWorker };
+} else if (typeof globalThis !== 'undefined') {
+    globalThis.initPyodideWorker = initPyodideWorker;
+}
