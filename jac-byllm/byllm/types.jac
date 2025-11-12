@@ -466,7 +466,7 @@ obj Video(Media) {
         assert self._base64frames is not None;
         #Frames must be loaded before conversion.
         return [
-            {"type": "image_url", 
+            {"type": "image_url",
             "image_url": f"data:image/jpeg;base64,{frame}",}
             for frame in self._base64frames
         ];
