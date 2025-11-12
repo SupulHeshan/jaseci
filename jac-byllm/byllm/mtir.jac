@@ -37,7 +37,7 @@ obj MTIR {
         has stream: bool;
         has tools: list[Tool];
         has call_params: dict[str, object];
-    
+
     # FIXME: Comeup with a better name
 
     """Create an MTIR instance."""
@@ -216,6 +216,6 @@ obj MTIR {
         # thus there is no output schema.
         return None;
     }
-    
+
 
 }
