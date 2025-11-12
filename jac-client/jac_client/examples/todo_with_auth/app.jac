@@ -102,6 +102,7 @@ cl {
             "loading": False,
             "error": ""
         });
+        console.log("Initializing useTodos with state:", state);
 
         def flattenReports(raw: any) -> list {
             if not raw {
@@ -299,6 +300,8 @@ cl {
 
         def getFilteredTodos() -> list {
             current = state;
+            console.log("Getting filtered todos with filter:", current["filter"]);
+
             if current["filter"] == "active" {
                 return current["todos"].filter(lambda todo: any -> bool { return not todo.done; });
             } elif current["filter"] == "completed" {
@@ -339,12 +342,13 @@ cl {
     }
 
     def LoginPage() -> any {
-        let [state, setState] = useState({"username": "", "password": "", "loading": False, "error": ""});
+        let [loginState, setLoginState] = useState({"username": "", "password": "", "loading": False, "error": ""});
 
         navigate = useNavigate();
         auth = useAuth();
 
         useEffect(lambda -> None {
+            console.log("LoginPage mounted, checking login status");
             if jacIsLoggedIn() {
                 navigate("/dashboard");
             }
@@ -353,8 +357,8 @@ cl {
         async def handleSubmit(event: any) -> None {
             event.preventDefault();
 
-            current = state;
-            setState({
+            current = loginState;
+            setLoginState({
                 "username": current["username"],
                 "password": current["password"],
                 "loading": True,
@@ -364,11 +368,11 @@ cl {
             try {
                 result = await auth["login"](current["username"], current["password"]);
                 if result["success"] {
-                    setState({"username": "", "password": "", "loading": False, "error": ""});
+                    setLoginState({"username": "", "password": "", "loading": False, "error": ""});
                     navigate("/dashboard");
                 } else {
                     message = result["error"] if result["error"] else "Unable to login";
-                    setState({
+                    setLoginState({
                         "username": current["username"],
                         "password": current["password"],
                         "loading": False,
@@ -376,7 +380,7 @@ cl {
                     });
                 }
             } except Exception as err {
-                setState({
+                setLoginState({
                     "username": current["username"],
                     "password": current["password"],
                     "loading": False,
@@ -386,8 +390,8 @@ cl {
         }
 
         errorBanner = None;
-        if state["error"] != "" {
-            errorBanner = <div style={{"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c", "fontSize": "14px"}}>{state["error"]}</div>;
+        if loginState["error"] != "" {
+            errorBanner = <div style={{"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c", "fontSize": "14px"}}>{loginState["error"]}</div>;
         }
 
         return <div style={{"display": "flex", "justifyContent": "center", "padding": "48px 16px"}}>
@@ -400,10 +404,10 @@ cl {
                         <span style={{"fontSize": "14px", "fontWeight": "500", "color": "#475569"}}>Username</span>
                         <input
                             type="text"
-                            value={state["username"]}
+                            value={loginState["username"]}
                             onChange={lambda e: any -> None {
-                                current = state;
-                                setState({
+                                current = loginState;
+                                setLoginState({
                                     "username": e.target.value,
                                     "password": current["password"],
                                     "loading": current["loading"],
@@ -419,10 +423,10 @@ cl {
                         <span style={{"fontSize": "14px", "fontWeight": "500", "color": "#475569"}}>Password</span>
                         <input
                             type="password"
-                            value={state["password"]}
+                            value={loginState["password"]}
                             onChange={lambda e: any -> None {
-                                current = state;
-                                setState({
+                                current = loginState;
+                                setLoginState({
                                     "username": current["username"],
                                     "password": e.target.value,
                                     "loading": current["loading"],
@@ -436,10 +440,10 @@ cl {
                     </label>
                     <button
                         type="submit"
-                        disabled={state["loading"]}
-                        style={{"padding": "12px", "borderRadius": "10px", "background": "#6366f1", "color": "#ffffff", "fontWeight": "600", "fontSize": "15px", "border": "none", "cursor": "pointer", "opacity": (0.8 if state["loading"] else 1), "transition": "opacity 0.2s"}}
+                        disabled={loginState["loading"]}
+                        style={{"padding": "12px", "borderRadius": "10px", "background": "#6366f1", "color": "#ffffff", "fontWeight": "600", "fontSize": "15px", "border": "none", "cursor": "pointer", "opacity": (0.8 if loginState["loading"] else 1), "transition": "opacity 0.2s"}}
                     >
-                        {"Signing in…" if state["loading"] else "Sign in"}
+                        {"Signing in…" if loginState["loading"] else "Sign in"}
                     </button>
                 </form>
                 <p style={{"marginTop": "24px", "fontSize": "14px", "color": "#64748b"}}>
@@ -450,11 +454,12 @@ cl {
     }
 
     def SignupPage() -> any {
-        let [state, setState] = useState({"username": "", "password": "", "confirm": "", "loading": False, "error": ""});
+        let [signupState, setSignupState] = useState({"username": "", "password": "", "confirm": "", "loading": False, "error": ""});
         navigate = useNavigate();
         auth = useAuth();
 
         useEffect(lambda -> None {
+            console.log("SignupPage mounted, checking login status");
             if jacIsLoggedIn() {
                 navigate("/dashboard");
             }
@@ -463,8 +468,8 @@ cl {
         async def handleSubmit(event: any) -> None {
             event.preventDefault();
 
-            current = state;
-            setState({
+            current = signupState;
+            setSignupState({
                 "username": current["username"],
                 "password": current["password"],
                 "confirm": current["confirm"],
@@ -498,7 +503,7 @@ cl {
                 }
 
                 if success {
-                    setState({
+                    setSignupState({
                         "username": "",
                         "password": "",
                         "confirm": "",
@@ -512,11 +517,11 @@ cl {
                 if message == "" {
                     message = "Unable to create account";
                 }
-            #    setState((prev)=>{
+            #    setSignupState((prev)=>{
             #     ...prev,"loading":False
             #    })
 
-                setState({
+                setSignupState({
                     "username": current["username"],
                     "password": current["password"],
                     "confirm": current["confirm"],
@@ -524,7 +529,7 @@ cl {
                     "error": message
                 });
             } except Exception as err {
-                setState({
+                setSignupState({
                     "username": current["username"],
                     "password": current["password"],
                     "confirm": current["confirm"],
@@ -535,23 +540,23 @@ cl {
         }
 
         def handleUsernameChange(event: any) -> None {
-            setState({"username": event.target.value, "password": state["password"], "confirm": state["confirm"], "loading": state["loading"], "error": state["error"]});
+            setSignupState({"username": event.target.value, "password": signupState["password"], "confirm": signupState["confirm"], "loading": signupState["loading"], "error": signupState["error"]});
         }
 
         def handlePasswordChange(event: any) -> None {
-            setState({"username": state["username"], "password": event.target.value, "confirm": state["confirm"], "loading": state["loading"], "error": state["error"]});
+            setSignupState({"username": signupState["username"], "password": event.target.value, "confirm": signupState["confirm"], "loading": signupState["loading"], "error": signupState["error"]});
         }
 
         def handleConfirmChange(event: any) -> None {
-            setState({"username": state["username"], "password": state["password"], "confirm": event.target.value, "loading": state["loading"], "error": state["error"]});
+            setSignupState({"username": signupState["username"], "password": signupState["password"], "confirm": event.target.value, "loading": signupState["loading"], "error": signupState["error"]});
         }
 
         error_banner = None;
-        if state["error"] != "" {
-            error_banner = <div style={{"marginBottom": "16px", "padding": "12px 16px", "borderRadius": "12px", "border": "1px solid #fecaca", "background": "#fee2e2", "color": "#b91c1c"}}>{state["error"]}</div>;
+        if signupState["error"] != "" {
+            error_banner = <div style={{"marginBottom": "16px", "padding": "12px 16px", "borderRadius": "12px", "border": "1px solid #fecaca", "background": "#fee2e2", "color": "#b91c1c"}}>{signupState["error"]}</div>;
         }
 
-        button_label = "Create account" if not state["loading"] else "Creating…";
+        button_label = "Create account" if not signupState["loading"] else "Creating…";
 
         return <div style={{"maxWidth": "420px", "margin": "48px auto", "padding": "32px", "background": "#ffffff", "borderRadius": "16px", "boxShadow": "0 20px 55px rgba(15,23,42,0.12)", "border": "1px solid #e2e8f0"}}>
                 <h2 style={{"margin": "0 0 12px", "fontSize": "26px", "color": "#6366f1"}}>Join the network</h2>
@@ -560,17 +565,17 @@ cl {
                 <form onSubmit={handleSubmit} style={{"display": "grid", "gap": "16px"}}>
                     <label style={{"display": "grid", "gap": "6px"}}>
                         <span style={{"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}>Username</span>
-                        <input value={state["username"]} onChange={handleUsernameChange} placeholder="Choose a username" style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}} required={True} />
+                        <input value={signupState["username"]} onChange={handleUsernameChange} placeholder="Choose a username" style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}} required={True} />
                     </label>
                     <label style={{"display": "grid", "gap": "6px"}}>
                         <span style={{"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}>Password</span>
-                        <input type="password" value={state["password"]} onChange={handlePasswordChange} placeholder="Enter a strong password" style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}} required={True} />
+                        <input type="password" value={signupState["password"]} onChange={handlePasswordChange} placeholder="Enter a strong password" style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}} required={True} />
                     </label>
                     <label style={{"display": "grid", "gap": "6px"}}>
                         <span style={{"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}>Confirm password</span>
-                        <input type="password" value={state["confirm"]} onChange={handleConfirmChange} placeholder="Re-enter your password" style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}} required={True} />
+                        <input type="password" value={signupState["confirm"]} onChange={handleConfirmChange} placeholder="Re-enter your password" style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}} required={True} />
                     </label>
-                    <button type="submit" disabled={state["loading"]} style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #22c55e", "background": "#22c55e" if not state["loading"] else "#bbf7d0", "color": "#ffffff", "fontWeight": "600", "cursor": "pointer" if not state["loading"] else "not-allowed"}}>{button_label}</button>
+                    <button type="submit" disabled={signupState["loading"]} style={{"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #22c55e", "background": "#22c55e" if not signupState["loading"] else "#bbf7d0", "color": "#ffffff", "fontWeight": "600", "cursor": "pointer" if not signupState["loading"] else "not-allowed"}}>{button_label}</button>
                 </form>
                 <p style={{"marginTop": "16px", "textAlign": "center", "color": "#475569"}}>
                     {"Already have an account? "}
@@ -580,26 +585,36 @@ cl {
     }
 
     def DashboardPage() -> any {
+        console.log("Rendering DashboardPage");
         todosHook = useTodos();
+
         useEffect(lambda -> None {
             todosHook["loadTodos"]();
+            console.log("DashboardPage mounted, loading todos");
         }, []);
 
 
-        state = todosHook["state"]();
+        dashboardState = todosHook["state"]();
+        console.log("DashboardPage state:", dashboardState);
         filteredTodos = todosHook["getFilteredTodos"]();
+        console.log("Filtered todos:", filteredTodos);
         activeCount = todosHook["getActiveCount"]();
+        console.log("Active todos count:", activeCount);
+
+        console.log("Has completed todos:", todosHook["hasCompleted"]());
 
 
 
-        loadingBanner = None;
-        if state["loading"] {
+
+
+        loadingBanner = <div></div>;
+        if dashboardState["loading"] {
             loadingBanner = <div style={{"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#e0f2fe", "color": "#075985"}}>Loading todos…</div>;
         }
 
-        errorBanner = None;
-        if state["error"] != "" {
-            errorBanner = <div style={{"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c"}}>{state["error"]}</div>;
+        errorBanner = <div></div>;
+        if dashboardState["error"] != "" {
+            errorBanner = <div style={{"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c"}}>{dashboardState["error"]}</div>;
         }
 
         return <div style={{"maxWidth": "720px", "margin": "0 auto", "padding": "24px"}}>
@@ -609,7 +624,7 @@ cl {
             <div style={{"display": "flex", "gap": "8px", "marginBottom": "24px", "background": "#ffffff", "padding": "16px", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)"}}>
                 <input
                     type="text"
-                    value={state["inputValue"]}
+                    value={dashboardState["inputValue"]}
                     onChange={lambda e: any -> None { todosHook["setInputValue"](e.target.value); }}
                     onKeyPress={lambda e: any -> None {
                         if e.key == "Enter" { todosHook["addTodo"](); }
@@ -628,26 +643,26 @@ cl {
             <div style={{"display": "flex", "gap": "8px", "marginBottom": "24px", "justifyContent": "center"}}>
                 <button
                     onClick={lambda -> None { todosHook["setFilter"]("all"); }}
-                    style={{"padding": "8px 16px", "background": ("#3b82f6" if state["filter"] == "all" else "#ffffff"), "color": ("#ffffff" if state["filter"] == "all" else "#3b82f6"), "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}
+                    style={{"padding": "8px 16px", "background": ("#3b82f6" if dashboardState["filter"] == "all" else "#ffffff"), "color": ("#ffffff" if dashboardState["filter"] == "all" else "#3b82f6"), "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}
                 >
                     All
                 </button>
                 <button
                     onClick={lambda -> None { todosHook["setFilter"]("active"); }}
-                    style={{"padding": "8px 16px", "background": ("#3b82f6" if state["filter"] == "active" else "#ffffff"), "color": ("#ffffff" if state["filter"] == "active" else "#3b82f6"), "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}
+                    style={{"padding": "8px 16px", "background": ("#3b82f6" if dashboardState["filter"] == "active" else "#ffffff"), "color": ("#ffffff" if dashboardState["filter"] == "active" else "#3b82f6"), "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}
                 >
                     Active
                 </button>
                 <button
                     onClick={lambda -> None { todosHook["setFilter"]("completed"); }}
-                    style={{"padding": "8px 16px", "background": ("#3b82f6" if state["filter"] == "completed" else "#ffffff"), "color": ("#ffffff" if state["filter"] == "completed" else "#3b82f6"), "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}
+                    style={{"padding": "8px 16px", "background": ("#3b82f6" if dashboardState["filter"] == "completed" else "#ffffff"), "color": ("#ffffff" if dashboardState["filter"] == "completed" else "#3b82f6"), "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}
                 >
                     Completed
                 </button>
             </div>
 
             <div style={{"background": "#ffffff", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)", "overflow": "hidden"}}>
-                {( <div style={{"padding": "40px", "textAlign": "center", "color": "#9ca3af"}}>{("No todos yet. Add one above!" if state["filter"] == "all" else ("No active todos!" if state["filter"] == "active" else "No completed todos!"))}</div>) if filteredTodos.length == 0 else (
+                {( <div style={{"padding": "40px", "textAlign": "center", "color": "#9ca3af"}}>{("No todos yet. Add one above!" if dashboardState["filter"] == "all" else ("No active todos!" if dashboardState["filter"] == "active" else "No completed todos!"))}</div>) if filteredTodos.length == 0 else (
                     filteredTodos.map(lambda todo: any -> any {
                         return <div key={todo._jac_id} style={{"display": "flex", "alignItems": "center", "gap": "12px", "padding": "16px", "borderBottom": "1px solid #e5e7eb", "transition": "background 0.2s"}}>
                             <input
@@ -671,7 +686,7 @@ cl {
             {( <div style={{"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginTop": "24px", "padding": "16px", "background": "#ffffff", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)"}}>
                 <span style={{"color": "#6b7280", "fontSize": "14px"}}>{activeCount} {"item" if activeCount == 1 else "items"} left</span>
                 {( <button onClick={todosHook["clearCompleted"]} style={{"padding": "8px 16px", "background": "#ef4444", "color": "#ffffff", "border": "none", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}>Clear Completed</button>) if todosHook["hasCompleted"]() else <span></span>}
-            </div>) if state["todos"].length > 0 else <span></span>}
+            </div>) if dashboardState["todos"].length > 0 else <span></span>}
         </div>;
     }
 
@@ -728,4 +743,39 @@ cl {
                 </div>
             </Router>;
     }
+
+    # def ColourPage() -> any {
+    #     let [state, setState] = useState({"color": "red"});
+    #     console.log("Rendering ColourPage with state:", state);
+    #     return <div>
+    #         Current Colour is :  {state["color"]}
+    #         <button onClick={lambda -> None { setState({"color": "blue"}); }}>Change to Blue</button>
+    #     </div>;
+    # }
+    # def CountPage() -> any {
+    #     let [state, setState] = useState({"count": 0});
+    #     console.log("Rendering CountPage with state:", state);
+    #     return <div>
+    #         Current Count is :  {state["count"]}
+    #         <button onClick={lambda -> None { setState({"count": state["count"] + 1}); }}>Increment</button>
+    #     </div>;
+    # }
+
+    # def app() -> any {
+    #     return <Router defaultRoute="/count">
+    #             <div style={{"minHeight": "95vh", "font-family":"sans-serif", "transition": "background 0.3s ease", "background": "#f1f5f9"}}>
+    #                 <nav style={{"padding": "16px", "background": "#ffffff", "borderBottom": "1px solid #e2e8f0"}}>
+    #                     <Link to="/colour" style={{"marginRight": "16px", "marginLeft":"16px"}}>Colour Page</Link>
+    #                     <Link to="/count">Count Page</Link>
+    #                 </nav>
+    #                 <main style={{"maxWidth": "1080px", "margin": "0 auto", "width": "100%", "padding": "32px 16px"}}>
+    #                     <Routes>
+                           
+    #                         <Route path="/colour" component={ColourPage} />
+    #                         <Route path="/count" component={CountPage} />
+    #                     </Routes>
+    #                 </main>
+    #             </div>
+    #         </Router>;
+    # }
 }

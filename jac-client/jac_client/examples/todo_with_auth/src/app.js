@@ -54,6 +54,7 @@ function useAuth() {
 }
 function useTodos() {
   let [state, setState] = useState({"todos": [], "inputValue": "", "filter": "all", "loading": false, "error": ""});
+  console.log("Initializing useTodos with state:", state);
   function flattenReports(raw) {
     if (!raw) {
       return [];
@@ -166,6 +167,7 @@ function useTodos() {
   }
   function getFilteredTodos() {
     let current = state;
+    console.log("Getting filtered todos with filter:", current["filter"]);
     if (current["filter"] === "active") {
       return current["todos"].filter(todo => {
         return !todo.done;
@@ -195,56 +197,58 @@ function useTodos() {
   return {"state": getState, "loadTodos": loadTodos, "addTodo": addTodo, "toggleTodo": toggleTodo, "deleteTodo": deleteTodo, "clearCompleted": clearCompleted, "setInputValue": setInputValue, "setFilter": setFilter, "getFilteredTodos": getFilteredTodos, "getActiveCount": getActiveCount, "hasCompleted": hasCompleted, "setLoading": setLoading, "setError": setError};
 }
 function LoginPage() {
-  let [state, setState] = useState({"username": "", "password": "", "loading": false, "error": ""});
+  let [loginState, setLoginState] = useState({"username": "", "password": "", "loading": false, "error": ""});
   let navigate = useNavigate();
   let auth = useAuth();
   useEffect(() => {
+    console.log("LoginPage mounted, checking login status");
     if (jacIsLoggedIn()) {
       navigate("/dashboard");
     }
   }, []);
   async function handleSubmit(event) {
     event.preventDefault();
-    let current = state;
-    setState({"username": current["username"], "password": current["password"], "loading": true, "error": ""});
+    let current = loginState;
+    setLoginState({"username": current["username"], "password": current["password"], "loading": true, "error": ""});
     try {
       let result = await auth["login"](current["username"], current["password"]);
       if (result["success"]) {
-        setState({"username": "", "password": "", "loading": false, "error": ""});
+        setLoginState({"username": "", "password": "", "loading": false, "error": ""});
         navigate("/dashboard");
       } else {
         let message = result["error"] ? result["error"] : "Unable to login";
-        setState({"username": current["username"], "password": current["password"], "loading": false, "error": message});
+        setLoginState({"username": current["username"], "password": current["password"], "loading": false, "error": message});
       }
     } catch (err) {
-      setState({"username": current["username"], "password": current["password"], "loading": false, "error": err.toString()});
+      setLoginState({"username": current["username"], "password": current["password"], "loading": false, "error": err.toString()});
     }
   }
   let errorBanner = null;
-  if (state["error"] !== "") {
-    errorBanner = __jacJsx("div", {"style": {"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c", "fontSize": "14px"}}, [state["error"]]);
+  if (loginState["error"] !== "") {
+    errorBanner = __jacJsx("div", {"style": {"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c", "fontSize": "14px"}}, [loginState["error"]]);
   }
-  return __jacJsx("div", {"style": {"display": "flex", "justifyContent": "center", "padding": "48px 16px"}}, [__jacJsx("div", {"style": {"width": "100%", "maxWidth": "420px", "background": "#ffffff", "padding": "32px", "borderRadius": "16px", "boxShadow": "0 10px 30px rgba(15, 23, 42, 0.08)"}}, [__jacJsx("h1", {"style": {"margin": "0 0 8px", "fontSize": "28px", "fontWeight": "700", "color": "#1e293b"}}, ["Welcome back"]), __jacJsx("p", {"style": {"margin": "0 0 24px", "color": "#64748b", "fontSize": "15px"}}, ["Sign in to keep tracking your todos."]), errorBanner, __jacJsx("form", {"onSubmit": handleSubmit, "style": {"display": "flex", "flexDirection": "column", "gap": "16px"}}, [__jacJsx("label", {"style": {"display": "flex", "flexDirection": "column", "gap": "8px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "500", "color": "#475569"}}, ["Username"]), __jacJsx("input", {"type": "text", "value": state["username"], "onChange": e => {
-    let current = state;
-    setState({"username": e.target.value, "password": current["password"], "loading": current["loading"], "error": ""});
-  }, "placeholder": "Enter your username", "style": {"padding": "12px 14px", "borderRadius": "10px", "border": "1px solid #d1d5db", "fontSize": "15px", "outline": "none", "transition": "border 0.2s"}, "required": true}, [])]), __jacJsx("label", {"style": {"display": "flex", "flexDirection": "column", "gap": "8px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "500", "color": "#475569"}}, ["Password"]), __jacJsx("input", {"type": "password", "value": state["password"], "onChange": e => {
-    let current = state;
-    setState({"username": current["username"], "password": e.target.value, "loading": current["loading"], "error": ""});
-  }, "placeholder": "Enter your password", "style": {"padding": "12px 14px", "borderRadius": "10px", "border": "1px solid #d1d5db", "fontSize": "15px", "outline": "none", "transition": "border 0.2s"}, "required": true}, [])]), __jacJsx("button", {"type": "submit", "disabled": state["loading"], "style": {"padding": "12px", "borderRadius": "10px", "background": "#6366f1", "color": "#ffffff", "fontWeight": "600", "fontSize": "15px", "border": "none", "cursor": "pointer", "opacity": state["loading"] ? 0.8 : 1, "transition": "opacity 0.2s"}}, [state["loading"] ? "Signing in\u2026" : "Sign in"])]), __jacJsx("p", {"style": {"marginTop": "24px", "fontSize": "14px", "color": "#64748b"}}, ["Need an account? ", __jacJsx(Link, {"to": "/signup", "style": {"color": "#3b82f6", "textDecoration": "none", "fontWeight": "600"}}, ["Create one"])])])]);
+  return __jacJsx("div", {"style": {"display": "flex", "justifyContent": "center", "padding": "48px 16px"}}, [__jacJsx("div", {"style": {"width": "100%", "maxWidth": "420px", "background": "#ffffff", "padding": "32px", "borderRadius": "16px", "boxShadow": "0 10px 30px rgba(15, 23, 42, 0.08)"}}, [__jacJsx("h1", {"style": {"margin": "0 0 8px", "fontSize": "28px", "fontWeight": "700", "color": "#1e293b"}}, ["Welcome back"]), __jacJsx("p", {"style": {"margin": "0 0 24px", "color": "#64748b", "fontSize": "15px"}}, ["Sign in to keep tracking your todos."]), errorBanner, __jacJsx("form", {"onSubmit": handleSubmit, "style": {"display": "flex", "flexDirection": "column", "gap": "16px"}}, [__jacJsx("label", {"style": {"display": "flex", "flexDirection": "column", "gap": "8px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "500", "color": "#475569"}}, ["Username"]), __jacJsx("input", {"type": "text", "value": loginState["username"], "onChange": e => {
+    let current = loginState;
+    setLoginState({"username": e.target.value, "password": current["password"], "loading": current["loading"], "error": ""});
+  }, "placeholder": "Enter your username", "style": {"padding": "12px 14px", "borderRadius": "10px", "border": "1px solid #d1d5db", "fontSize": "15px", "outline": "none", "transition": "border 0.2s"}, "required": true}, [])]), __jacJsx("label", {"style": {"display": "flex", "flexDirection": "column", "gap": "8px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "500", "color": "#475569"}}, ["Password"]), __jacJsx("input", {"type": "password", "value": loginState["password"], "onChange": e => {
+    let current = loginState;
+    setLoginState({"username": current["username"], "password": e.target.value, "loading": current["loading"], "error": ""});
+  }, "placeholder": "Enter your password", "style": {"padding": "12px 14px", "borderRadius": "10px", "border": "1px solid #d1d5db", "fontSize": "15px", "outline": "none", "transition": "border 0.2s"}, "required": true}, [])]), __jacJsx("button", {"type": "submit", "disabled": loginState["loading"], "style": {"padding": "12px", "borderRadius": "10px", "background": "#6366f1", "color": "#ffffff", "fontWeight": "600", "fontSize": "15px", "border": "none", "cursor": "pointer", "opacity": loginState["loading"] ? 0.8 : 1, "transition": "opacity 0.2s"}}, [loginState["loading"] ? "Signing in\u2026" : "Sign in"])]), __jacJsx("p", {"style": {"marginTop": "24px", "fontSize": "14px", "color": "#64748b"}}, ["Need an account? ", __jacJsx(Link, {"to": "/signup", "style": {"color": "#3b82f6", "textDecoration": "none", "fontWeight": "600"}}, ["Create one"])])])]);
 }
 function SignupPage() {
-  let [state, setState] = useState({"username": "", "password": "", "confirm": "", "loading": false, "error": ""});
+  let [signupState, setSignupState] = useState({"username": "", "password": "", "confirm": "", "loading": false, "error": ""});
   let navigate = useNavigate();
   let auth = useAuth();
   useEffect(() => {
+    console.log("SignupPage mounted, checking login status");
     if (jacIsLoggedIn()) {
       navigate("/dashboard");
     }
   }, []);
   async function handleSubmit(event) {
     event.preventDefault();
-    let current = state;
-    setState({"username": current["username"], "password": current["password"], "confirm": current["confirm"], "loading": true, "error": ""});
+    let current = signupState;
+    setSignupState({"username": current["username"], "password": current["password"], "confirm": current["confirm"], "loading": true, "error": ""});
     try {
       let result = await auth["signup"](current["username"], current["password"], current["confirm"]);
       let payload = result;
@@ -268,51 +272,57 @@ function SignupPage() {
         }
       }
       if (success) {
-        setState({"username": "", "password": "", "confirm": "", "loading": false, "error": ""});
+        setSignupState({"username": "", "password": "", "confirm": "", "loading": false, "error": ""});
         navigate("/dashboard");
         return;
       }
       if (message === "") {
         message = "Unable to create account";
       }
-      setState({"username": current["username"], "password": current["password"], "confirm": current["confirm"], "loading": false, "error": message});
+      setSignupState({"username": current["username"], "password": current["password"], "confirm": current["confirm"], "loading": false, "error": message});
     } catch (err) {
-      setState({"username": current["username"], "password": current["password"], "confirm": current["confirm"], "loading": false, "error": err.toString()});
+      setSignupState({"username": current["username"], "password": current["password"], "confirm": current["confirm"], "loading": false, "error": err.toString()});
     }
   }
   function handleUsernameChange(event) {
-    setState({"username": event.target.value, "password": state["password"], "confirm": state["confirm"], "loading": state["loading"], "error": state["error"]});
+    setSignupState({"username": event.target.value, "password": signupState["password"], "confirm": signupState["confirm"], "loading": signupState["loading"], "error": signupState["error"]});
   }
   function handlePasswordChange(event) {
-    setState({"username": state["username"], "password": event.target.value, "confirm": state["confirm"], "loading": state["loading"], "error": state["error"]});
+    setSignupState({"username": signupState["username"], "password": event.target.value, "confirm": signupState["confirm"], "loading": signupState["loading"], "error": signupState["error"]});
   }
   function handleConfirmChange(event) {
-    setState({"username": state["username"], "password": state["password"], "confirm": event.target.value, "loading": state["loading"], "error": state["error"]});
+    setSignupState({"username": signupState["username"], "password": signupState["password"], "confirm": event.target.value, "loading": signupState["loading"], "error": signupState["error"]});
   }
   let error_banner = null;
-  if (state["error"] !== "") {
-    error_banner = __jacJsx("div", {"style": {"marginBottom": "16px", "padding": "12px 16px", "borderRadius": "12px", "border": "1px solid #fecaca", "background": "#fee2e2", "color": "#b91c1c"}}, [state["error"]]);
+  if (signupState["error"] !== "") {
+    error_banner = __jacJsx("div", {"style": {"marginBottom": "16px", "padding": "12px 16px", "borderRadius": "12px", "border": "1px solid #fecaca", "background": "#fee2e2", "color": "#b91c1c"}}, [signupState["error"]]);
   }
-  let button_label = !state["loading"] ? "Create account" : "Creating\u2026";
-  return __jacJsx("div", {"style": {"maxWidth": "420px", "margin": "48px auto", "padding": "32px", "background": "#ffffff", "borderRadius": "16px", "boxShadow": "0 20px 55px rgba(15,23,42,0.12)", "border": "1px solid #e2e8f0"}}, [__jacJsx("h2", {"style": {"margin": "0 0 12px", "fontSize": "26px", "color": "#6366f1"}}, ["Join the network"]), __jacJsx("p", {"style": {"margin": "0 0 20px", "color": "#64748b"}}, ["Set up your Jac account to start sharing updates."]), error_banner, __jacJsx("form", {"onSubmit": handleSubmit, "style": {"display": "grid", "gap": "16px"}}, [__jacJsx("label", {"style": {"display": "grid", "gap": "6px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}, ["Username"]), __jacJsx("input", {"value": state["username"], "onChange": handleUsernameChange, "placeholder": "Choose a username", "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}, "required": true}, [])]), __jacJsx("label", {"style": {"display": "grid", "gap": "6px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}, ["Password"]), __jacJsx("input", {"type": "password", "value": state["password"], "onChange": handlePasswordChange, "placeholder": "Enter a strong password", "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}, "required": true}, [])]), __jacJsx("label", {"style": {"display": "grid", "gap": "6px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}, ["Confirm password"]), __jacJsx("input", {"type": "password", "value": state["confirm"], "onChange": handleConfirmChange, "placeholder": "Re-enter your password", "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}, "required": true}, [])]), __jacJsx("button", {"type": "submit", "disabled": state["loading"], "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #22c55e", "background": !state["loading"] ? "#22c55e" : "#bbf7d0", "color": "#ffffff", "fontWeight": "600", "cursor": !state["loading"] ? "pointer" : "not-allowed"}}, [button_label])]), __jacJsx("p", {"style": {"marginTop": "16px", "textAlign": "center", "color": "#475569"}}, ["Already have an account? ", __jacJsx(Link, {"to": "/login", "style": {"marginLeft": "6px", "color": "#6366f1", "textDecoration": "none", "fontWeight": "600"}}, ["Sign in"])])]);
+  let button_label = !signupState["loading"] ? "Create account" : "Creating\u2026";
+  return __jacJsx("div", {"style": {"maxWidth": "420px", "margin": "48px auto", "padding": "32px", "background": "#ffffff", "borderRadius": "16px", "boxShadow": "0 20px 55px rgba(15,23,42,0.12)", "border": "1px solid #e2e8f0"}}, [__jacJsx("h2", {"style": {"margin": "0 0 12px", "fontSize": "26px", "color": "#6366f1"}}, ["Join the network"]), __jacJsx("p", {"style": {"margin": "0 0 20px", "color": "#64748b"}}, ["Set up your Jac account to start sharing updates."]), error_banner, __jacJsx("form", {"onSubmit": handleSubmit, "style": {"display": "grid", "gap": "16px"}}, [__jacJsx("label", {"style": {"display": "grid", "gap": "6px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}, ["Username"]), __jacJsx("input", {"value": signupState["username"], "onChange": handleUsernameChange, "placeholder": "Choose a username", "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}, "required": true}, [])]), __jacJsx("label", {"style": {"display": "grid", "gap": "6px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}, ["Password"]), __jacJsx("input", {"type": "password", "value": signupState["password"], "onChange": handlePasswordChange, "placeholder": "Enter a strong password", "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}, "required": true}, [])]), __jacJsx("label", {"style": {"display": "grid", "gap": "6px"}}, [__jacJsx("span", {"style": {"fontSize": "14px", "fontWeight": "600", "color": "#1e293b"}}, ["Confirm password"]), __jacJsx("input", {"type": "password", "value": signupState["confirm"], "onChange": handleConfirmChange, "placeholder": "Re-enter your password", "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #e2e8f0", "fontSize": "16px"}, "required": true}, [])]), __jacJsx("button", {"type": "submit", "disabled": signupState["loading"], "style": {"padding": "12px 16px", "borderRadius": "10px", "border": "1px solid #22c55e", "background": !signupState["loading"] ? "#22c55e" : "#bbf7d0", "color": "#ffffff", "fontWeight": "600", "cursor": !signupState["loading"] ? "pointer" : "not-allowed"}}, [button_label])]), __jacJsx("p", {"style": {"marginTop": "16px", "textAlign": "center", "color": "#475569"}}, ["Already have an account? ", __jacJsx(Link, {"to": "/login", "style": {"marginLeft": "6px", "color": "#6366f1", "textDecoration": "none", "fontWeight": "600"}}, ["Sign in"])])]);
 }
 function DashboardPage() {
+  console.log("Rendering DashboardPage");
   let todosHook = useTodos();
   useEffect(() => {
     todosHook["loadTodos"]();
+    console.log("DashboardPage mounted, loading todos");
   }, []);
-  let state = todosHook["state"]();
+  let dashboardState = todosHook["state"]();
+  console.log("DashboardPage state:", dashboardState);
   let filteredTodos = todosHook["getFilteredTodos"]();
+  console.log("Filtered todos:", filteredTodos);
   let activeCount = todosHook["getActiveCount"]();
-  let loadingBanner = null;
-  if (state["loading"]) {
+  console.log("Active todos count:", activeCount);
+  console.log("Has completed todos:", todosHook["hasCompleted"]());
+  let loadingBanner = __jacJsx("div", {}, []);
+  if (dashboardState["loading"]) {
     loadingBanner = __jacJsx("div", {"style": {"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#e0f2fe", "color": "#075985"}}, ["Loading todos…"]);
   }
-  let errorBanner = null;
-  if (state["error"] !== "") {
-    errorBanner = __jacJsx("div", {"style": {"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c"}}, [state["error"]]);
+  let errorBanner = __jacJsx("div", {}, []);
+  if (dashboardState["error"] !== "") {
+    errorBanner = __jacJsx("div", {"style": {"marginBottom": "16px", "padding": "12px", "borderRadius": "8px", "background": "#fee2e2", "color": "#b91c1c"}}, [dashboardState["error"]]);
   }
-  return __jacJsx("div", {"style": {"maxWidth": "720px", "margin": "0 auto", "padding": "24px"}}, [__jacJsx("h1", {"style": {"textAlign": "center", "color": "#1f2937", "marginBottom": "24px", "fontSize": "2.5rem", "fontWeight": "700"}}, ["📝 My Todo App"]), loadingBanner, errorBanner, __jacJsx("div", {"style": {"display": "flex", "gap": "8px", "marginBottom": "24px", "background": "#ffffff", "padding": "16px", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)"}}, [__jacJsx("input", {"type": "text", "value": state["inputValue"], "onChange": e => {
+  return __jacJsx("div", {"style": {"maxWidth": "720px", "margin": "0 auto", "padding": "24px"}}, [__jacJsx("h1", {"style": {"textAlign": "center", "color": "#1f2937", "marginBottom": "24px", "fontSize": "2.5rem", "fontWeight": "700"}}, ["📝 My Todo App"]), loadingBanner, errorBanner, __jacJsx("div", {"style": {"display": "flex", "gap": "8px", "marginBottom": "24px", "background": "#ffffff", "padding": "16px", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)"}}, [__jacJsx("input", {"type": "text", "value": dashboardState["inputValue"], "onChange": e => {
     todosHook["setInputValue"](e.target.value);
   }, "onKeyPress": e => {
     if (e.key === "Enter") {
@@ -320,17 +330,17 @@ function DashboardPage() {
     }
   }, "placeholder": "What needs to be done?", "style": {"flex": "1", "padding": "12px 16px", "border": "1px solid #e5e7eb", "borderRadius": "8px", "fontSize": "16px", "outline": "none"}}, []), __jacJsx("button", {"onClick": todosHook["addTodo"], "style": {"padding": "12px 24px", "background": "#3b82f6", "color": "#ffffff", "border": "none", "borderRadius": "8px", "fontSize": "16px", "fontWeight": "600", "cursor": "pointer", "transition": "background 0.2s"}}, ["Add"])]), __jacJsx("div", {"style": {"display": "flex", "gap": "8px", "marginBottom": "24px", "justifyContent": "center"}}, [__jacJsx("button", {"onClick": () => {
     todosHook["setFilter"]("all");
-  }, "style": {"padding": "8px 16px", "background": state["filter"] === "all" ? "#3b82f6" : "#ffffff", "color": state["filter"] === "all" ? "#ffffff" : "#3b82f6", "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["All"]), __jacJsx("button", {"onClick": () => {
+  }, "style": {"padding": "8px 16px", "background": dashboardState["filter"] === "all" ? "#3b82f6" : "#ffffff", "color": dashboardState["filter"] === "all" ? "#ffffff" : "#3b82f6", "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["All"]), __jacJsx("button", {"onClick": () => {
     todosHook["setFilter"]("active");
-  }, "style": {"padding": "8px 16px", "background": state["filter"] === "active" ? "#3b82f6" : "#ffffff", "color": state["filter"] === "active" ? "#ffffff" : "#3b82f6", "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["Active"]), __jacJsx("button", {"onClick": () => {
+  }, "style": {"padding": "8px 16px", "background": dashboardState["filter"] === "active" ? "#3b82f6" : "#ffffff", "color": dashboardState["filter"] === "active" ? "#ffffff" : "#3b82f6", "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["Active"]), __jacJsx("button", {"onClick": () => {
     todosHook["setFilter"]("completed");
-  }, "style": {"padding": "8px 16px", "background": state["filter"] === "completed" ? "#3b82f6" : "#ffffff", "color": state["filter"] === "completed" ? "#ffffff" : "#3b82f6", "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["Completed"])]), __jacJsx("div", {"style": {"background": "#ffffff", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)", "overflow": "hidden"}}, [filteredTodos.length === 0 ? __jacJsx("div", {"style": {"padding": "40px", "textAlign": "center", "color": "#9ca3af"}}, [state["filter"] === "all" ? "No todos yet. Add one above!" : state["filter"] === "active" ? "No active todos!" : "No completed todos!"]) : filteredTodos.map(todo => {
+  }, "style": {"padding": "8px 16px", "background": dashboardState["filter"] === "completed" ? "#3b82f6" : "#ffffff", "color": dashboardState["filter"] === "completed" ? "#ffffff" : "#3b82f6", "border": "1px solid #3b82f6", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["Completed"])]), __jacJsx("div", {"style": {"background": "#ffffff", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)", "overflow": "hidden"}}, [filteredTodos.length === 0 ? __jacJsx("div", {"style": {"padding": "40px", "textAlign": "center", "color": "#9ca3af"}}, [dashboardState["filter"] === "all" ? "No todos yet. Add one above!" : dashboardState["filter"] === "active" ? "No active todos!" : "No completed todos!"]) : filteredTodos.map(todo => {
     return __jacJsx("div", {"key": todo._jac_id, "style": {"display": "flex", "alignItems": "center", "gap": "12px", "padding": "16px", "borderBottom": "1px solid #e5e7eb", "transition": "background 0.2s"}}, [__jacJsx("input", {"type": "checkbox", "checked": todo.done, "onChange": () => {
       todosHook["toggleTodo"](todo._jac_id);
     }, "style": {"width": "20px", "height": "20px", "cursor": "pointer"}}, []), __jacJsx("span", {"style": {"flex": "1", "textDecoration": todo.done ? "line-through" : "none", "color": todo.done ? "#9ca3af" : "#1f2937", "fontSize": "16px"}}, [todo.text]), __jacJsx("button", {"onClick": () => {
       todosHook["deleteTodo"](todo._jac_id);
     }, "style": {"padding": "6px 12px", "background": "#ef4444", "color": "#ffffff", "border": "none", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "500", "cursor": "pointer", "transition": "background 0.2s"}}, ["Delete"])]);
-  })]), state["todos"].length > 0 ? __jacJsx("div", {"style": {"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginTop": "24px", "padding": "16px", "background": "#ffffff", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)"}}, [__jacJsx("span", {"style": {"color": "#6b7280", "fontSize": "14px"}}, [activeCount, " ", activeCount === 1 ? "item" : "items", " left"]), todosHook["hasCompleted"]() ? __jacJsx("button", {"onClick": todosHook["clearCompleted"], "style": {"padding": "8px 16px", "background": "#ef4444", "color": "#ffffff", "border": "none", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["Clear Completed"]) : __jacJsx("span", {}, [])]) : __jacJsx("span", {}, [])]);
+  })]), dashboardState["todos"].length > 0 ? __jacJsx("div", {"style": {"display": "flex", "justifyContent": "space-between", "alignItems": "center", "marginTop": "24px", "padding": "16px", "background": "#ffffff", "borderRadius": "12px", "boxShadow": "0 1px 3px rgba(0,0,0,0.1)"}}, [__jacJsx("span", {"style": {"color": "#6b7280", "fontSize": "14px"}}, [activeCount, " ", activeCount === 1 ? "item" : "items", " left"]), todosHook["hasCompleted"]() ? __jacJsx("button", {"onClick": todosHook["clearCompleted"], "style": {"padding": "8px 16px", "background": "#ef4444", "color": "#ffffff", "border": "none", "borderRadius": "6px", "fontSize": "14px", "fontWeight": "600", "cursor": "pointer"}}, ["Clear Completed"]) : __jacJsx("span", {}, [])]) : __jacJsx("span", {}, [])]);
 }
 function AppHeader() {
   let navigate = useNavigate();
