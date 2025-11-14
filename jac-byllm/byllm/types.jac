@@ -25,11 +25,11 @@ import from .schema { tool_to_schema }
 with entry {
     # The message can be a jaclang defined message or what ever the llm
     # returned object that was feed back to the llm as it was given (dict).
-    has MessageType: TypeAlias = "Message | LiteLLMMessage";
+    has MessageType: TypeAlias = Message | LiteLLMMessage;
 }
 
 """Enum for message roles in LLM interactions."""
-enum MessageRole {
+enum MessageRole(StrEnum) {
     SYSTEM = "system",
     USER = "user",
     ASSISTANT = "assistant",
@@ -39,7 +39,7 @@ enum MessageRole {
 """Message class for LLM interactions."""
 obj Message {
     has role: MessageRole;
-    has content: "str | list[Media]";
+    has content: str | list[Media];
 
     """Convert the message to a dictionary."""
     def to_dict()  -> dict[str, object] {
@@ -101,7 +101,7 @@ obj Tool {
     }
 
     """Call the tool function with the provided arguments."""
-    def __call__( *args: list , **kwargs: dict)  -> object {
+    def __call__(*args: list , **kwargs: dict)  -> object {
         # If there is an error with the finish tool, we throw the exception.
         # Since it's the user's responsibility to handle it.
         if self.is_finish_tool() {
@@ -170,8 +170,8 @@ obj Tool {
             if arg_type := annotations.get(arg_name) {
                 args[arg_name] = TypeAdapter(arg_type).validate_python(arg_json);
             }
-            return args;
         }
+        return args;
     }
 }
 
@@ -183,7 +183,11 @@ obj ToolCall {
 
     """Call the tool with the provided arguments."""
     def __call__()  -> ToolCallResultMsg {
-        result = self.tool(**self.args);
+        if self.args is not None{
+            result = self.tool(**self.args);
+        }else{
+            raise ValueError("args is None, Expected a dictionary");
+        }
         return ToolCallResultMsg(
             role=MessageRole.TOOL,
             content=str(result),
@@ -205,7 +209,7 @@ obj ToolCall {
 
     """Get the output from the finish tool call."""
     def get_output()  -> object {
-        assert (self.is_finish_call());  #This method should only be called for finish tools.
+        assert (self.is_finish_call()),"This method should only be called for finish tools.";
         return self.tool(**self.args);
     }
 }
@@ -371,8 +375,9 @@ obj Image(Media) {
 
         # If we reach here, the input type isn't supported
         raise TypeError(
-            "Unsupported Image input type. Provide a URL/path string, data URL, bytes, ""BytesIO, file-like object, os.PathLike, or PIL.Image.Image."
-        ) ;
+            "Unsupported Image input type. Provide a URL/path string, data URL, bytes, "
+            "BytesIO, file-like object, os.PathLike, or PIL.Image.Image."
+        );
     }
 
     """Map a PIL format name to a MIME type with sensible fallbacks."""
@@ -432,9 +437,9 @@ obj Video(Media) {
             raise ImportError(
                 "OpenCV is required to process video files."
                 "Install `pip install byllm[video]` for video capabilities."
-            ) ;
+            );
         }
-
+    
         self._base64frames = [];
         video = cv2.VideoCapture(self.path);
         total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT));
@@ -463,8 +468,7 @@ obj Video(Media) {
         if self._base64frames is None {
             self.load_frames();
         }
-        assert self._base64frames is not None;
-        #Frames must be loaded before conversion.
+        assert (self._base64frames is not None),"Frames must be loaded before conversion.";
         return [
             {"type": "image_url",
             "image_url": f"data:image/jpeg;base64,{frame}",}
