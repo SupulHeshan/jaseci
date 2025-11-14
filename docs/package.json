@@ -4,6 +4,7 @@
     "vitest": "^4.0.8"
   },
   "scripts": {
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   }
 }

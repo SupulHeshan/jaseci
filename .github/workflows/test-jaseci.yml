@@ -48,6 +48,22 @@ jobs:
     - name: Set environment for testing
       run: |
         echo "TEST_ENV=true" >> $GITHUB_ENV
+    
+    - name: Set up Node.js for code-blocks tests
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+    
+    - name: Install code-blocks dependencies
+      run: |
+        cd docs
+        npm install
+    
+    - name: Run code-blocks JavaScript tests
+      run: |
+        cd docs
+        npm test
+    
     - name: Run tests
       run: |
         pytest -x jac -n auto
