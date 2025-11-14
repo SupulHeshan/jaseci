@@ -40,7 +40,7 @@ obj LLMConnector(ABC) {
         # This is only applicable for the next call passed from `by llm(**kwargs)`.
         self.call_params: dict[str, object] = {};
     }
-
+ 
     static
     def for_model(model_name: str, **kwargs: object) -> LLMConnector {
         if model_name.lower().strip() == MODEL_MOCK {
@@ -63,7 +63,7 @@ obj LLMConnector(ABC) {
             ),
             "api_key": self.config.get("api_key"),
             "messages": mtir.get_msg_list(),
-            "tool": mtir.get_tool_list() or None,
+            "tools": mtir.get_tool_list() or None,
             "response_format": mtir.get_output_schema(),
             "temperature": self.config.get("temperature", 0.7),
             "max_tokens": self.config.get("max_tokens"),
@@ -140,12 +140,11 @@ obj MockLLMConnector(LLMConnector) {
 obj LiteLLMConnector(LLMConnector) {
 
     has proxy: bool;
-    has model_name: str;
-    has config: dict[str, object];
 
     def __post_init__() {
         # Every litellm call will be logged to the tty and that pollutes the output.
         # When there is a by llm() call in the jaclang.
+        super.__post_init__();
         logging.getLogger("httpx").setLevel(logging.WARNING);
         _disable_debugging();
         litellm.drop_params = True;
