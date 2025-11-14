@@ -41,7 +41,6 @@ class TypeCheckerPassTests(TestCase):
             ^^^^^^^^^^^
         """, program.errors_had[0].pretty_print())
 
-
     def test_infer_type_of_assignment(self) -> None:
         program = JacProgram()
         mod = program.compile(self.fixture_abs_path("infer_type_assignment.jac"))
@@ -413,6 +412,13 @@ class TypeCheckerPassTests(TestCase):
         TypeCheckPass(ir_in=mod, prog=program)
         self.assertEqual(len(program.errors_had), 0)
 
+    def test_get_type_of_iife_expression(self) -> None:
+        path = self.fixture_abs_path("checker_iife_expression.jac")
+        program = JacProgram()
+        mod = program.compile(path)
+        TypeCheckPass(ir_in=mod, prog=program)
+        self.assertEqual(len(program.errors_had), 0)
+
     def test_param_arg_match(self) -> None:
         program = JacProgram()
         path = self.fixture_abs_path("checker_generics.jac")
@@ -500,6 +506,53 @@ class TypeCheckerPassTests(TestCase):
                 hv2: int = ht.get(1);  # <-- Error
                 ^^^^^^^^^^^^^^^^^^^^^
 
+            }
+            """,
+        ]
+
+        for i, expected in enumerate(expected_errors):
+            self._assert_error_pretty_found(expected, program.errors_had[i].pretty_print())
+
+    def test_return_type(self) -> None:
+        program = JacProgram()
+        path = self.fixture_abs_path("checker_return_type.jac")
+        mod = program.compile(path)
+        TypeCheckPass(ir_in=mod, prog=program)
+        self.assertEqual(len(program.errors_had), 4)
+
+        expected_errors = [
+            """
+            Cannot return <class int>, expected <class NoneType>
+            def foo() {
+                return 1;    # <-- Error
+                ^^^^^^^^^
+                return;      # <-- Ok
+                return "";   # <-- Error
+            """,
+            """
+            Cannot return <class str>, expected <class NoneType>
+                return 1;    # <-- Error
+                return;      # <-- Ok
+                return "";   # <-- Error
+                ^^^^^^^^^^
+                return None; # <-- Ok
+            }
+            """,
+            """
+            Cannot return <class str>, expected <class int>
+
+            def bar() -> int {
+                return "";  # <-- Error
+                ^^^^^^^^^^
+                return 1;   # <-- Ok
+                return 1.1; # <-- Error
+                """,
+            """
+            Cannot return <class float>, expected <class int>
+                return "";  # <-- Error
+                return 1;   # <-- Ok
+                return 1.1; # <-- Error
+                ^^^^^^^^^^^
             }
             """,
         ]
