@@ -40,7 +40,7 @@ obj LLMConnector(ABC) {
         # This is only applicable for the next call passed from `by llm(**kwargs)`.
         self.call_params: dict[str, object] = {};
     }
- 
+
     static
     def for_model(model_name: str, **kwargs: object) -> LLMConnector {
         if model_name.lower().strip() == MODEL_MOCK {
