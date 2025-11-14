@@ -74,7 +74,7 @@ describe('code block initialization (intersection-driven)', () => {
     });
 
     it('initializes a .code-block.dot and shows serve-dot', async () => {
-        await loadModuleNCreateCodeblock('serve-dot', false, true, true);
+        await loadModuleNCreateCodeblock('serve-dot', true, true, true);
     });
 
     it('initializes a .code-block.dot and shows all buttons', async () => {
