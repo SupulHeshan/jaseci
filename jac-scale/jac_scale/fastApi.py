@@ -129,6 +129,42 @@ class JFastApiServer(JServer[FastAPI]):
         self._create_fastapi_route(HTTPMethod.DELETE, endpoint)
         return self
 
+    def _route_priority(self, endpoint: JEndPoint) -> tuple[int, int, str]:
+        """
+        Calculate route priority for sorting. More specific routes get higher priority (lower number).
+
+        Priority rules:
+        1. Static paths (no parameters) come first
+        2. Paths with fewer parameters come before paths with more parameters
+        3. Longer paths come before shorter paths
+        4. Alphabetical order for tie-breaking
+        """
+        path = endpoint.path
+
+        # Count path parameters (segments with {})
+        param_count = path.count("{")
+
+        # Count total path segments
+        segment_count = len([seg for seg in path.split("/") if seg])
+
+        # Static paths get priority 0, parameterized paths get priority based on param count
+        priority = param_count
+
+        # Secondary sort by negative segment count (longer paths first)
+        # Tertiary sort by path string for consistency
+        return (priority, -segment_count, path)
+
+    def execute(self) -> None:
+        """
+        Execute all endpoints by processing them through their respective HTTP method handlers.
+
+        Routes are sorted to ensure more specific paths are registered before generic ones
+        to avoid path matching conflicts.
+        """
+        # Sort endpoints to prioritize specific paths over parameterized ones
+        self._endpoints = sorted(self._endpoints, key=self._route_priority)
+        super().execute()
+
     def create_server(self) -> FastAPI:
         """
         Create a complete FastAPI server with all endpoints registered.
