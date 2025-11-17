@@ -439,7 +439,7 @@ obj Video(Media) {
                 "Install `pip install byllm[video]` for video capabilities."
             );
         }
-    
+
         self._base64frames = [];
         video = cv2.VideoCapture(self.path);
         total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT));
