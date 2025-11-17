@@ -22,11 +22,11 @@ import from litellm.types.utils { Message as LiteLLMMessage }
 import from pydantic { TypeAdapter }
 import from .schema { tool_to_schema }
 
-with entry {
-    # The message can be a jaclang defined message or what ever the llm
-    # returned object that was feed back to the llm as it was given (dict).
-    has MessageType: TypeAlias = Message | LiteLLMMessage;
-}
+
+# The message can be a jaclang defined message or what ever the llm
+# returned object that was feed back to the llm as it was given (dict).
+
+glob MessageType: TypeAlias = 'Message | LiteLLMMessage';
 
 """Enum for message roles in LLM interactions."""
 enum MessageRole(StrEnum) {

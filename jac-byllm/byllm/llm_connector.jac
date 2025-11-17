@@ -25,11 +25,13 @@ import from byllm.types { CompletionResult, LiteLLMMessage, MockToolCall, ToolCa
 # the bellow URL every time we import the litellm and use a cached
 # local json file. Maybe we should conditionally enable this.
 # https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
-with entry {
+
+with entry{
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True";
-    DEFAULT_BASE_URL = "http://localhost:4000";
-    MODEL_MOCK = "mockllm";
 }
+
+glob DEFAULT_BASE_URL = "http://localhost:4000";
+glob MODEL_MOCK = "mockllm";
 
 obj LLMConnector(ABC) {
     """Abstract base class for LLM connectors."""
@@ -38,7 +40,7 @@ obj LLMConnector(ABC) {
 
     def __post_init__() {
         # This is only applicable for the next call passed from `by llm(**kwargs)`.
-        self.call_params: dict[str, object] = {};
+        self.call_params: dict[str, object];
     }
 
     static
@@ -65,8 +67,8 @@ obj LLMConnector(ABC) {
             "messages": mtir.get_msg_list(),
             "tools": mtir.get_tool_list() or None,
             "response_format": mtir.get_output_schema(),
-            "temperature": self.config.get("temperature", 0.7),
-            "max_tokens": self.config.get("max_tokens"),
+            "temperature": self.call_params.get("temperature", 0.7),
+            "max_tokens": self.call_params.get("max_tokens"),
             # "top_k": self.call_params.get("top_k", 50),
             # "top_p": self.call_params.get("top_p", 0.9),
 
@@ -95,6 +97,11 @@ obj LLMConnector(ABC) {
         raise NotImplementedError() ;
     }
 }
+
+
+# -----------------------------------------------------------------------------
+# Mock LLM Connector
+# -----------------------------------------------------------------------------
 
 """LLM Connector for a mock LLM service that simulates responses."""
 obj MockLLMConnector(LLMConnector) {
@@ -142,9 +149,10 @@ obj LiteLLMConnector(LLMConnector) {
     has proxy: bool;
 
     def __post_init__() {
+        super.__post_init__();
+
         # Every litellm call will be logged to the tty and that pollutes the output.
         # When there is a by llm() call in the jaclang.
-        super.__post_init__();
         logging.getLogger("httpx").setLevel(logging.WARNING);
         _disable_debugging();
         litellm.drop_params = True;
