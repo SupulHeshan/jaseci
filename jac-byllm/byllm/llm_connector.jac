@@ -40,7 +40,7 @@ obj LLMConnector(ABC) {
 
     def __post_init__() {
         # This is only applicable for the next call passed from `by llm(**kwargs)`.
-        self.call_params: dict[str, object];
+        self.call_params: dict[str, object] = {};
     }
 
     static
