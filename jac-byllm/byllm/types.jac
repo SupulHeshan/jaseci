@@ -60,7 +60,7 @@ obj ToolCallResultMsg(Message) {
     has name: str;  # Function name.
 
     """Post-initialization to set the role of the message."""
-    def __post_init__()  -> None {
+    def postinit()  -> None {
         self.role = MessageRole.TOOL;  # Maybe this should be an assertion?
     }
 
@@ -83,7 +83,7 @@ obj Tool {
     has params_desc: dict[str, str] = None;  # type: ignore
 
     """Post-initialization to validate the function."""
-    def __post_init__()  -> None {
+    def postinit()  -> None {
         annotations = get_type_hints(self.func);
         with suppress(Exception) {
             self.func.__annotations__ = annotations;
@@ -277,7 +277,7 @@ obj Image(Media) {
     - os.PathLike
     - PIL.Image.Image instances
     """
-    def __post_init__()  -> None {
+    def postinit()  -> None {
         value = self.url;
 
         # Handle path-like inputs by converting to string
@@ -423,7 +423,7 @@ obj Video(Media) {
     has _base64frames: list[str] | None = None;
 
     """Post-initialization to ensure the path is a string."""
-    def __post_init__()  -> None {
+    def postinit()  -> None {
         if not os.path.exists(self.path) {
             raise ValueError(f"Video file does not exist: {self.path}") ;
         }

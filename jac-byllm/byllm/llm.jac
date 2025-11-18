@@ -49,7 +49,7 @@ obj Model {
         api_key: API key for the model provider
         **kwargs: Additional configuration options
     """
-    def __init__(model_name: str, **kwargs: object) -> None {
+    def init(model_name: str, **kwargs: object) -> None {
         self.llm_connector = LLMConnector.for_model(model_name, **kwargs);
     }
 

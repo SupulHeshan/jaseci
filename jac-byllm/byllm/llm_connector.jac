@@ -38,7 +38,7 @@ obj LLMConnector(ABC) {
     has model_name: str;
     has config: dict[str, object];
 
-    def __post_init__() {
+    def postinit() {
         # This is only applicable for the next call passed from `by llm(**kwargs)`.
         self.call_params: dict[str, object] = {};
     }
@@ -148,8 +148,8 @@ obj LiteLLMConnector(LLMConnector) {
 
     has proxy: bool;
 
-    def __post_init__() {
-        super.__post_init__();
+    def postinit() {
+        super.postinit();
 
         # Every litellm call will be logged to the tty and that pollutes the output.
         # When there is a by llm() call in the jaclang.
