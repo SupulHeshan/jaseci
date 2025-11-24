@@ -70,7 +70,7 @@ class ByllmFallbackLoader(importlib.abc.Loader):
 class JacMetaImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     """Meta path importer to load .jac modules via Python's import system."""
 
-    _current_finder: Optional[importlib.abc.MetaPathFinder] | None = None
+    _current_finder = None
     byllm_found: bool = False
 
     def find_spec(
