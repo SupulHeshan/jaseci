@@ -1,6 +1,6 @@
 # Todo App
 cl import from react {useState, useEffect}
-cl import from '@jac-client/utils' {__jacSpawn}
+
 node Todo {
     has text: str;
     has done: bool = False;
@@ -8,27 +8,18 @@ node Todo {
 
 walker create_todo {
     has text:str;
-    class __specs__ {
-        has auth: bool = False;
-    }
     can create with `root entry {
         new_todo = here ++> Todo(text= self.text);
         report new_todo;
     }
 }
 walker toggle_todo {
-    class __specs__ {
-        has auth: bool = False;
-    }
     can toggle with Todo entry {
         here.done = not here.done;
         report here;
     }
 }
 walker read_todos {
-    class __specs__ {
-        has auth: bool = False;
-    }
     can read with `root entry {
         visit [-->(`?Todo)];
     }
@@ -45,8 +36,7 @@ cl {
 
         useEffect(lambda -> None {
             async def loadTodos() -> None {
-                todos = await __jacSpawn("read_todos","",{});
-                console.log(todos);
+                todos = root spawn read_todos();
                 setTodos(todos.reports);
             }
             loadTodos();
@@ -60,16 +50,16 @@ cl {
                 "text": inputValue.trim(),
                 "done": False
             };
-            await __jacSpawn("create_todo","", {"text": inputValue.trim()});
-            newTodos = todos.concat([newTodo]);
+            response = root spawn create_todo(text=inputValue.trim());
+            newTodos = todos.concat([response.reports[0][0]]);
             setTodos(newTodos);
             setInputValue("");
         }
 
         # Toggle todo completion status
         async def toggleTodo(id: any) -> None {
-
-            await __jacSpawn("toggle_todo",id, {});
+            console.log("toggleTodo", id);
+            id spawn toggle_todo();
             setTodos(todos.map(lambda todo: any -> any {
                 if todo._jac_id == id {
                     updatedTodo = {

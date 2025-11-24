@@ -105,6 +105,11 @@ class TypeEvaluator {
         "../../vendor/typeshed/stdlib/typing.pyi",
     );
 
+    has _TYPES_STUB_FILE_PATH: str = os.path.join(
+        os.path.dirname(__file__),
+        "../../vendor/typeshed/stdlib/types.pyi",
+    );
+
     """Initialize the type evaluator with prefetched types.
 
     Implementation Note:
@@ -120,11 +125,14 @@ class TypeEvaluator {
         self.symbol_resolution_stack: list[SymbolResolutionStackEntry] = [];
         self.prefetch: PrefetchedTypes = PrefetchedTypes();
         self.diagnostic_callback: DiagnosticCallback | None = None;
+        self.builtins_module: uni.Module | None = None;
+
+        # NOTE: The initialization order here is important.
         self.typing_module = self._load_stub_module(TypeEvaluator._TYPING_STUB_FILE_PATH);
-        self.builtins_module = None;
+        self.types_module = self._load_stub_module(TypeEvaluator._TYPES_STUB_FILE_PATH);
 
         # These prefetch type are essential for the builtin types.
-        self.prefetch.type_var_class = self._get_typing_type("TypeVar");
+        self.prefetch.type_var_class = self._get_type_from_module(self.typing_module, "TypeVar");
         self.builtins_module = self._load_stub_module(TypeEvaluator._BUILTINS_STUB_FILE_PATH);
 
         self._prefetch_types();
@@ -150,16 +158,8 @@ class TypeEvaluator {
     }
 
     """Return the built-in type with the given name."""
-    def _get_builtin_type(self: TypeEvaluator, name: str) -> TypeBase {
-        if (symbol := self.builtins_module.lookup(name)) is not None {
-            return self.get_type_of_symbol(symbol);
-        }
-        return types.UnknownType();
-    }
-
-    """Return the typing type with the given name."""
-    def _get_typing_type(self: TypeEvaluator, name: str) -> TypeBase {
-        if (symbol := self.typing_module.lookup(name)) is not None {
+    def _get_type_from_module(self: TypeEvaluator, module: uni.Module, name: str) -> TypeBase {
+        if (symbol := module.lookup(name, incl_inner_scope=True)) is not None {
             return self.get_type_of_symbol(symbol);
         }
         return types.UnknownType();
@@ -167,27 +167,38 @@ class TypeEvaluator {
 
     """Return the prefetched types for the type evaluator."""
     def _prefetch_types(self: TypeEvaluator) -> "PrefetchedTypes" {
+
+        get_types_type = lambda type_name: str -> types.TypeBase: self._get_type_from_module(self.types_module, type_name);
+        get_builtin_type = lambda type_name: str -> types.TypeBase: self._get_type_from_module(self.builtins_module, type_name);
+
         # TODO: Pyright first try load NoneType from typeshed and if it cannot
         # then it set to unknown type.
-        self.prefetch.none_type_class = types.UnknownType();
-        self.prefetch.object_class = self._get_builtin_type("object");
-        self.prefetch.type_class = self._get_builtin_type("type");
+        self.prefetch.none_type_class = get_types_type("NoneType");
+        self.prefetch.object_class = get_builtin_type("object");
+        self.prefetch.type_class = get_builtin_type("type");
         # self.prefetch.union_type_class =
         # self.prefetch.awaitable_class =
         # self.prefetch.function_class =
         # self.prefetch.method_class =
-        self.prefetch.tuple_class = self._get_builtin_type("tuple");
-        self.prefetch.bool_class = self._get_builtin_type("bool");
-        self.prefetch.int_class = self._get_builtin_type("int");
-        self.prefetch.float_class = self._get_builtin_type("float");
-        self.prefetch.str_class = self._get_builtin_type("str");
-        self.prefetch.dict_class = self._get_builtin_type("dict");
+        self.prefetch.tuple_class = get_builtin_type("tuple");
+        self.prefetch.bool_class = get_builtin_type("bool");
+        self.prefetch.int_class = get_builtin_type("int");
+        self.prefetch.float_class = get_builtin_type("float");
+        self.prefetch.str_class = get_builtin_type("str");
+        self.prefetch.dict_class = get_builtin_type("dict");
         # self.prefetch.module_type_class =
         # self.prefetch.typed_dict_class =
         # self.prefetch.typed_dict_private_class =
         # self.prefetch.supports_keys_and_get_item_class =
         # self.prefetch.mapping_class =
         # self.prefetch.template_class =
+    }
+
+    def get_none_type(self: TypeEvaluator) -> TypeBase {
+        if self.prefetch and self.prefetch.none_type_class {
+            return self.prefetch.none_type_class;
+        }
+        return types.UnknownType();
     }
 
     """Add a diagnostic message to the program."""
@@ -498,13 +509,15 @@ class TypeEvaluator {
             return node_.name_spec.type;
         }
 
-        return_type: TypeBase;
+        return_type: TypeBase = types.UnknownType();
         if isinstance(node_.signature.return_type, uni.Expr) {
             return_type = self._convert_to_instance(
                 self.get_type_of_expression(node_.signature.return_type)
             );
         } else {
-            return_type = types.UnknownType();
+            if self.prefetch and self.prefetch.none_type_class {
+                return_type = self._convert_to_instance(self.prefetch.none_type_class);
+            }
         }
 
         # Define helper function for parameter conversion.
@@ -620,6 +633,8 @@ class TypeEvaluator {
     # // matched against existing type variables in the map. If a type variable
     # // in the dest type is not in the type map already, it is assigned a type
     # // and added to the map.
+    #
+    # dest_type = src_type;
     """Assign the source type to the destination type."""
     def assign_type(self: TypeEvaluator, src_type: TypeBase, dest_type: TypeBase) -> bool {
         if types.TypeCategory.Unknown in (src_type.category, dest_type.category) {
@@ -825,6 +840,13 @@ class TypeEvaluator {
                     return self._convert_to_instance(self.get_type_of_float(expr));
                 }
 
+            case uni.Null():
+                if self.prefetch and self.prefetch.none_type_class {
+                    return self._convert_to_instance(self.prefetch.none_type_class);
+                }
+
+            # TODO: Boolean literals.
+
             # ----------------------------------------------------------------------
             # End of prefetched types
             # ----------------------------------------------------------------------
@@ -876,6 +898,53 @@ class TypeEvaluator {
                      # TODO:
                 }
 
+                # <expr>(= key1=value1, key2=value2)
+                elif isinstance(expr.right, uni.AssignCompr) {
+
+                    # base_type should be a sequence of [T].
+                    if not isinstance(base_type, types.ClassType) {
+                        self.add_diagnostic(
+                            expr,
+                            f'Cannot perform assignment comprehension on type "{base_type}"',
+                        );
+                        return base_type;
+                    }
+
+                    # TODO: Ensure the base_type is a Sequence[T], for now I'm only checking
+                    # if it's a generic of T.
+                    if len(base_type.private.type_args) == 1 {
+                        sequence_of = self._convert_to_instance(base_type.private.type_args[0]);
+                        for assign in expr.right.assigns {
+                            if assign.key is not None {
+                                if member := self._lookup_object_member(sequence_of, assign.key.sym_name) {
+                                    self._set_symbol_to_expr(assign.key, member.symbol);
+                                } else {
+                                    self.add_diagnostic(
+                                        assign.key,
+                                        f'Member "{assign.key.sym_name}" not found on type "{sequence_of}"',
+                                    );
+                                }
+
+                                dest_type = self.get_type_of_expression(assign.key);
+                                src_type = self.get_type_of_expression(assign.value);
+                                if not self.assign_type(src_type, dest_type) {
+                                    self.add_diagnostic(
+                                        assign.value,
+                                        f'Type "{src_type}" is not assignable to type "{dest_type}"',
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    # Evaluate KW pair values.
+                    for assign in expr.right.assigns {
+                        self.get_type_of_expression(assign.value);
+                    }
+
+                    return base_type;
+                }
+
                 else {  # <expr>[<expr>]
 
                     # if <expr> is a class type, the atom trailer will be the type params.
@@ -912,7 +981,60 @@ class TypeEvaluator {
             case uni.BinaryExpr():
                 return operations.get_type_of_binary_operation(self, expr);
 
-            case uni.Name():
+            case uni.FilterCompr():
+                if expr.f_type {
+                    filter_type = self.get_type_of_expression(expr.f_type);
+                    if isinstance(filter_type, types.ClassType) {
+                        # For each compare in the filter comprehension, set symbol to the right name.
+                        for cmp in expr.compares {
+                            if isinstance(cmp.left, uni.Name) and (
+                                sym := filter_type.lookup_member_symbol(cmp.left.value)
+                            ) {
+                                self._set_symbol_to_expr(cmp.left, sym);
+                            } else {
+                                self.add_diagnostic(
+                                    cmp.left,
+                                    f'Member "{cmp.left.value}" not found on type "{filter_type}"',
+                                );
+                            }
+
+                            left_type = self.get_type_of_expression(cmp.left);
+                            right_type = self.get_type_of_expression(cmp.rights[0]);
+                            # TODO: Check if those two types are comparable.
+                            # if  not self.???(right_type, left_type) {
+                            #     self.add_diagnostic(
+                            #         cmp.right,
+                            #         f'Type "{right_type}" is not comparable to type "{left_type}"',
+                            #     );
+                            # }
+
+                        }
+                    }
+                }
+
+            case uni.Name() | uni.SpecialVarRef():
+
+                if isinstance(expr, uni.SpecialVarRef) {
+                    # Handle "here" and "visitor" special name ref.
+                    if expr.name in (Tok.KW_HERE, Tok.KW_VISITOR) {
+                        if (method := self._get_enclosing_method(expr)) {
+                            if isinstance(method.signature, uni.EventSignature) {
+                                if arch := method.signature.arch_tag_info {
+                                    type_arch_cls = self.get_type_of_expression(arch);
+                                    type_arch_inst = self._convert_to_instance(type_arch_cls);
+                                    if isinstance(type_arch_cls, types.ClassType) {
+                                        self._set_symbol_to_expr(expr, type_arch_inst.get_class_symbol());
+                                    }
+                                    return type_arch_inst;
+                                }
+
+                            }
+                        }
+                    }
+
+                }
+
+
                 # NOTE: For self's type pyright is getting the first parameter of a method and
                 # the name can be anything not just self, however we don't have the first parameter
                 # and self is a keyword, we need to do it in this way.
@@ -925,6 +1047,7 @@ class TypeEvaluator {
                     symbol.add_use(expr);
                     return self.get_type_of_symbol(symbol);
                 }
+
         }
 
         # TODO: More expressions.
@@ -1049,8 +1172,7 @@ class TypeEvaluator {
     """Lookup the object member type."""
     def _lookup_object_member(self: TypeEvaluator, base_type: types.ClassType, member: str) -> type_utils.ClassMember | None {
         assert self.prefetch.int_class is not None;
-        if base_type.is_class_instance() {
-            assert isinstance(base_type, types.ClassType);
+        if isinstance(base_type, types.ClassType) and base_type.is_class_instance() {
             # TODO: We need to implement Member lookup flags and set SkipInstanceMember to 0.
             return self._lookup_class_member(base_type, member);
         }
