@@ -11,6 +11,7 @@ import importlib.abc
 import importlib.machinery
 import importlib.util
 import os
+import sys
 from types import ModuleType
 from typing import Optional, Sequence
 
@@ -69,7 +70,7 @@ class ByllmFallbackLoader(importlib.abc.Loader):
 class JacMetaImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     """Meta path importer to load .jac modules via Python's import system."""
 
-    # _current_finder: Optional[importlib.abc.MetaPathFinder] = None
+    _current_finder: Optional[importlib.abc.MetaPathFinder] = None
     byllm_found: bool = False
 
     def find_spec(
@@ -84,26 +85,26 @@ class JacMetaImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             # Check if byllm is actually installed by looking for it in sys.path
             # We use importlib.util.find_spec with a custom path to avoid recursion
 
-            # for finder in sys.meta_path:
-            #     if finder is JacMetaImporter._current_finder:
-            #         continue
+            for finder in sys.meta_path:
+                if finder is JacMetaImporter._current_finder:
+                    continue
 
-            #     if hasattr(finder, "find_spec"):
-            #         try:
-            #             JacMetaImporter._current_finder = finder
-            #             spec = finder.find_spec(fullname, path, target)
-            #             if spec is not None:
-            #                 JacMetaImporter.byllm_found = True
-            #                 break
-            #         except (ImportError, AttributeError):
-            #             continue
-            #         finally:
-            #             JacMetaImporter._current_finder = None
+                if hasattr(finder, "find_spec"):
+                    try:
+                        JacMetaImporter._current_finder = finder
+                        spec = finder.find_spec(fullname, path, target)
+                        if spec is not None:
+                            JacMetaImporter.byllm_found = True
+                            break
+                    except (ImportError, AttributeError):
+                        continue
+                    finally:
+                        JacMetaImporter._current_finder = None
 
-            spec = importlib.machinery.PathFinder.find_spec(fullname, path)
-            if spec is not None:
-                JacMetaImporter.byllm_found = True
-                return spec
+            # spec = importlib.machinery.PathFinder.find_spec(fullname, path)
+            # if spec is not None:
+            #     JacMetaImporter.byllm_found = True
+            #     return spec
 
             if not JacMetaImporter.byllm_found:
                 # If byllm is not installed, return a spec for our fallback loader
