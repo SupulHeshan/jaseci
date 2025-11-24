@@ -11,7 +11,6 @@ import importlib.abc
 import importlib.machinery
 import importlib.util
 import os
-import sys
 from types import ModuleType
 from typing import Optional, Sequence
 
@@ -100,12 +99,12 @@ class JacMetaImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             #             continue
             #         finally:
             #             JacMetaImporter._current_finder = None
-            
+
             spec = importlib.machinery.PathFinder.find_spec(fullname, path)
             if spec is not None:
                 JacMetaImporter.byllm_found = True
                 return spec
-            
+
             if not JacMetaImporter.byllm_found:
                 # If byllm is not installed, return a spec for our fallback loader
                 print(
