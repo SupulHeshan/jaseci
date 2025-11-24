@@ -86,7 +86,8 @@ class JacMetaImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             # We use importlib.util.find_spec with a custom path to avoid recursion
 
             for finder in sys.meta_path:
-                if finder is JacMetaImporter._current_finder:
+                # if finder is JacMetaImporter._current_finder:
+                if finder is self:
                     continue
 
                 if hasattr(finder, "find_spec"):
