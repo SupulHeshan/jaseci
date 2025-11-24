@@ -109,6 +109,7 @@ obj MockLLMConnector(LLMConnector) {
     """Dispatch the mock LLM call with the given request."""
     override
     def dispatch_no_streaming(mtir: MTIR) -> CompletionResult {
+        params = self.make_model_params(mtir);
         output = self.config["outputs"].pop(0);  # type: ignore
 
         if isinstance(output, MockToolCall) {
@@ -118,7 +119,7 @@ obj MockLLMConnector(LLMConnector) {
             return CompletionResult(output=None, tool_calls=[output.to_tool_call()],);
         }
 
-        self.log_info(f"Mock LLM call completed with response:\n{output}");
+        self.log_info(f"Mock LLM call completed with response:\n{output} with params:\n {params}" );
 
         return CompletionResult(output=output, tool_calls=[],);
     }

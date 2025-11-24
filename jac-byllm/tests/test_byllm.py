@@ -5,6 +5,7 @@ import sys
 
 from jaclang import JacMachineInterface as Jac
 from jaclang.utils.test import TestCase
+import ast  # to safely convert the string to a dictionary
 
 from fixtures import python_lib_mode
 
@@ -65,6 +66,37 @@ class JacLanguageTests(TestCase):
         stdout_value = captured_output.getvalue()
         self.assertIn("Calculator.add called with 12, 34", stdout_value)
         self.assertIn("Result: 46", stdout_value)
+
+    def test_params_format(self) -> None:
+        """Parse micro jac file."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        jac_import("llm_params", base_path=self.fixture_abs_path("./"))
+        sys.stdout = sys.__stdout__
+        stdout_value = captured_output.getvalue()
+        start_idx = stdout_value.find('{')
+        # Count braces to find the matching closing brace
+        brace_count = 0
+        end_idx = start_idx
+        for i in range(start_idx, len(stdout_value)):
+            if stdout_value[i] == '{':
+                brace_count += 1
+            elif stdout_value[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end_idx = i + 1
+                    break
+        
+        dict_str = stdout_value[start_idx:end_idx]
+        extracted_dict = ast.literal_eval(dict_str)
+        required_keys = ['model', 'api_base', 'api_key', 'messages', 'tools', 'response_format', 'temperature', 'max_tokens']
+        for key in required_keys:
+            assert key in extracted_dict, f"Missing key: {key}"
+        
+        add_tool = extracted_dict['tools'][0]
+        assert add_tool['type'] == 'function', "First tool should be of type 'function'"
+        assert add_tool['function']['name'] == 'add', "First tool function should be 'add'"
+        assert 'num1' in add_tool['function']['parameters']['properties'], "Add function should have 'num1' parameter"
 
     def test_image_input(self) -> None:
         """Parse micro jac file."""
