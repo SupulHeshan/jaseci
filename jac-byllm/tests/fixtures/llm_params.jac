@@ -1,23 +1,25 @@
-import from byllm.lib { Model, MockToolCall }
-node Calculator {
-    def add(num1: int, num2: int) -> int {
-        return num1 + num2;
-    }
+import from byllm.lib { MockLLM, MockToolCall }
 
-    # Defining the model here cause we need the reference to self.
-    def eval_expr(expression: str) -> str by Model(
-        model_name="mockllm",
-        outputs=[
-            MockToolCall(
-                tool=self.add,
-                args={"num1": 12, "num2": 34}
-            ),
-            "46"
-        ],
-        verbose=True,
-    )(tools=[self.add]);
+
+def get_live_wind_speed(city: str) -> str {
+    return f"The current wind speed in {city} is about 18-22 km/h.";
 }
 
+sem get_live_wind_speed = """Get the current wind speed of a given city.""";
+
+def get_wind_speed_report(city: str) -> str by MockLLM(
+    model_name="mockllm",
+    outputs=[
+        MockToolCall(
+            tool=get_live_wind_speed,
+            args={"city": "Puttalam"}
+        ),
+        "The current wind speed in Puttalam is about 18-22 km/h."
+    ],
+    verbose=True,
+)(tools=[get_live_wind_speed]);
+
 with entry {
-    Calculator().eval_expr("What is 12 + 34?");
+    result = get_wind_speed_report("Puttalam");
+    print(result);
 }

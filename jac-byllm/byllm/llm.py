@@ -124,6 +124,7 @@ class BaseLLM:
         self.api_key = params.get("api_key")
         self.api_base = params.pop("api_base", DEFAULT_BASE_URL)
         response = self.model_call_no_stream(params)
+        print("response", response)
 
         # Output format:
         # https://docs.litellm.ai/docs/#response-format-openai-format
@@ -134,21 +135,28 @@ class BaseLLM:
 
         output_content: str = message.content or ""  # type: ignore
         self.log_info(f"LLM call completed with response:\n{output_content}")
+        print("output content:", output_content, "\n\n")
         output_value = mtir.parse_response(output_content)
 
         tool_calls: list[ToolCall] = []
+        print("message", message, "\n\n")
+        print("message tool calls", message.tool_calls,"\n\n")
         for tool_call in message.tool_calls or []:  # type: ignore
-            print(tool_call)
-            print(type(tool_call))
+            # print(tool_call)
+            # print(type(tool_call))
             if tool := mtir.get_tool(tool_call.function.name):
                 args_json = json.loads(tool_call.function.arguments)
+                print("args in json",args_json,"\n\n")
                 args = tool.parse_arguments(args_json)
+                print("args", args,"\n\n")
                 tool_calls.append(ToolCall(call_id=tool_call.id, tool=tool, args=args))
+                print("tool_call in loop:", tool_calls, "\n\n")
             else:
                 raise RuntimeError(
                     f"Attempted to call tool: '{tool_call.function.name}' which was not present."
                 )
-
+        print("output_value:", output_value, "\n\n")    
+        print("tool calls:", tool_calls, "\n\n")
         return CompletionResult(
             output=output_value,
             tool_calls=tool_calls,
@@ -242,6 +250,7 @@ class MockLLM(BaseLLM):
     @override
     def dispatch_no_streaming(self, mtir: MTIR) -> CompletionResult:
         """Dispatch the mock LLM call with the given request."""
+        params= self.make_model_params(mtir)
         output = self.config["outputs"].pop(0)  # type: ignore
 
         if isinstance(output, MockToolCall):
@@ -253,7 +262,7 @@ class MockLLM(BaseLLM):
                 tool_calls=[output.to_tool_call()],
             )
 
-        self.log_info(f"Mock LLM call completed with response:\n{output}")
+        self.log_info(f"Mock LLM call completed with response:\n{output} with params:\n{params}")
 
         return CompletionResult(
             output=output,

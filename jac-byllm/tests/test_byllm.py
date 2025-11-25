@@ -2,7 +2,6 @@
 
 import io
 import sys
-
 from jaclang import JacMachineInterface as Jac
 from jaclang.utils.test import TestCase
 import ast  # to safely convert the string to a dictionary
@@ -92,7 +91,6 @@ class JacLanguageTests(TestCase):
         required_keys = [
             "model",
             "api_base",
-            "api_key",
             "messages",
             "tools",
             "response_format",
@@ -105,12 +103,12 @@ class JacLanguageTests(TestCase):
         add_tool = extracted_dict["tools"][0]
         assert add_tool["type"] == "function", "First tool should be of type 'function'"
         assert (
-            add_tool["function"]["name"] == "add"
-        ), "First tool function should be 'add'"
+            add_tool["function"]["name"] == "get_live_wind_speed"
+        ), "First tool function should be 'get_live_wind_speed'"
         assert (
-            "num1" in add_tool["function"]["parameters"]["properties"]
-        ), "Add function should have 'num1' parameter"
-
+            "city" in add_tool["function"]["parameters"]["properties"]
+        ), "get_live_wind_speed function should have 'city' parameter"
+        
     def test_image_input(self) -> None:
         """Parse micro jac file."""
         captured_output = io.StringIO()
