@@ -4,7 +4,7 @@ import io
 import sys
 from jaclang import JacMachineInterface as Jac
 from jaclang.utils.test import TestCase
-import yaml  
+import yaml
 
 from fixtures import python_lib_mode
 
