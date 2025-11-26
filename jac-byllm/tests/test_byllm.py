@@ -108,7 +108,7 @@ class JacLanguageTests(TestCase):
         assert (
             "city" in add_tool["function"]["parameters"]["properties"]
         ), "get_live_wind_speed function should have 'city' parameter"
-        
+
     def test_image_input(self) -> None:
         """Parse micro jac file."""
         captured_output = io.StringIO()
