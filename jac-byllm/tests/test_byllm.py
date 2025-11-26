@@ -4,7 +4,7 @@ import io
 import sys
 from jaclang import JacMachineInterface as Jac
 from jaclang.utils.test import TestCase
-import ast  # to safely convert the string to a dictionary
+import yaml  # to safely convert the string to a dictionary
 
 from fixtures import python_lib_mode
 
@@ -73,21 +73,9 @@ class JacLanguageTests(TestCase):
         jac_import("llm_params", base_path=self.fixture_abs_path("./"))
         sys.stdout = sys.__stdout__
         stdout_value = captured_output.getvalue()
-        start_idx = stdout_value.find("{")
-        # Count braces to find the matching closing brace
-        brace_count = 0
-        end_idx = start_idx
-        for i in range(start_idx, len(stdout_value)):
-            if stdout_value[i] == "{":
-                brace_count += 1
-            elif stdout_value[i] == "}":
-                brace_count -= 1
-                if brace_count == 0:
-                    end_idx = i + 1
-                    break
+        dict_str = stdout_value[stdout_value.find("{"): stdout_value.rfind("}") + 1]  
+        extracted_dict = yaml.safe_load(dict_str)  
 
-        dict_str = stdout_value[start_idx:end_idx]
-        extracted_dict = ast.literal_eval(dict_str)
         required_keys = [
             "model",
             "api_base",
