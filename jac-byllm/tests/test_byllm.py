@@ -73,8 +73,8 @@ class JacLanguageTests(TestCase):
         jac_import("llm_params", base_path=self.fixture_abs_path("./"))
         sys.stdout = sys.__stdout__
         stdout_value = captured_output.getvalue()
-        dict_str = stdout_value[stdout_value.find("{"): stdout_value.rfind("}") + 1]  
-        extracted_dict = yaml.safe_load(dict_str)  
+        dict_str = stdout_value[stdout_value.find("{") : stdout_value.rfind("}") + 1]
+        extracted_dict = yaml.safe_load(dict_str)
 
         required_keys = [
             "model",
