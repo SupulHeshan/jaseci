@@ -218,10 +218,11 @@ obj MockToolCall {
 
     """Convert the mock tool call to a ToolCall."""
     def to_tool_call()  -> ToolCall {
+        args_parsed = Tool(self.tool).parse_arguments(self.args);
         return ToolCall(
             call_id="",  # Call ID is not used in mock calls.
             tool=Tool(self.tool),
-            args=self.args,
+            args=args_parsed,
         );
     }
 }
