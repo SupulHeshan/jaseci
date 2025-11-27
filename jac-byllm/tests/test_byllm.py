@@ -3,11 +3,11 @@
 import io
 import sys
 
+import yaml
 from fixtures import python_lib_mode
 
 from jaclang import JacMachineInterface as Jac
 from jaclang.utils.test import TestCase
-import yaml
 
 # Import the jac_import function from JacMachineInterface
 jac_import = Jac.jac_import
@@ -91,12 +91,12 @@ class JacLanguageTests(TestCase):
 
         add_tool = extracted_dict["tools"][0]
         assert add_tool["type"] == "function", "First tool should be of type 'function'"
-        assert (
-            add_tool["function"]["name"] == "get_live_wind_speed"
-        ), "First tool function should be 'get_live_wind_speed'"
-        assert (
-            "city" in add_tool["function"]["parameters"]["properties"]
-        ), "get_live_wind_speed function should have 'city' parameter"
+        assert add_tool["function"]["name"] == "get_live_wind_speed", (
+            "First tool function should be 'get_live_wind_speed'"
+        )
+        assert "city" in add_tool["function"]["parameters"]["properties"], (
+            "get_live_wind_speed function should have 'city' parameter"
+        )
 
     def test_image_input(self) -> None:
         """Parse micro jac file."""
