@@ -11,7 +11,7 @@ import logging;
 import from datetime { date, datetime, time }
 import from enum { Enum }
 import from uuid { UUID, uuid4 }
-import from jaclang.runtime.archetype { NodeAnchor, EdgeAnchor, Root, GenericEdge }
+import from jaclang.runtime.archetype { NodeAnchor, Root, GenericEdge }
 # archetype_alias is an ambient Jac builtin (no import). Serializer is
 # an explicit import because we directly test its internals here.
 import from jaclang.data.serializer { Serializer }
@@ -64,80 +64,18 @@ test "_get_class returns None for truly unregistered class names" {
 }
 
 
-# --- Built-in package moves (regression: jaclang/issues/8747) ---------------
+# --- Persisted built-in identity + pre-move aliases (regression: #8747) ----
 #
-# `Root` and `GenericEdge` moved from `jaclang.jac0core.archetype` to
-# `jaclang.runtime.archetype` in #8682. Anchors persisted before that move
-# still carry the old module name in their stored `__module__` field. The
-# built-ins must alias their pre-move identity the same way any user
-# archetype would, so old rows keep resolving.
-test "Root resolves anchors stored under its pre-move module path" {
-    mod = getattr(Root, '__module__');
-    nm = getattr(Root, '__name__');
-    assert Serializer._aliases.get("jaclang.jac0core.archetype.Root")
-        == f"{mod}.{nm}" , (
-        f"no alias recorded for Root's pre-move name: {Serializer._aliases}"
-    );
-    blob = {
-        '__type__': 'NodeAnchor',
-        '__module__': 'jaclang.runtime.archetype',
-        'id': str(uuid4()),
-        'root': None,
-        'persistent': True,
-        'access': {'all': -1, 'roots': {'anchors': {}}},
-        'archetype': {'__type__': 'Root', '__module__': 'jaclang.jac0core.archetype'},
-        'edges': [],
-        'version': 0
-    };
-    anchor = Serializer.deserialize(blob);
-    assert isinstance(anchor, NodeAnchor) , (
-        f"Root anchor stored under the pre-move module failed to deserialize: {anchor}"
-    );
-    assert isinstance(anchor.archetype, Root) , (
-        f"expected a Root archetype, got {anchor.archetype}"
-    );
-}
-
-
-test "GenericEdge resolves anchors stored under its pre-move module path" {
-    mod = getattr(GenericEdge, '__module__');
-    nm = getattr(GenericEdge, '__name__');
-    assert (
-        Serializer._aliases.get("jaclang.jac0core.archetype.GenericEdge")
-        == f"{mod}.{nm}"
-    ) , f"no alias recorded for GenericEdge's pre-move name: {Serializer._aliases}";
-    blob = {
-        '__type__': 'EdgeAnchor',
-        '__module__': 'jaclang.runtime.archetype',
-        'id': str(uuid4()),
-        'root': None,
-        'persistent': True,
-        'access': {'all': -1, 'roots': {'anchors': {}}},
-        'archetype': {
-            '__type__': 'GenericEdge',
-            '__module__': 'jaclang.jac0core.archetype'
-        },
-        'edges': [],
-        'version': 0
-    };
-    anchor = Serializer.deserialize(blob);
-    assert isinstance(anchor, EdgeAnchor) , (
-        "GenericEdge anchor stored under the pre-move module failed to "
-        f"deserialize: {anchor}"
-    );
-    assert isinstance(anchor.archetype, GenericEdge) , (
-        f"expected a GenericEdge archetype, got {anchor.archetype}"
-    );
-}
-
-
-# --- Persisted built-in identity manifest -----------------------------------
-#
-# The two tests above cover Root and GenericEdge specifically. This manifest
-# is the guardrail for *future* moves: it pins the current module identity
-# of every jaclang built-in that is actually persisted with a concrete
-# `__type__`, so the next package reorganization can't repeat #8747 by
-# accident.
+# jaclang's own built-in archetypes are pinned here on purpose. Their fully
+# qualified name is part of the on-disk wire format (`Serializer._get_class`),
+# so moving one is a data migration, not just a refactor -- #8747 is what
+# happens when that migration is skipped: `Root` and `GenericEdge` moved from
+# `jaclang.jac0core.archetype` to `jaclang.runtime.archetype` in #8682 with no
+# alias, so anchors persisted before the move failed to deserialize and were
+# dropped. `moved_from` records every prior module a class has lived in; each
+# one must still resolve via an alias in `data/serializer.jac`'s
+# `_BUILTIN_MOVED_FROM` -- the same mechanism the synthetic-class test above
+# exercises, checked here against the real, currently-moved classes.
 #
 # This intentionally lists only the *concrete* persisted archetypes -- the
 # base classes (NodeArchetype, EdgeArchetype, WalkerArchetype,
@@ -146,26 +84,43 @@ test "GenericEdge resolves anchors stored under its pre-move module path" {
 #
 # If this test starts failing because you moved one of these classes: don't
 # just update the entry below. First register the class's old fully-qualified
-# name as an alias in `data/serializer.jac`'s `_BUILTIN_MOVED_FROM`, so
-# existing databases keep resolving it -- then update this manifest to match.
-glob _PERSISTED_BUILTIN_IDENTITIES: dict[str, str] = {
-         'Root': 'jaclang.runtime.archetype',
-         'GenericEdge': 'jaclang.runtime.archetype'
+# name as an alias in `data/serializer.jac`'s `_BUILTIN_MOVED_FROM`, add it to
+# this entry's `moved_from`, then update `module` to match.
+glob _PERSISTED_BUILTIN_IDENTITIES: dict[str, dict] = {
+         'Root': {
+             'module': 'jaclang.runtime.archetype',
+             'moved_from': ['jaclang.jac0core.archetype']
+         },
+         'GenericEdge': {
+             'module': 'jaclang.runtime.archetype',
+             'moved_from': ['jaclang.jac0core.archetype']
+         }
      };
 
 
-test "persisted built-ins keep their pinned module identity" {
+test "persisted built-ins keep their pinned identity and resolve every prior name" {
     live = {'Root': Root, 'GenericEdge': GenericEdge};
-    for (name, expected_module) in _PERSISTED_BUILTIN_IDENTITIES.items() {
+    for (name, spec) in _PERSISTED_BUILTIN_IDENTITIES.items() {
         cls = live[name];
         actual = f"{getattr(cls, '__module__')}.{getattr(cls, '__name__')}";
-        expected = f"{expected_module}.{name}";
+        expected = f"{spec['module']}.{name}";
         assert actual == expected , (
             f"{name} moved from {expected} to {actual}. It is a persisted "
-            "built-in, so existing databases still carry the old module "
-            "name -- register it as an alias in data/serializer.jac's "
-            "_BUILTIN_MOVED_FROM before updating this manifest entry."
+            "built-in -- register the old name as an alias in "
+            "data/serializer.jac's _BUILTIN_MOVED_FROM, add it to this "
+            "entry's moved_from, then update this manifest entry."
         );
+        for old_module in spec['moved_from'] {
+            old_key = f"{old_module}.{name}";
+            assert Serializer._aliases.get(old_key) == actual , (
+                f"no alias recorded for {name}'s pre-move name {old_key}: "
+                f"{Serializer._aliases}"
+            );
+            resolved = Serializer._get_class(old_module, name);
+            assert resolved is cls , (
+                f"_get_class did not resolve {old_key} to {cls}: got {resolved}"
+            );
+        }
     }
 }
 
