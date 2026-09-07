@@ -66,26 +66,14 @@ test "_get_class returns None for truly unregistered class names" {
 
 # --- Persisted built-in identity + pre-move aliases (regression: #8747) ----
 #
-# jaclang's own built-in archetypes are pinned here on purpose. Their fully
-# qualified name is part of the on-disk wire format (`Serializer._get_class`),
-# so moving one is a data migration, not just a refactor -- #8747 is what
-# happens when that migration is skipped: `Root` and `GenericEdge` moved from
-# `jaclang.jac0core.archetype` to `jaclang.runtime.archetype` in #8682 with no
-# alias, so anchors persisted before the move failed to deserialize and were
-# dropped. `moved_from` records every prior module a class has lived in; each
-# one must still resolve via an alias in `data/serializer.jac`'s
-# `_BUILTIN_MOVED_FROM` -- the same mechanism the synthetic-class test above
-# exercises, checked here against the real, currently-moved classes.
+# Pins the module identity of jaclang's own persisted built-ins -- moving one
+# is a data migration, not a plain refactor. Base archetypes (NodeArchetype,
+# EdgeArchetype, WalkerArchetype, ObjectArchetype) are excluded: never
+# instantiated as themselves, so no stored row names them.
 #
-# This intentionally lists only the *concrete* persisted archetypes -- the
-# base classes (NodeArchetype, EdgeArchetype, WalkerArchetype,
-# ObjectArchetype) are never instantiated as themselves, so no stored row
-# ever carries their name and moving them needs no alias.
-#
-# If this test starts failing because you moved one of these classes: don't
-# just update the entry below. First register the class's old fully-qualified
-# name as an alias in `data/serializer.jac`'s `_BUILTIN_MOVED_FROM`, add it to
-# this entry's `moved_from`, then update `module` to match.
+# If this fails because you moved a class: register its old name as an alias
+# in data/serializer.jac's _BUILTIN_MOVED_FROM first, add it to moved_from
+# below, then update module.
 glob _PERSISTED_BUILTIN_IDENTITIES: dict[str, dict] = {
          'Root': {
              'module': 'jaclang.runtime.archetype',
