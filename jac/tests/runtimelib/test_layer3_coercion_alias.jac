@@ -131,6 +131,45 @@ test "GenericEdge resolves anchors stored under its pre-move module path" {
 }
 
 
+# --- Persisted built-in identity manifest -----------------------------------
+#
+# The two tests above cover Root and GenericEdge specifically. This manifest
+# is the guardrail for *future* moves: it pins the current module identity
+# of every jaclang built-in that is actually persisted with a concrete
+# `__type__`, so the next package reorganization can't repeat #8747 by
+# accident.
+#
+# This intentionally lists only the *concrete* persisted archetypes -- the
+# base classes (NodeArchetype, EdgeArchetype, WalkerArchetype,
+# ObjectArchetype) are never instantiated as themselves, so no stored row
+# ever carries their name and moving them needs no alias.
+#
+# If this test starts failing because you moved one of these classes: don't
+# just update the entry below. First register the class's old fully-qualified
+# name as an alias in `data/serializer.jac`'s `_BUILTIN_MOVED_FROM`, so
+# existing databases keep resolving it -- then update this manifest to match.
+glob _PERSISTED_BUILTIN_IDENTITIES: dict[str, str] = {
+         'Root': 'jaclang.runtime.archetype',
+         'GenericEdge': 'jaclang.runtime.archetype'
+     };
+
+
+test "persisted built-ins keep their pinned module identity" {
+    live = {'Root': Root, 'GenericEdge': GenericEdge};
+    for (name, expected_module) in _PERSISTED_BUILTIN_IDENTITIES.items() {
+        cls = live[name];
+        actual = f"{getattr(cls, '__module__')}.{getattr(cls, '__name__')}";
+        expected = f"{expected_module}.{name}";
+        assert actual == expected , (
+            f"{name} moved from {expected} to {actual}. It is a persisted "
+            "built-in, so existing databases still carry the old module "
+            "name -- register it as an alias in data/serializer.jac's "
+            "_BUILTIN_MOVED_FROM before updating this manifest entry."
+        );
+    }
+}
+
+
 test "_is_report_threshold fires only on the power-of-10 ladder" {
     for good in [1, 10, 100, 1000, 10000, 1000000] {
         assert Serializer._is_report_threshold(good) , good;
