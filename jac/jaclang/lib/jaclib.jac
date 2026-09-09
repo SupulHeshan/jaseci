@@ -8,6 +8,7 @@ import from jaclang.runtime.constructs { NodeArchetype as Node }
 import from jaclang.runtime.constructs { WalkerArchetype as Walker }
 import from jaclang.runtime.graph_query { GraphQuery, QHop, QOrder, QPred }
 import from jaclang.runtime.runtime { JacRuntimeInterface }
+import from jaclang.runtime.object_model { field }
 glob __all__ = [
          'GraphQuery',
          'QHop',
@@ -36,12 +37,16 @@ glob __all__ = [
          'field',
          'log_report',
          'refs',
+         'hop',
+         'clear_edges',
          'arefs',
          'filter_on',
          'assign_all',
          'safe_subscript',
          'build_edge',
          'destroy',
+         'peek_attr',
+         'peek_item',
          'get_mtir',
          'sem',
          'call_llm',
@@ -68,7 +73,8 @@ glob __all__ = [
      call_llm = JacRuntimeInterface.call_llm,
      acall_llm = JacRuntimeInterface.acall_llm,
      destroy = JacRuntimeInterface.destroy,
-     field = JacRuntimeInterface.field,
+     peek_attr = JacRuntimeInterface.peek_attr,
+     peek_item = JacRuntimeInterface.peek_item,
      filter_on = JacRuntimeInterface.filter_on,
      get_mtir = JacRuntimeInterface.get_mtir,
      impl_patch_filename = JacRuntimeInterface.impl_patch_filename,
@@ -76,6 +82,8 @@ glob __all__ = [
      jsx = JacRuntimeInterface.jsx,
      log_report = JacRuntimeInterface.log_report,
      refs = JacRuntimeInterface.refs,
+     hop = JacRuntimeInterface.hop,
+     clear_edges = JacRuntimeInterface.clear_edges,
      safe_subscript = JacRuntimeInterface.safe_subscript,
      `sem = JacRuntimeInterface.`sem,
      on_entry = JacRuntimeInterface.on_entry,

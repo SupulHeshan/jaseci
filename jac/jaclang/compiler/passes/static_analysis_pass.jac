@@ -3,6 +3,7 @@ import from jaclang.compiler.frontend.unitree {
     Archetype,
     Assignment,
     AtomTrailer,
+    AwaitExpr,
     BinaryExpr,
     Bool,
     CompareExpr,
@@ -28,6 +29,7 @@ import from jaclang.compiler.frontend.unitree {
     Int,
     IterForStmt,
     KWPair,
+    LambdaExpr,
     MatchPattern,
     Module,
     ModuleItem,
@@ -38,6 +40,7 @@ import from jaclang.compiler.frontend.unitree {
     ReturnStmt,
     Semi,
     SubTag,
+    Test,
     Token,
     UniNode,
     UniScopeNode,
@@ -61,7 +64,8 @@ import from jaclang.compiler.frontend.diagnostics {
     E2018,
     E2027,
     E2055,
-    E2083
+    E2083,
+    E2085
 }
 import type from jaclang.compiler.driver.program { JacProgram }
 
@@ -254,7 +258,7 @@ def is_ambient_provider_module(mod_path: str) -> bool {
         and "runtime" in mod_path;
 }
 
-obj StaticAnalysisPass(Transform) {
+walker StaticAnalysisPass(Transform) {
     has prog: JacProgram,
         ir_in: Module,
         cancel_token: any = None,
@@ -265,6 +269,8 @@ obj StaticAnalysisPass(Transform) {
 
     def postinit -> None;
     def transform(ir_in: Module) -> Module;
+    def _run_impl(ir_in: Module) -> Module;
+    can run_walk with Module entry;
     def _check_unused_symbols(scope: UniScopeNode) -> None;
     def _check_undefined_names(mod: Module) -> None;
     def _literal_case_suggestion(name: str) -> (str | None);

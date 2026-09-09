@@ -27,7 +27,7 @@ impl compile_cl_module(filepath: str) -> tuple[str, list, dict, list] {
     return (mod.gen.js, tests, imports, server_imports);
 }
 
-impl _compile_runtime_js -> str {
+impl _compile_runtime -> tuple[str, str] {
     import from jaclang.compiler.driver.modresolver { resolve_jac_virtual_module_path }
 
     runtime_src = resolve_jac_virtual_module_path("@jac/runtime");
@@ -35,22 +35,7 @@ impl _compile_runtime_js -> str {
         raise RuntimeError("could not resolve @jac/runtime to a client runtime source");
     }
     (js, _tests, _imports, _server_imports) = compile_cl_module(runtime_src);
-    return js;
-}
-
-impl _compile_runtime_core_js -> str {
-    import from jaclang.compiler.driver.modresolver { resolve_jac_virtual_module_path }
-
-    runtime_src = resolve_jac_virtual_module_path("@jac/runtime");
-    if (not runtime_src) or (not Path(runtime_src).exists()) {
-        raise RuntimeError("could not resolve @jac/runtime to a client runtime source");
-    }
-    core_path = Path(runtime_src).parent / "client_runtime_core.jac";
-    if not core_path.exists() {
-        raise RuntimeError("could not resolve client_runtime_core sibling source");
-    }
-    (js, _tests, _imports, _server_imports) = compile_cl_module(str(core_path));
-    return js;
+    return (runtime_src, js);
 }
 
 impl _scan_all_specs(js: str) -> dict[str, dict] {
@@ -320,15 +305,18 @@ impl _resolve_client_imports(
         }
         if spec == _RUNTIME_SPEC {
             plan.uses_runtime = True;
-            js = _compile_runtime_js();
+            (runtime_src, js) = _compile_runtime();
             core_match = re.search(
-                r'from\s+[\'\"]([^\'\"]*client_runtime_core\.js)[\'\"]', js
+                r"[\"'](\.[^\"']*client_runtime_core\.js)[\"']", js
             );
             if core_match {
                 js = js.replace(core_match.group(1), "./client_runtime_core.js");
-                core_js = _compile_runtime_core_js();
-                plan.staged["client_runtime_core.js"] = core_js;
-                pending.append((core_js, None, None));
+            }
+            support = _collect_local_imports(
+                js, str(Path(runtime_src).parent), runtime_src, allow_runtime=True
+            );
+            for (support_name, support_js) in support.items() {
+                plan.staged[support_name] = support_js;
             }
             plan.staged["jac_runtime.js"] = js;
             plan.paths[spec] = "./jac_runtime.js";
@@ -446,7 +434,7 @@ impl _build_harness(
 }
 
 impl _collect_local_imports(
-    module_js: str, source_dir: str, entry_path: str
+    module_js: str, source_dir: str, entry_path: str, allow_runtime: bool = False
 ) -> dict[str, str] {
     staged: dict[str, str] = {};
     requested: dict = {};
@@ -468,7 +456,8 @@ impl _collect_local_imports(
                     "same-directory './module.js' imports are supported"
                 );
             }
-            if name in ("jac_runtime.js", "client_runtime_core.js") {
+            if not allow_runtime
+                and name in ("jac_runtime.js", "client_runtime_core.js") {
                 raise RuntimeError(
                     f"cl test harness cannot stage local import '{spec}': the "
                     "name is reserved for the staged client runtime"
@@ -641,9 +630,7 @@ impl _serve_in_background(server_entry: str, base_path: str) -> Iterator[int] {
             try {
                 probe.connect(("127.0.0.1", port));
                 connected = True;
-            } except OSError {
-                ;
-            } finally {
+            } except OSError {} finally {
                 probe.close();
             }
             if connected {
@@ -864,7 +851,7 @@ impl module_is_client(filepath: str) -> bool {
                     "utf-8", "replace"
                 )
             );
-        } except OSError { }
+        } except OSError {}
         result = False;
     }
     _COLOR_CACHE[path] = result;

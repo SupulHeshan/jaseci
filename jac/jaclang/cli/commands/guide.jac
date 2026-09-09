@@ -24,10 +24,31 @@ comptime SPEC_GUIDE: CommandSpec = CommandSpec(
                  short="s"
              ),
              Arg.create(
+                 "section",
+                 short="",
+                 `default="",
+                 help="Print one section by slug or exact heading; requires a topic"
+             ),
+             Arg(
+                 name="sections",
+                 kind=ArgKind.OPTION,
+                 typ=bool,
+                 `default=False,
+                 help="List section headings and slugs without loading their text"
+             ),
+             Arg.create(
                  "export",
                  `default="",
                  help="Export all guides as a Claude Code skills directory at this path",
                  short="e"
+             ),
+             Arg(
+                 name="nav",
+                 kind=ArgKind.OPTION,
+                 typ=bool,
+                 `default=False,
+                 help="Print the docs navigation: sections, titles, and reading order",
+                 short="n"
              ),
              Arg(
                  name="json",
@@ -43,13 +64,17 @@ comptime SPEC_GUIDE: CommandSpec = CommandSpec(
          examples=[
              ("jac guide", "List every bundled guide and doc set"),
              ("jac guide jac-types", "Print the jac-types guide"),
+             ("jac guide jac-types --sections", "List sections before reading"),
+             ("jac guide jac-types --section pitfalls", "Read one section"),
              (
                  "jac guide reference/diagnostics",
                  "Print the bundled diagnostics reference"
              ),
              ("jac guide reference", "List every doc in the reference set"),
              ("jac guide --search 'breaking changes'", "Grep all bundled content"),
+             ("jac guide --nav", "Docs navigation: sections and reading order"),
              ("jac guide --json", "Full guide/doc index as JSON for tooling"),
+             ("jac guide --nav --json", "Navigation manifest as JSON for tooling"),
              ("jac guide --export ~/.claude/skills", "Export guides as Agent Skills"),
 
          ],
@@ -58,5 +83,11 @@ comptime SPEC_GUIDE: CommandSpec = CommandSpec(
      );
 
 def guide(
-    topic: str = "", search: str = "", export: str = "", as_json: bool = False
+    topic: str = "",
+    search: str = "",
+    export: str = "",
+    nav: bool = False,
+    as_json: bool = False,
+    section: str = "",
+    sections: bool = False
 ) -> int;

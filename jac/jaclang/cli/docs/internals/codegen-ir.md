@@ -393,7 +393,8 @@ assumed away.
    boundary at all, and stays.
 5. **`__jac_dirty_fields__`-adjacent emissions.** Verified: `pyast_gen`
    emits nothing dirty-field-related; that tracking lives at runtime in
-   `Archetype.__setattr__`. The adjacent codegen behaviors are the
+   the `track_writes` hook installed when an anchor becomes persistent.
+   The adjacent codegen behaviors are the
    `field()` wrappers (note 2) and `__jac_async__` class markers, both
    ordinary IR emission. Nothing crosses.
 6. **Module docstrings.** `nd.doc` becomes the first `Expr(Constant)`
@@ -480,7 +481,7 @@ assumed away.
 - **Not every demoted name can be waived.** The seal's load canary
   resolves every name the layout advertises. A demoted *method* ships as
   an `abort()` stub and resolves, and so does a demoted module-level
-  function of the root module itself -- `module_codegen_pass`'s waived
+  function of the root module itself -- `module_facts`'s waived
   `client_capability_violations` is the standing example. Two kinds get
   no stub and so are advertised and absent, which fails `dlopen`: a
   nested function inside a demoted method, and a module-level function of

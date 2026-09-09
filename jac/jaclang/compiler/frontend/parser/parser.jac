@@ -4,6 +4,8 @@ import from .tokens {
     SourceLoc,
     SrcDiag,
     CommentData,
+    is_builtin_type_kind,
+    is_reserved_kind,
     is_special_var_kind
 }
 import from .lexer { tokenize_full }
@@ -26,7 +28,6 @@ import from jaclang.compiler.frontend.unitree {
     CastExpr,
     CfgExpr,
     CodeBlockStmt,
-    CommentToken,
     CompareExpr,
     ConcurrentExpr,
     ConnectOp,
@@ -43,7 +44,6 @@ import from jaclang.compiler.frontend.unitree {
     ElseStmt,
     ElementStmt,
     EmptyToken,
-    EnumBlockStmt,
     Enum,
     EventSignature,
     Except,
@@ -60,6 +60,7 @@ import from jaclang.compiler.frontend.unitree {
     FuncSignature,
     GenCompr,
     GlobalVars,
+    GraphExpr,
     HasVar,
     IfElseExpr,
     IfStmt,
@@ -407,7 +408,7 @@ obj Parser {
     def match_any(*kinds: TokenKind) -> LexToken | None;
     def expect(kind: TokenKind) -> LexToken;
     def expect_any(*kinds: TokenKind) -> LexToken;
-    def consume_uni(kind: TokenKind) -> Token;
+    def consume_uni(kind: TokenKind, value: str | None = None) -> Token;
     def expect_name(context: str = "identifier") -> LexToken;
     def error(message: str);
     def emit_diag(
@@ -482,6 +483,7 @@ obj Parser {
     def parse_builtin_type -> Expr | None;
     def parse_special_ref -> Expr | None;
     def parse_atom -> Expr;
+    def parse_graph_expr -> GraphExpr;
     def parse_tuple_item -> Expr | KWPair;
     def parse_paren_expr -> Expr;
     def parse_bracket_expr -> Expr;
@@ -555,7 +557,7 @@ obj Parser {
         target: Expr, require_semi: bool = True
     ) -> Assignment;
 
-    def parse_ownership_prefix(kids: list[UniNode]) -> OwnershipKind;
+    def parse_ownership_prefix(kids: list[UniNode]) -> tuple[OwnershipKind, bool];
     def parse_import_stmt -> Import;
     def parse_from_path -> tuple[(ModulePath | None, bool)];
     def parse_import_items(
@@ -598,15 +600,6 @@ obj Parser {
     def parse_type_params -> tuple[(list, list)];
 }
 
-def parse_source(
-    tokens: list[LexToken], file_path: str, source_code: str
-) -> tuple[(Module, int, list[SrcDiag])] {
-    parser = Parser(tokens=tokens, file_path=file_path, source_code=source_code);
-    mod = parser.parse();
-    return (mod, parser.error_count, parser.diags);
-}
-
-
 def parse_program(
     source: str, file_path: str
 ) -> tuple[(Module, int, list[SrcDiag], list[CommentData], list[SrcDiag], int)] {
@@ -620,5 +613,23 @@ def parse_program(
         comments,
         lex_diags,
         lex_error_count
+    );
+}
+
+
+def parse_expression(
+    source: str, file_path: str = "<input>"
+) -> tuple[Expr, bool, list[SrcDiag], list[SrcDiag]] {
+    (tokens, _comments, lex_diags, lex_errors) = tokenize_full(source, file_path);
+    parser = Parser(tokens=tokens, file_path=file_path, source_code=source);
+    expression = parser.parse_expression();
+    if not parser.at_end() {
+        parser.error("Unexpected token after expression");
+    }
+    return (
+        expression,
+        lex_errors > 0 or parser.error_count > 0,
+        parser.diags,
+        lex_diags
     );
 }

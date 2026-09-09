@@ -56,7 +56,7 @@ obj ClientResponse {
         return 200 <= self.status_code < 400;
     }
 
-    async def aiter_raw -> any {
+    async def aiter_raw -> AsyncIterator[bytes] {
         if self.reader is None {
             if self.body {
                 yield self.body;
@@ -107,7 +107,7 @@ obj ClientResponse {
         }
     }
 
-    async def aiter_lines -> any {
+    async def aiter_lines -> AsyncIterator[bytes] {
         buffer = b'';
         async for block in self.aiter_raw() {
             buffer += block;
@@ -125,9 +125,7 @@ obj ClientResponse {
         if self.writer is not None {
             try {
                 self.writer.close();
-            } except Exception {
-                ;
-            }
+            } except Exception {}
         }
     }
 }
@@ -255,16 +253,12 @@ async def arequest(
     } except ClientRequestSent {
         try {
             writer.close();
-        } except Exception {
-            ;
-        }
+        } except Exception {}
         raise;
     } except (ConnectionError, OSError, asyncio.IncompleteReadError) as e {
         try {
             writer.close();
-        } except Exception {
-            ;
-        }
+        } except Exception {}
         raise ClientRequestSent(detail=f"connection lost during or after send: {e!r}");
     }
     transfer = (resp_headers.get('Transfer-Encoding') or '').lower();
@@ -286,18 +280,14 @@ async def arequest(
     } except (ConnectionError, OSError, asyncio.IncompleteReadError) as e {
         try {
             writer.close();
-        } except Exception {
-            ;
-        }
+        } except Exception {}
         raise ClientRequestSent(detail=f"connection lost mid-body: {e!r}");
     }
     response.reader = None;
     response.body = b''.join(collected);
     try {
         writer.close();
-    } except Exception {
-        ;
-    }
+    } except Exception {}
     return response;
 }
 
@@ -331,9 +321,7 @@ async def aws_connect(
     if status != 101 {
         try {
             writer.close();
-        } except Exception {
-            ;
-        }
+        } except Exception {}
         raise ClientConnectionError(
             detail=f"websocket upgrade failed: {status} {reason}", status_code=status
         );
@@ -342,12 +330,16 @@ async def aws_connect(
     if accept != compute_accept_key(key) {
         try {
             writer.close();
-        } except Exception {
-            ;
-        }
+        } except Exception {}
         raise ClientConnectionError(detail='Sec-WebSocket-Accept mismatch');
     }
-    return WebSocket(reader=reader, writer=writer, is_client_side=True, accepted=True);
+    return WebSocket(
+        reader=reader,
+        writer=writer,
+        is_client_side=True,
+        accepted=True,
+        subprotocol=str(resp_headers.get('Sec-WebSocket-Protocol') or '').strip()
+    );
 }
 
 def run_blocking(coro: any) -> any {
@@ -495,9 +487,7 @@ def post_stream_aware_sync(
             }
             try {
                 yield loads(payload_text);
-            } except Exception {
-                ;
-            }
+            } except Exception {}
         }
     }
     return ('sse', _generator());

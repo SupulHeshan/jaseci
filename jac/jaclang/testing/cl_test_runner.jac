@@ -83,9 +83,8 @@ obj ClTestResult {
 
 def compile_cl_module(filepath: str) -> tuple[str, list, dict, list];
 
-def _compile_runtime_js -> str;
+def _compile_runtime -> tuple[str, str];
 
-def _compile_runtime_core_js -> str;
 
 obj ClImportPlan {
     has paths: dict[str, str] = {},
@@ -124,7 +123,7 @@ def _build_harness(
 ) -> str;
 
 def _collect_local_imports(
-    module_js: str, source_dir: str, entry_path: str
+    module_js: str, source_dir: str, entry_path: str, allow_runtime: bool = False
 ) -> dict[str, str];
 
 def _exported_names(js: str) -> set;

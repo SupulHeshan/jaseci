@@ -70,11 +70,12 @@ test "pascal_to_snake converts the shapes the compiler actually feeds it" {
 # The `@lru_cache(maxsize=256)` this function used to carry was sized to the
 # ~150 unitree node types, the fingerprint of the old reflective visitor
 # dispatch (`getattr(self, f"enter_{pascal_to_snake(type(nd).__name__)}")`).
-# `gen_uni_dispatch` (#6942 A.1) replaced that with static accept_enter /
-# accept_exit, so the hot loop the cache existed for is gone: what remains
-# are the generators and the `jac tool` surface, both of which call it a
-# bounded number of times. The cache was dropped rather
-# than re-spelled -- a dict memo is three lines if measurement ever asks.
+# Static accept dispatch replaced that, and pass hooks are now typed OSP
+# abilities dispatched by the walker kernel, so the hot loop the cache
+# existed for is gone: what remains are the generators and the `jac tool`
+# surface, both of which call it a bounded number of times. The cache was
+# dropped rather than re-spelled -- a dict memo is three lines if
+# measurement ever asks.
 test "pascal_to_snake is deterministic across repeat calls without a cache" {
     probe = "AVeryDistinctArchetypeName";
     first = pascal_to_snake(probe);
@@ -378,8 +379,12 @@ test "version-condition comparisons match the operator table they replaced" {
 # mapping beside the new one, so every CI platform proves the pair agrees.
 test "native_target_os agrees with the platform.system mapping it replaced" {
     import platform;
-    import from jaclang.compiler.frontend.codeinfo { native_target_os }
-    prior = os.environ.pop("JAC_NATIVE_TARGET", None);
+    import from jaclang.compiler.frontend.codeinfo {
+        native_target_os,
+        set_native_target_override,
+        _native_target_ctx
+    }
+    prior = set_native_target_override("");
     try {
         sysname = platform.system();
         legacy = "linux";
@@ -393,29 +398,28 @@ test "native_target_os agrees with the platform.system mapping it replaced" {
             f"native_target_os() said {native_target_os()!r}"
         );
     } finally {
-        if prior is not None {
-            os.environ["JAC_NATIVE_TARGET"] = prior;
-        }
+        _native_target_ctx.set(prior);
     }
 }
 
-test "native_target_os still honors the JAC_NATIVE_TARGET override" {
-    import from jaclang.compiler.frontend.codeinfo { native_target_os }
-    prior = os.environ.pop("JAC_NATIVE_TARGET", None);
+test "native_target_os honors the native target override" {
+    import from jaclang.compiler.frontend.codeinfo {
+        native_target_os,
+        set_native_target_override,
+        _native_target_ctx
+    }
+    prior = set_native_target_override("");
     try {
         for (raw, want) in [
             ("aarch64-apple-darwin", "darwin"),
             ("x86_64-windows-msvc", "windows"),
             ("x86_64-unknown-linux-gnu", "linux")
         ] {
-            os.environ["JAC_NATIVE_TARGET"] = raw;
+            set_native_target_override(raw);
             assert native_target_os() == want , f"{raw} mapped wrong";
         }
     } finally {
-        os.environ.pop("JAC_NATIVE_TARGET", None);
-        if prior is not None {
-            os.environ["JAC_NATIVE_TARGET"] = prior;
-        }
+        _native_target_ctx.set(prior);
     }
 }
 

@@ -21,65 +21,35 @@ impl Alert.__repr__ -> str {
 }
 
 impl Alert.as_log(*, colors: bool = False) -> str {
-    import from jaclang.compiler.frontend.helpers { ANSIColors }
-    import from jaclang.compiler.frontend.diagnostics { Severity }
-    file_path: str = self.loc.mod_path;
-    if self.code {
-        sev_label = self.code.severity.value;
-        code_str = self.code.code;
-        if colors {
-            color = ANSIColors.RED
-                if (self.code.severity == Severity.ERROR)
-                else ANSIColors.YELLOW;
-            header = f"{color}{sev_label}[{code_str}]{ANSIColors.END}: {self.msg}";
-        } else {
-            header = f"{sev_label}[{code_str}]: {self.msg}";
-        }
-        if (file_path == '') {
-            return header;
-        }
-        return f"{header}\n  --> {file_path}:{self.loc.first_line}:{self.loc.col_start}";
-    }
-
-    if (file_path == '') {
-        return self.msg;
-    }
-    line: int = self.loc.first_line;
-    column: int = self.loc.col_start;
-    msg = self.msg if not colors else f"{ANSIColors.RED}{self.msg}{ANSIColors.END}";
-    return f"{file_path}:{line}:{column} {msg}";
+    import from jaclang.compiler.frontend.helpers { render_diagnostic_header }
+    return render_diagnostic_header(
+        self.msg,
+        self.code.code if self.code else '',
+        self.code.severity.value if self.code else 'error',
+        self.loc,
+        colors=colors
+    );
 }
 
 impl Alert.pretty_print(*, colors: bool = False) -> str {
-    import from jaclang.compiler.frontend.helpers {
-        pretty_print_span,
-        format_related_spans
-    }
-    pretty_dump = pretty_print_span(self.loc, colors=colors);
-    if (pretty_dump != '') {
-        pretty_dump = '\n' + pretty_dump;
-    }
-    result = self.as_log(colors=colors) + pretty_dump;
-
-    if self.related {
-        result += format_related_spans(self.related, colors=colors);
-    }
-
-    if self.help_text {
-        import from jaclang.compiler.frontend.helpers { ANSIColors }
-        if colors {
-            result += f"\n{ANSIColors.CYAN}help{ANSIColors.END}: {self.help_text}";
-        } else {
-            result += f"\nhelp: {self.help_text}";
-        }
-    }
-    return result;
+    import from jaclang.compiler.frontend.helpers { render_diagnostic }
+    return render_diagnostic(
+        self.msg,
+        self.code.code if self.code else '',
+        self.code.severity.value if self.code else 'error',
+        self.loc,
+        self.related,
+        self.help_text,
+        colors=colors
+    );
 }
 
 impl DiagnosticPolicy.is_suppressed(
-    diag: DiagnosticInfo, loc: (CodeLocInfo | Span | None) = None
+    diag: DiagnosticInfo,
+    loc: (CodeLocInfo | Span | None) = None,
+    source: (Source | None) = None
 ) -> bool {
-    if loc is not None and self._inline_suppressed(diag, loc) {
+    if loc is not None and self._inline_suppressed(diag, loc, source) {
         return True;
     }
     if diag.code in self.suppress_codes {
@@ -124,13 +94,14 @@ impl DiagnosticPolicy.is_suppressed(
 }
 
 impl DiagnosticPolicy._inline_suppressed(
-    diag: DiagnosticInfo, loc: (CodeLocInfo | Span)
+    diag: DiagnosticInfo, loc: (CodeLocInfo | Span), source: (Source | None) = None
 ) -> bool {
-    if not isinstance(loc, CodeLocInfo) {
-        return False;
+    if isinstance(loc, CodeLocInfo) {
+        source = loc.orig_src;
     }
-    source = loc.orig_src;
-    if source is None or not source.inline_suppressions {
+    if source is None
+        or source.file_path != loc.mod_path
+        or not source.inline_suppressions {
         return False;
     }
     line = loc.first_line;
@@ -148,22 +119,27 @@ impl DiagnosticPolicy._inline_suppressed(
 }
 
 impl BaseTransform.postinit -> None {
+    completed = self.completed;
+    if completed is not None {
+        self.ir_out = self.ir_in;
+        self.errors_had.extend(completed.errors_had);
+        self.warnings_had.extend(completed.warnings_had);
+        self.time_taken = completed.time_taken;
+        self.completed = None;
+        return;
+    }
     self.pre_transform();
     self.ir_out = self.timed_transform(ir_in=self.ir_in);
     self.post_transform();
 }
 
-impl BaseTransform.pre_transform -> None {
-    ;
-}
+impl BaseTransform.pre_transform -> None {}
 
-impl BaseTransform.post_transform -> None {
-    ;
-}
+impl BaseTransform.post_transform -> None {}
 
 impl BaseTransform.log_info(msg: str) -> None {
     import logging;
-    logging.getLogger(self.__class__.__name__).info(msg);
+    logging.getLogger(type(self).__name__).info(msg);
 }
 
 impl BaseTransform.is_canceled -> bool {
@@ -180,7 +156,7 @@ impl Transform.emit(
     node_override: (UniNode | None) = None,
     related: (list[tuple[str, UniNode]] | None) = None,
     help_text: (str | None) = None,
-    **kwargs: any
+    **kwargs: object
 ) -> bool {
     loc = node_override.loc if node_override else self.cur_node.loc;
 
@@ -200,7 +176,7 @@ impl Transform.emit(
     alrt = Alert(
         msg=msg,
         loc=loc.span(),
-        from_pass=self.__class__,
+        from_pass=type(self),
         code=diag,
         related=related_locs,
         help_text=resolved_help
@@ -221,6 +197,6 @@ impl Transform._is_suppressed(
 }
 
 impl Transform.ice(msg: str = 'Something went horribly wrong!') -> str {
-    self.emit(E9001, pass_name=self.__class__.__name__, details=msg);
-    return f"Internal Compiler Error: Pass {self.__class__.__name__} - {msg}";
+    self.emit(E9001, pass_name=type(self).__name__, details=msg);
+    return f"Internal Compiler Error: Pass {type(self).__name__} - {msg}";
 }

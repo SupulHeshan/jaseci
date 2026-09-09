@@ -267,7 +267,7 @@ impl native_capability_violations(
     out: list[tuple[(UniNode, str, str, (str | None))]] = [];
     _stdlib_help: (str | None) = None;
 
-    _native_stmts: list[ElementStmt] = ModuleCodegenPass.iter_context_stmts(
+    _native_stmts: list[ElementStmt] = ModuleFacts.iter_context_stmts(
         mod, CodeContext.NATIVE
     );
     _runtime_used: set = set();
@@ -295,8 +295,8 @@ impl native_capability_violations(
     _base_dir = os.path.dirname(os.path.abspath(mod.loc.mod_path))
         if (mod?.loc and mod.loc.mod_path)
         else '.';
-    for stmt in ModuleCodegenPass.iter_module_imports(mod, CodeContext.NATIVE)
-        + ModuleCodegenPass.iter_nested_imports(mod, CodeContext.NATIVE) {
+    for stmt in ModuleFacts.iter_module_imports(mod, CodeContext.NATIVE)
+        + ModuleFacts.iter_nested_imports(mod, CodeContext.NATIVE) {
         if stmt.clib_decls or not stmt.items {
             continue;
         }
@@ -312,14 +312,12 @@ impl native_capability_violations(
                 if is_bundled_native_module(mod_name) {
                     continue;
                 }
-                _plain_bare = (
+                _plain_module = (
                     not stmt.is_absorb
                     and isinstance(item, ModulePath)
-                    and item.alias is None
                     and item.path is not None
-                    and len(item.path) == 1
                 );
-                if (stmt.is_absorb or _plain_bare)
+                if (stmt.is_absorb or _plain_module)
                     and resolve_native_module(mod_name, _base_dir)[1] is not None {
                     continue;
                 }
@@ -350,7 +348,7 @@ impl native_capability_violations(
                         f"{_supported_list}; C-library imports "
                         f"(`import from \"lib\" {{...}}`); and other Jac "
                         f"modules on the native pathway (`import mod` or "
-                        f"`import from mod {{...}}`, unaliased). Move "
+                        f"`import from mod {{...}}`). Move "
                         f"Python-dependent code to a @sv/Python context."
                     );
                 }
@@ -374,6 +372,36 @@ impl native_capability_violations(
                 kind = "expression" if isinstance(nd, Expr) else "statement";
                 out.append((nd, kind, type(nd).__name__, None));
                 continue;
+            }
+            if isinstance(nd, Assignment) {
+                _targets = (
+                    nd.target if isinstance(nd.target, (list, tuple)) else [nd.target]
+                );
+                for _target in _targets {
+                    if isinstance(_target, (TupleVal, ListVal)) {
+                        for _star in _target.get_all_sub_nodes(typ=UnaryExpr) {
+                            if (
+                                isinstance(_star, UnaryExpr)
+                                and isinstance(_star.op, Token)
+                                and _star.op.name == Tok.STAR_MUL.value
+                            ) {
+                                out.append(
+                                    (
+                                        _target,
+                                        "starred unpack target",
+                                        "*",
+                                        (
+                                            "Starred tuple/list assignment targets are "
+                                            "not lowered natively yet; move the "
+                                            "statement to a non-native context."
+                                        )
+                                    )
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
             }
 
             if isinstance(nd, CtrlStmt)
@@ -713,7 +741,7 @@ impl NativeCapabilityCheckPass.postinit -> None {
     super.postinit();
 }
 
-impl NativeCapabilityCheckPass.transform(ir_in: Module) -> Module {
+impl NativeCapabilityCheckPass._run_impl(ir_in: Module) -> Module {
     (_fatal_viols, _demotable) = partition_native_capability_violations(
         native_capability_violations(ir_in)
     );
@@ -744,7 +772,7 @@ impl ClientCapabilityCheckPass.postinit -> None {
     super.postinit();
 }
 
-impl ClientCapabilityCheckPass.transform(ir_in: Module) -> Module {
+impl ClientCapabilityCheckPass._run_impl(ir_in: Module) -> Module {
     if not ir_in.client_viols_reported {
         for (_vnode, _vkind) in client_capability_violations(ir_in) {
             self.emit(E5096, node_override=_vnode, kind=_vkind);
@@ -759,7 +787,7 @@ impl PortabilityWarnPass.postinit -> None {
     super.postinit();
 }
 
-impl PortabilityWarnPass.transform(ir_in: Module) -> Module {
+impl PortabilityWarnPass._run_impl(ir_in: Module) -> Module {
     self._check_js_globals(ir_in);
     self._check_js_methods(ir_in);
     self._check_js_keywords(ir_in);
@@ -905,4 +933,40 @@ impl PortabilityWarnPass._check_js_properties(mod: Module) -> None {
             );
         }
     }
+}
+
+impl PortabilityWarnPass.transform(ir_in: Module) -> Module {
+    self.ir_out = ir_in;
+    ir_in spawn self;
+    out = self.ir_out;
+    assert isinstance(out, Module);
+    return out;
+}
+
+impl PortabilityWarnPass.run_walk with Module entry {
+    self.ir_out = self._run_impl(here);
+}
+
+impl NativeCapabilityCheckPass.transform(ir_in: Module) -> Module {
+    self.ir_out = ir_in;
+    ir_in spawn self;
+    out = self.ir_out;
+    assert isinstance(out, Module);
+    return out;
+}
+
+impl NativeCapabilityCheckPass.run_walk with Module entry {
+    self.ir_out = self._run_impl(here);
+}
+
+impl ClientCapabilityCheckPass.transform(ir_in: Module) -> Module {
+    self.ir_out = ir_in;
+    ir_in spawn self;
+    out = self.ir_out;
+    assert isinstance(out, Module);
+    return out;
+}
+
+impl ClientCapabilityCheckPass.run_walk with Module entry {
+    self.ir_out = self._run_impl(here);
 }

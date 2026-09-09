@@ -7,7 +7,7 @@ impl LayoutPass.postinit -> None {
     super.postinit();
 }
 
-impl LayoutPass.transform(ir_in: Module) -> Module {
+impl LayoutPass._run_impl(ir_in: Module) -> Module {
     module = self.ir_in;
 
     self._build_enum_layouts(module);
@@ -66,16 +66,7 @@ impl LayoutPass._collect_archetypes(module: Module) -> dict[str, Archetype] {
 }
 
 impl LayoutPass._collect_isinstance_targets(module: Module) -> None {
-    import from jaclang.compiler.backends.py.module_codegen_pass { ModuleCodegenPass }
-    import from jaclang.compiler.frontend.constant { CodeContext }
-    calls: list = [];
-    for stmt in ModuleCodegenPass.iter_context_stmts(module, CodeContext.NATIVE) {
-        if isinstance(stmt, FuncCall) {
-            calls.append(stmt);
-        }
-        calls.extend(stmt.get_all_sub_nodes(typ=FuncCall));
-    }
-    for call in calls {
+    for call in module.get_all_sub_nodes(FuncCall) {
         tgt = call.target;
         if not (isinstance(tgt, Name) and tgt.value == "isinstance") {
             continue;
@@ -204,11 +195,15 @@ impl LayoutPass._compute_c3_mro(class_name: str) -> list[str] {
 }
 
 impl LayoutPass._topo_sort(arch_map: dict[str, Archetype]) -> list[str] {
+    return self.registry.dependency_order(list(arch_map));
+}
+
+impl LayoutRegistry.dependency_order(names: list[str]) -> list[str] {
+    """Order layouts after their ancestors, including incomplete imported MROs.""";
     visited: set[str] = set();
     order: list[str] = [];
-    reg = self.registry;
 
-    for aname in arch_map {
+    for aname in names {
         if aname in visited {
             continue;
         }
@@ -224,7 +219,7 @@ impl LayoutPass._topo_sort(arch_map: dict[str, Archetype]) -> list[str] {
                 continue;
             }
             stack.append((name, True));
-            mro = reg.mro_order.get(name, [name]);
+            mro = self.mro_order.get(name, [name]);
             for ancestor in reversed(mro[1:]) {
                 if ancestor not in visited {
                     stack.append((ancestor, False));
@@ -894,4 +889,28 @@ impl LayoutPass._is_layout_compatible_type(
         }
     }
     return False;
+}
+
+impl LayoutPass.transform(ir_in: Module) -> Module {
+    self.ir_out = ir_in;
+    ir_in spawn self;
+    out = self.ir_out;
+    assert isinstance(out, Module);
+    return out;
+}
+
+impl LayoutPass.run_walk with Module entry {
+    self.ir_out = self._run_impl(here);
+}
+
+
+impl FieldInfo.semantic_type.getter -> TypeBase | None {
+    declaration = self.decl_node;
+    if isinstance(declaration, AstTypedVarNode) {
+        return declaration.type;
+    }
+    if isinstance(declaration, TypeParam) {
+        return declaration.name.type;
+    }
+    return None;
 }

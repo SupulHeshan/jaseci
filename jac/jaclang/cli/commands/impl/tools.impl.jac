@@ -84,7 +84,7 @@ impl dot(
         mod_ns = vars(module) if module else {};
         try {
             nd = mod_ns.get(initial, eval(initial, mod_ns)) if initial else None;
-            graph = printgraph(
+            rendered_graph = printgraph(
                 nd=nd,
                 depth=depth,
                 traverse=traverse,
@@ -100,11 +100,11 @@ impl dot(
             return 1;
         }
         if to_screen {
-            console.print(graph);
+            console.print(rendered_graph);
         } else {
             file_name = saveto or f"{mod}.dot";
             with open(file_name, 'w') as file {
-                file.write(graph);
+                file.write(rendered_graph);
             }
             console.print(
                 f">>> Graph content saved to {os.path.join(os.getcwd(), file_name)}"
@@ -264,24 +264,4 @@ def _install_completion(shell: str, code: str) -> int {
         console.error(f"Error writing config: {e}");
         return 1;
     }
-}
-
-impl gen_uni_dispatch(verify: bool = False) -> int {
-    import from jaclang.compiler.frontend.gen_uni_dispatch { write_all, verify_all }
-    if verify {
-        stale = verify_all();
-        for rel in stale {
-            console.error(f"Dispatch annex OUT OF DATE: {rel}");
-        }
-        if stale {
-            console.error("Run `jac gen-uni-dispatch` to update.");
-            return 1;
-        }
-        console.print("All dispatch annexes are up to date.");
-        return 0;
-    }
-    for msg in write_all() {
-        console.print(msg);
-    }
-    return 0;
 }

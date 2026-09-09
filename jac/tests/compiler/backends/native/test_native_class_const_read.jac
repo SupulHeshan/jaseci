@@ -19,8 +19,9 @@ back a zero.
 
 The subprocess pair is the contract: the server pathway and a native binary
 must print the same lines, so the *values* are pinned and not merely that
-something lowered. `test_type_system_seal_baseline` carries the other half --
-`TypeBase.category.__get__` left its waiver when this landed.
+something lowered. The other half -- `TypeBase.category.__get__` leaving its
+waiver when this landed -- was pinned by `test_type_system_seal_baseline`,
+deleted with the native seal (#8735).
 
 The last case is the one that stays broken on purpose. A flat imported
 ancestor with no vtable slot puts its first field at slot 0 while a subclass
@@ -59,12 +60,13 @@ glob FIXTURES = os.path.join(
          "True"
      );
 
-"""Compile a fixture natively and hand back the program and the module."""
+"""Inspect emitted IR before optimization; runtime parity uses the built binary."""
 def compile_native(fixture: str) -> tuple {
     prog = JacProgram();
-    ir = prog.compile(
-        file_path=os.path.join(FIXTURES, fixture), options=native_force_opts()
-    );
+    options = native_force_opts();
+    options.skip_native_engine = True;
+    options.no_ir_cache = True;
+    ir = prog.compile(file_path=os.path.join(FIXTURES, fixture), options=options);
     return (prog, ir, );
 }
 
@@ -92,7 +94,8 @@ def na_lines(fixture: str) -> list {
             sys.executable,
             "-m",
             "jaclang",
-            "nacompile",
+            "build",
+            "--native",
             os.path.join(FIXTURES, fixture),
             "-o",
             out_bin
