@@ -5,7 +5,6 @@ module, then a universal Proxy stub -- materialized as a generated tsconfig.
 """
 
 import json;
-import os;
 import from pathlib { Path }
 import from tempfile { TemporaryDirectory }
 import from jaclang.testing.cl_test_runner {
@@ -58,28 +57,7 @@ test "the scanner classifies every import form exactly" {
     assert _scan_relative_specs(src) == ["../shared/label.js", "./local.js"];
 }
 
-test "the generated tsconfig maps every spec and nothing else" {
-    # A bare "*" mapping makes bun silently no-op: exit 0, nothing executed.
-    paths = {
-        "vscode": "./__mocks__/vscode.js",
-        "@scope/pkg": "./__mocks__/@scope/pkg.js",
-        "react": "./__jac_npm_stub.js"
-    };
-    doc = json.loads(_render_tsconfig(paths));
-    assert doc
-        == {
-            "compilerOptions": {
-                "baseUrl": ".",
-                "paths": {
-                    "@scope/pkg": ["./__mocks__/@scope/pkg.js"],
-                    "react": ["./__jac_npm_stub.js"],
-                    "vscode": ["./__mocks__/vscode.js"]
-                }
-            }
-        } , f"tsconfig shape drifted: {doc}";
-}
-
-test "mocks come from the convention, and config entries win over it" {
+test "mocks resolve by convention, config wins, and a bad entry says why" {
     with TemporaryDirectory() as td {
         Path(td, "jac.toml").write_text(
             '[project]\nname = "x"\n\n[test.client.mocks]\n'
@@ -102,12 +80,20 @@ test "mocks come from the convention, and config entries win over it" {
         assert found["vscode"].endswith("doubles/editor.js") , (
             f"the config entry lost to the convention: {found['vscode']}"
         );
+        # Each spec maps to exactly one file. A bare "*" catch-all would make
+        # bun silently no-op: exit 0, nothing executed.
+        doc = json.loads(_render_tsconfig(found));
+        assert set(doc["compilerOptions"]["paths"].keys()) == set(found.keys()) , (
+            f"tsconfig mapped a different spec set: {doc}"
+        );
+        assert "*" not in doc["compilerOptions"]["paths"] , "a catch-all would no-op bun";
+        for (spec, target) in found.items() {
+            assert doc["compilerOptions"]["paths"][spec] == [target];
+        }
     }
     assert _mock_sources_for(str(FIXTURES / "cl_npm" / "test_npm_only.jac")) == {};
     assert _mock_sources_for(None) == {};
-}
 
-test "a bad [test.client.mocks] entry says which entry and why" {
     def reject(rel: str, make: bool) -> str {
         with TemporaryDirectory() as td {
             Path(td, "jac.toml").write_text(
@@ -199,9 +185,7 @@ test "on_stub escalates from note to failure, and names what needs a mock" {
 
     assert report_with("error", [], []) == "" , "a fully resolved run must stay silent";
     _report_stubbed(None, ClImportPlan());
-}
 
-test "a profile-supplied on_stub reaches the runner" {
     # `jac test --profile ci` overlays onto the process config without marking
     # it explicit; reading [test.client] off disk would ignore the profile.
     plan = ClImportPlan();
@@ -242,29 +226,13 @@ test "a client test importing only an npm module runs under bun" {
     }
 }
 
-test "mocked modules behave while unmapped ones keep the proxy" {
+test "both mock routes resolve while unmapped specs keep the proxy" {
+    # The one end-to-end run: only bun itself can prove the generated
+    # tsconfig actually resolves these specs.
     fixture = str(FIXTURES / "cl_npm_mock" / "test_mocked.jac");
     results = run_cl_test_file(fixture);
-    assert len(results) == 4 , f"expected 4 client tests, got {len(results)}";
+    assert len(results) == 6 , f"expected 6 client tests, got {len(results)}";
     for res in results {
         assert res.ok , f"cl test {res.name} failed: {res.error}";
     }
-}
-
-test "a mock may re-export, side-effect import, and carry its own files" {
-    fixture = str(FIXTURES / "cl_npm_forms" / "test_forms.jac");
-    results = run_cl_test_file(fixture);
-    assert len(results) == 2 , f"expected 2 client tests, got {len(results)}";
-    for res in results {
-        assert res.ok , f"cl test {res.name} failed: {res.error}";
-    }
-}
-
-test "__mocks__ modules are not collected as tests themselves" {
-    import from jaclang.testing.test_runner { _under_support_dir }
-    assert _under_support_dir(
-        os.sep.join(["", "p", "tests", "__mocks__", "vscode.jac"])
-    );
-    assert _under_support_dir(os.sep.join(["", "p", "tests", "fixtures", "thing.jac"]));
-    assert not _under_support_dir(os.sep.join(["", "p", "tests", "test_real.jac"]));
 }

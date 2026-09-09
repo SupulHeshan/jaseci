@@ -1,8 +1,10 @@
 [project]
 name = "cl-npm-mock-fixture"
 version = "0.0.0"
-description = "Fixture project exercising cl test runner mock resolution"
+description = "Fixture project exercising both mock routes and the proxy fallback"
 
+# Route 1: specs mapped explicitly. Route 2 (the tests/__mocks__ convention)
+# needs no declaration -- "fake-widgets" is found by filename alone.
 [test.client.mocks]
 "fake-editor" = "mocks/editor.js"
 "@fake/telemetry" = "mocks/telemetry.jac"
