@@ -404,39 +404,34 @@ impl StaticAnalysisPass._check_semantic_patterns(mod: Module) -> None {
         }
     }
 
-    import from jaclang.compiler.frontend.constant { CodeContext }
     for nd in mod.get_all_sub_nodes(typ=AwaitExpr) {
         in_async = False;
-        is_server = True;
         parent = nd.parent;
         while parent is not None {
             if isinstance(parent, LambdaExpr) {
                 break;
             }
-            if isinstance(parent, Ability) {
-                in_async = parent.is_async;
-                is_server = parent.code_context == CodeContext.SERVER;
+            if isinstance(parent, Test) {
+                in_async = parent.in_client_context();
                 break;
             }
-            if isinstance(parent, Test) {
-                is_server = parent.code_context == CodeContext.SERVER;
+            if isinstance(parent, Ability) {
+                in_async = parent.is_async;
                 break;
             }
             if isinstance(parent, ImplDef) {
                 _dl = parent.decl_link;
                 if isinstance(_dl, Ability) {
                     in_async = _dl.is_async;
-                    is_server = _dl.code_context == CodeContext.SERVER;
                 }
                 break;
             }
             if isinstance(parent, Archetype) {
-                is_server = parent.code_context == CodeContext.SERVER;
                 break;
             }
             parent = parent.parent;
         }
-        if is_server and not in_async {
+        if not in_async {
             self.emit(E2085, node_override=nd);
         }
     }
