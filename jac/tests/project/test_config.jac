@@ -612,25 +612,16 @@ test "profile inheritance" {
 
 test "a profile overlays a typed child section without replacing it" {
     # [test] client holds a ClientTestConfig; a profile used to replace it
-    # with a plain dict, so reading on_stub raised AttributeError.
+    # with a plain dict, so reading on_stub raised AttributeError. The
+    # overlay must also leave sibling keys (like mocks) alone.
     config_mod._config = None;
     toml_str = "\n[project]\nname = \"nested-profile\"\n\n[test.client]\n"
-        + "on_stub = \"note\"\n\n[environments.ci]\n[environments.ci.test.client]\n"
-        + "on_stub = \"error\"\n";
+        + "on_stub = \"note\"\n\n[test.client.mocks]\nvscode = \"m/v.js\"\n\n"
+        + "[environments.ci]\n[environments.ci.test.client]\non_stub = \"error\"\n";
     cfg = JacConfig.from_toml_str(toml_str);
     assert cfg.`test.client.on_stub == "note";
     cfg.apply_profile("ci");
     assert not isinstance(cfg.`test.client, dict) , "the typed child was replaced by a dict";
-    assert cfg.`test.client.on_stub == "error";
-}
-
-test "a profile leaves sibling keys of a typed child alone" {
-    config_mod._config = None;
-    toml_str = "\n[project]\nname = \"nested-keep\"\n\n[test.client]\n"
-        + "on_stub = \"warn\"\n\n[test.client.mocks]\nvscode = \"m/v.js\"\n\n"
-        + "[environments.ci]\n[environments.ci.test.client]\non_stub = \"error\"\n";
-    cfg = JacConfig.from_toml_str(toml_str);
-    cfg.apply_profile("ci");
     assert cfg.`test.client.on_stub == "error";
     assert cfg.`test.client.mocks == {"vscode": "m/v.js"} , "mocks were dropped by the overlay";
 }
