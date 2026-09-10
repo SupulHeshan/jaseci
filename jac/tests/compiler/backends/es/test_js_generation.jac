@@ -2761,63 +2761,6 @@ test "builtin type used as a value lowers to a callable (#7454)" {
     assert_balanced_syntax(js_code, "builtin_type_as_value.jac");
 }
 
-test "min/max honor Python's iterable-vs-varargs calling convention (#8589)" {
-    # Regression for jaseci-labs/jaseci#8589. `min`/`max` lowered straight to
-    # `Math.min`/`Math.max`, which only understands the varargs form
-    # (`Math.min(1, 2, 3)`). The single-iterable form (`min([1, 2, 3])`)
-    # lowered to `Math.min([1, 2, 3])`, which silently evaluates to NaN
-    # instead of raising or scanning the list.
-    js_code = compile_fixture_to_js("builtin_min_max.jac", FIXTURES);
-
-    # Scope the Math.min/max check to the compiled user code: the injected
-    # _jac runtime legitimately uses Math.min/max internally (e.g. zip/map
-    # compute the shortest iterable length).
-    fn_idx = js_code.find("function min_of_list");
-    assert fn_idx >= 0 , "compiled function min_of_list must be present";
-    user_js = js_code[fn_idx:];
-    for pattern in ["Math.min(", "Math.max("] {
-        assert pattern not in user_js , (
-            "min/max must not forward a Jac call straight into "
-            + pattern
-            + " -- the single-iterable-argument form silently yields NaN; user code:\n"
-            + user_js
-        );
-    }
-
-    wrapper = (
-        js_code
-        + "\nlet _emptyErr = null;"
-        + "\ntry { min_of_empty(); } catch (e) { _emptyErr = e.message; }"
-        + "\nconsole.log(JSON.stringify({"
-        + "  min_list: min_of_list([3, 1, 2]),"
-        + "  max_list: max_of_list([3, 1, 2]),"
-        + "  min_args: min_of_args(3, 1, 2),"
-        + "  max_args: max_of_args(3, 1, 2),"
-        + "  min_key: min_by_key([\"ccc\", \"a\", \"bb\"]),"
-        + "  max_key: max_by_key([\"ccc\", \"a\", \"bb\"]),"
-        + "  empty_error: _emptyErr"
-        + "}));\n"
-    );
-    result = subprocess.run(
-        ["node", "-e", wrapper], capture_output=True, text=True, timeout=10
-    );
-    assert result.returncode == 0 , (
-        "min/max codegen crashed in Node:\n" f"stderr={result.stderr!r}\njs:\n{js_code}"
-    );
-    got = json.loads(result.stdout.strip());
-    assert got["min_list"] == 1 , f"min([3, 1, 2]) mismatch: {got['min_list']}\njs:\n{js_code}";
-    assert got["max_list"] == 3 , f"max([3, 1, 2]) mismatch: {got['max_list']}\njs:\n{js_code}";
-    assert got["min_args"] == 1 , f"min(3, 1, 2) mismatch: {got['min_args']}\njs:\n{js_code}";
-    assert got["max_args"] == 3 , f"max(3, 1, 2) mismatch: {got['max_args']}\njs:\n{js_code}";
-    assert got["min_key"] == "a" , f"min(key=len) mismatch: {got['min_key']}\njs:\n{js_code}";
-    assert got["max_key"] == "ccc" , f"max(key=len) mismatch: {got['max_key']}\njs:\n{js_code}";
-    assert got["empty_error"] and "empty" in got["empty_error"].lower() , (
-        f"min([]) without a default must raise, got: {got['empty_error']}\njs:\n{js_code}"
-    );
-
-    assert_balanced_syntax(js_code, "builtin_min_max.jac");
-}
-
 test "imported JS/TS class constructs with new (#8017)" {
     # A `.d.ts`-declared class binds as a plain `variable` symbol, so
     # classify_call reports "function" and the pre-fix backend emitted
@@ -2884,7 +2827,7 @@ test "imported JS/TS class constructs with new (#8017)" {
     assert_balanced_syntax(js_code, "ts_class_new.jac");
 }
 
-test "builtin functions lower to runtime helpers without type-check (#7480)" {
+test "builtin functions lower to runtime helpers without type-check (#7480, #8589)" {
     # An imported client module reaches the bundler uninferred (call_kind
     # unstamped, as when compiled as a dependency). The bundler chokepoint must
     # run the inference schedule before the backend so builtins lower to their
@@ -2933,10 +2876,14 @@ test "builtin functions lower to runtime helpers without type-check (#7480)" {
     }
     wrapper = (
         js_code
+        + "\nlet _emptyErr = null;"
+        + "\ntry { min_of_empty(); } catch (e) { _emptyErr = e.message; }"
         + "\nconsole.log(JSON.stringify({"
         + "  summarize: summarize([3, 1, 2]),"
         + "  numeric: numeric(5),"
-        + "  zipped: combined([1, 2], [3, 4])[2]"
+        + "  combined: combined([1, 2], [3, 4]),"
+        + "  min_max_key: min_max_by_key([\"ccc\", \"a\", \"bb\"]),"
+        + "  empty_error: _emptyErr"
         + "}));\n"
     );
     result = subprocess.run(
@@ -2959,7 +2906,27 @@ test "builtin functions lower to runtime helpers without type-check (#7480)" {
     assert got["summarize"]["ranged"] == [0, 1, 2] , got["summarize"];
     assert got["numeric"]["abs"] == 5 , got["numeric"];
     assert got["numeric"]["round"] == 3.14 , got["numeric"];
-    assert got["zipped"] == [[1, 3], [2, 4]] , got["zipped"];
+    assert got["combined"][2] == [[1, 3], [2, 4]] , got["combined"];
+
+    # `combined([1, 2], [3, 4])` calls `min(a)`/`max(a)` in the single-
+    # iterable form (#8589): `Math.min([1, 2])` used to silently return NaN
+    # here, but only index 2 (zip) was ever checked. `min_max_by_key` covers
+    # the `key=` form, and `min_of_empty` covers the empty-sequence error --
+    # neither call shape had any prior coverage.
+    expected_scalars = {
+        "combined min(a)": (got["combined"][0], 1),
+        "combined max(a)": (got["combined"][1], 2),
+        "min(items, key=)": (got["min_max_key"][0], "a"),
+        "max(items, key=)": (got["min_max_key"][1], "ccc")
+    };
+    for (label, (actual, expected)) in expected_scalars.items() {
+        assert actual == expected , (
+            f"{label}: expected {expected!r}, got {actual!r}\njs:\n{js_code}"
+        );
+    }
+    assert got["empty_error"] and "empty" in got["empty_error"].lower() , (
+        f"min([]) without a default must raise, got: {got['empty_error']}\njs:\n{js_code}"
+    );
 
     assert_balanced_syntax(js_code, "builtin_func_untyped.jac");
 }

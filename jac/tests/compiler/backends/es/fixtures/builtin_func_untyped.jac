@@ -1,6 +1,5 @@
 """Builtin functions used inside an untyped client function."""
 
-
 def summarize(xs: list) -> dict {
     return {
         "sorted": sorted(xs),
@@ -20,4 +19,16 @@ def combined(a: list, b: list) -> list {
     x = max(a);
     pairs = zip(a, b);
     return [m, x, pairs];
+}
+
+def str_len(s: str) -> int {
+    return len(s);
+}
+
+def min_max_by_key(items: list) -> list {
+    return [min(items, key=str_len), max(items, key=str_len)];
+}
+
+def min_of_empty -> int {
+    return min([]);
 }
