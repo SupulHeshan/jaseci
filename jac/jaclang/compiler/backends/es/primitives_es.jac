@@ -68,8 +68,6 @@ def _one_arg_cb(fn: str, seq: str, method: str, cb_body: str) -> str {
         + ")";
 }
 
-"""Emit a `_jac.builtin.min`/`max` call, normalizing min(a, b, c) and a
-lone min(*xs) spread into the same array form as min([a, b, c])."""
 def _min_max_call(rt_name: str, ctx: ESEmitCtx, args: list[str]) -> (str | None) {
     n_pos = len(ctx.arg_type_names) if ctx.arg_type_names is not None else len(args);
     positional = args[:n_pos];
