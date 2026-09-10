@@ -1199,25 +1199,21 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       return Math.round(n * f) / f;
     },
     min(iterable, key) {
-      const arr = [..._jac.builtin.iter(iterable)];
-      if (arr.length === 0) throw new _jac.exc.ValueError("min() arg is an empty sequence");
-      let best = arr[0];
-      let bestKey = key ? key(best) : best;
-      for (let i = 1; i < arr.length; i++) {
-        const k = key ? key(arr[i]) : arr[i];
-        if (k < bestKey) { best = arr[i]; bestKey = k; }
+      let found = false, best, bestKey;
+      for (const v of _jac.builtin.iter(iterable)) {
+        const k = key ? key(v) : v;
+        if (!found || k < bestKey) { best = v; bestKey = k; found = true; }
       }
+      if (!found) throw new _jac.exc.ValueError("min() arg is an empty sequence");
       return best;
     },
     max(iterable, key) {
-      const arr = [..._jac.builtin.iter(iterable)];
-      if (arr.length === 0) throw new _jac.exc.ValueError("max() arg is an empty sequence");
-      let best = arr[0];
-      let bestKey = key ? key(best) : best;
-      for (let i = 1; i < arr.length; i++) {
-        const k = key ? key(arr[i]) : arr[i];
-        if (k > bestKey) { best = arr[i]; bestKey = k; }
+      let found = false, best, bestKey;
+      for (const v of _jac.builtin.iter(iterable)) {
+        const k = key ? key(v) : v;
+        if (!found || k > bestKey) { best = v; bestKey = k; found = true; }
       }
+      if (!found) throw new _jac.exc.ValueError("max() arg is an empty sequence");
       return best;
     },
     sum(iterable, start) {

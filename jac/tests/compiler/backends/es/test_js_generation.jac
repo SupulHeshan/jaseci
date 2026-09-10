@@ -2884,6 +2884,7 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         + "  combined: combined([1, 2], [3, 4]),"
         + "  min_max_key: min_max_by_key([\"ccc\", \"a\", \"bb\"]),"
         + "  min_spread: min_of_spread([5, 1, 3]),"
+        + "  min_max_varargs: min_max_varargs(3, 1, 2),"
         + "  empty_error: _emptyErr"
         + "}));\n"
     );
@@ -2911,8 +2912,11 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
 
     # `combined([1, 2], [3, 4])` calls `min(a)`/`max(a)` in the single-
     # iterable form (#8589): `Math.min([1, 2])` used to silently return NaN
-    # here, but only index 2 (zip) was ever checked. `min_max_by_key` covers
-    # the `key=` form, and `min_of_empty` covers the empty-sequence error.
+    # here, but only index 2 (zip) was ever checked. `min_max_varargs`
+    # covers the other branch of the same fix -- `min(a, b, c)` with several
+    # separate values, which must keep working as a direct comparison, not
+    # collapse into the iterable path. `min_max_by_key` covers the `key=`
+    # form, `min_of_empty` covers the empty-sequence error, and
     # `min_of_spread` covers `min(*xs)`: a single spread argument lowers to
     # one `...xs` entry, which the fix must wrap in `[...]` rather than pass
     # straight through -- otherwise xs's elements splice into the runtime
@@ -2922,7 +2926,9 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         "combined max(a)": (got["combined"][1], 2),
         "min(items, key=)": (got["min_max_key"][0], "a"),
         "max(items, key=)": (got["min_max_key"][1], "ccc"),
-        "min(*xs)": (got["min_spread"], 1)
+        "min(*xs)": (got["min_spread"], 1),
+        "min(a, b, c)": (got["min_max_varargs"][0], 1),
+        "max(a, b, c)": (got["min_max_varargs"][1], 3)
     };
     for (label, (actual, expected)) in expected_scalars.items() {
         assert actual == expected , (

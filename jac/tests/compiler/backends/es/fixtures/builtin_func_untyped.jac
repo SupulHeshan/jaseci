@@ -36,3 +36,7 @@ def min_of_empty -> int {
 def min_of_spread(xs: list) -> int {
     return min(*xs);
 }
+
+def min_max_varargs(a: int, b: int, c: int) -> list {
+    return [min(a, b, c), max(a, b, c)];
+}
