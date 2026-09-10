@@ -76,6 +76,12 @@ positional argument IS that sequence, while two or more collapse into it --
 `args` list keeps any `key=` value tacked on after the real positional
 arguments, so the split point has to come from `arg_type_names`, which only
 counts positional params.
+
+A single positional argument that is itself a JS spread (`min(*xs)` lowers
+to one `...xs` entry) is the varargs form, not the iterable form -- passing
+`...xs` straight through would splice xs's elements into the runtime
+helper's own argument list instead of building the array it expects, so it
+has to be wrapped in `[...]` exactly like the multi-argument case.
 """
 def _min_max_call(rt_name: str, ctx: ESEmitCtx, args: list[str]) -> (str | None) {
     n_pos = len(ctx.arg_type_names) if ctx.arg_type_names is not None else len(args);
@@ -84,7 +90,7 @@ def _min_max_call(rt_name: str, ctx: ESEmitCtx, args: list[str]) -> (str | None)
         return None;
     }
     items = positional[0]
-        if len(positional) == 1
+        if len(positional) == 1 and not positional[0].startswith("...")
         else "[" + ", ".join(positional) + "]";
     key = (ctx.kwargs or {}).get("key", "undefined");
     return _rt("builtin", rt_name, [items, key]);

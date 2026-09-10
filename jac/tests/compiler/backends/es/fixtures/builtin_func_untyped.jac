@@ -32,3 +32,7 @@ def min_max_by_key(items: list) -> list {
 def min_of_empty -> int {
     return min([]);
 }
+
+def min_of_spread(xs: list) -> int {
+    return min(*xs);
+}
