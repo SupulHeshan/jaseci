@@ -361,18 +361,14 @@ impl NaIRGenPass._codegen_lambda(nd: uni.LambdaExpr) -> (ir.Value | None) {
         }
     }
     ret_type: ir.Type = ir.IntType(64);
+    if isinstance(nd.type, SemanticFunctionType) and nd.type.return_type is not None {
+        inferred = self._lower_type(nd.type.return_type);
+        if inferred is not None {
+            ret_type = inferred;
+        }
+    }
     if sig is not None and sig.return_type is not None {
         ret_type = self._resolve_jac_type(sig.return_type);
-    } elif nd.type is not None {
-        try {
-            import from jaclang.compiler.types.types { FunctionType as _LamFnType }
-            if isinstance(nd.type, _LamFnType) and nd.type.return_type is not None {
-                _lam_ret = self._lower_type(nd.type.return_type);
-                if _lam_ret is not None {
-                    ret_type = _lam_ret;
-                }
-            }
-        } except ImportError {}
     }
 
     captures: list[tuple[str, ir.Value, ir.Type]] = [];
