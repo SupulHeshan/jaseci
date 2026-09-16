@@ -96,7 +96,10 @@ def _provider_url(app_name: str) -> str {
 
 
 def service_call(
-    module_name: str, func_name: str, args: dict, headers: dict[str, str] | None = None
+    module_name: str,
+    func_name: str,
+    args: dict[str, any],
+    headers: dict[str, str] | None = None
 ) -> any {
     import from jaclang.server { sv_client }
 
@@ -112,7 +115,7 @@ def service_call(
             return _iter_sse_text(str(resp.text), func_label);
         }
         data = resp.json();
-        return _unwrap_sv_envelope(data, module_name, func_name);
+        return sv_client.function_result(data, module_name, func_name);
     }
 
     if breaker_should_skip(module_name) {
@@ -143,14 +146,14 @@ def service_call(
     if kind == 'sse' {
         return payload;
     }
-    return _unwrap_sv_envelope(payload, module_name, func_name);
+    return sv_client.function_result(payload, module_name, func_name);
 }
 
 
 def walker_call(
     module_name: str,
     walker_name: str,
-    args: dict,
+    args: dict[str, any],
     stub_cls: any = None,
     headers: dict[str, str] | None = None
 ) -> any {
@@ -164,7 +167,9 @@ def walker_call(
             f"/walker/{walker_name}", json=args, headers=_rpc_headers(headers)
         );
         data = resp.json();
-        return _hydrate_walker_envelope(data, module_name, walker_name, stub_cls);
+        return sv_client.hydrate_walker_envelope(
+            data, module_name, walker_name, stub_cls
+        );
     }
 
     if breaker_should_skip(module_name) {
@@ -193,7 +198,7 @@ def walker_call(
     }
 
     data = _rpc_with_retries(module_name, f"walker spawn '{label}'", send);
-    return _hydrate_walker_envelope(data, module_name, walker_name, stub_cls);
+    return sv_client.hydrate_walker_envelope(data, module_name, walker_name, stub_cls);
 }
 
 
@@ -216,45 +221,4 @@ def _sv_rpc_timeout(app_name: str) -> float {
         }
     } except Exception {}
     return _SV_DEFAULT_RPC_TIMEOUT;
-}
-
-
-def _unwrap_sv_envelope(data: any, module_name: str, func_name: str) -> any {
-    if isinstance(data, dict) and data.get("ok") {
-        result_envelope = data.get("data");
-        if isinstance(result_envelope, dict) and ("result" in result_envelope) {
-            return result_envelope["result"];
-        }
-        return result_envelope;
-    }
-    err = (data.get("error") if isinstance(data, dict) else None) or {};
-    msg = err.get("message") if isinstance(err, dict) else str(err);
-    raise RuntimeError(
-        f"sv-to-sv RPC '{module_name}.{func_name}' failed: {msg or 'unknown error'}"
-    );
-}
-
-def _hydrate_walker_envelope(
-    data: any, module_name: str, walker_name: str, stub_cls: any
-) -> any {
-    if isinstance(data, dict) and data.get("ok") {
-        envelope = data.get("data") or {};
-        result_dict = envelope.get("result") if isinstance(envelope, dict) else None;
-        reports = envelope.get("reports") if isinstance(envelope, dict) else None;
-        instance = stub_cls._from_wire(result_dict)
-            if (stub_cls is not None and result_dict is not None)
-            else result_dict;
-        if instance is not None and reports is not None {
-            try {
-                instance.reports = reports;
-            } except Exception {}
-        }
-        return instance;
-    }
-    err = (data.get("error") if isinstance(data, dict) else None) or {};
-    msg = err.get("message") if isinstance(err, dict) else str(err);
-    raise RuntimeError(
-        f"sv-to-sv walker spawn '{module_name}.{walker_name}' failed: {msg
-            or 'unknown error'}"
-    );
 }

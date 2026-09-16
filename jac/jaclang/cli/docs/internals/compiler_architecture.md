@@ -127,7 +127,7 @@ graph TD
     NA --> NAOUT[".o / ELF / Mach-O"]
 ```
 
-The orchestration lives in [`compiler/driver/schedules.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/schedules.jac).
+The orchestration lives in [`compiler/driver/pipeline.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/pipeline.jac).
 Each named "schedule" function returns a list of `Transform[uni.Module, uni.Module]`
 classes to run, and the `JacCompiler.compile` method walks them in order.
 
@@ -216,7 +216,7 @@ verdict. Every other plain `.jac` module goes through placement inference
 instead.
 
 The coercion helpers live in
-[`compiler.jac:_coerce_module`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/schedules.jac#L250)
+[`compiler.jac:_coerce_module`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/pipeline.jac#L250)
 and two wrappers around it:
 
 | Helper | Triggered by | What it does |
@@ -292,7 +292,7 @@ through the interop stubs.
 
 These passes run regardless of codespace and are collected by
 `get_ir_gen_sched` and `get_analysis_sched` in
-[`compiler.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/schedules.jac#L42).
+[`compiler.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/pipeline.jac#L42).
 
 The ir-gen schedule (`get_ir_gen_sched`):
 
@@ -445,12 +445,12 @@ runs once *before* code generation. It walks every call site and records:
 3. Imports that cross from a Python module into a native-placed module (for
    native↔native linking).
 4. Server-to-server calls that cross an **app boundary** (the imported
-   element's `owner_app` differs from the importing module's).
+   element's `app` differs from the importing module's).
 
 Every cross-module import is classified once, by
 `classify_cross_app_import` in `compiler/driver/boundary_classify.jac`, into
 one of four kinds from the *app facts* the driver stamps before any pass runs
-(`app`, `app_root`, `app_kind`, `owner_app` on `uni.Module`): `LOCAL` (a plain
+(`app`, `app_root`, `app_kind` on `uni.Module`): `LOCAL` (a plain
 import), `CLIENT_BRIDGE` (client context importing server-placed elements),
 `SERVICE_BRIDGE` (server or native context importing server-placed elements
 owned by another app), or `NATIVE_BIND` (the wasm/ctypes edge). The pass also
@@ -497,10 +497,34 @@ The Python AST is reconstructed from the container inside
 `JcirBytecodeGenPass` and dies there, so nothing downstream holds a handle
 back to the originating nodes.
 
-Archetype `has` fields become dataclass fields wrapped with
-`_.field(default=…)` or `_.field(factory=lambda: …)`. Walkers, nodes, and
+Archetype `has` fields use Jac object descriptors. Nonconstant defaults
+lower to internal `ObjectField(default_factory=lambda: …)` calls; constant
+defaults remain direct values. Walkers, nodes, and
 edges descend from the corresponding `Archetype` subclasses in
 [`runtime/archetype.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/runtime/archetype.jac).
+Jac-owned records use `obj` and ordinary `has` defaults such as
+`has items: list[int] = [];`. Deferred fields use `has ready: bool postinit;`
+and are assigned in `postinit`. Plain `class` retains Python class semantics.
+
+`make_object` is Python runtime implementation machinery, also used by the
+bootstrap compiler; it is not the declaration API for ordinary Jac records.
+`ObjectField` is internal construction and reflection metadata. Runtime code
+still uses explicit descriptors where it needs constructor exclusion,
+representation control, or keyword-only fields. These internal options do not
+establish a public Jac field-configuration API. Direct decorator tests cover
+this implementation boundary; language-facing tests use `obj`.
+`WalkerArchetype` is a runtime base marked `__jac_base__`, so the normal
+subclass-registration hook deliberately skips it. Its explicit `make_object`
+call installs inherited `reports` metadata without registering it as a user
+archetype. Its constructor exclusion and representation settings remain
+internal runtime contracts.
+
+`runtime/object_interop.jac` is the single direct Python-dataclasses adapter.
+Code accepting records from Python libraries uses its `is_record` and `fields`
+functions. Jac code should not create Python dataclasses or import their helpers;
+intentional compatibility records belong in Python fixtures. The native import
+rejection test retains a dataclasses import as test input, not an executed import.
+
 Builtins and language keywords ultimately resolve to methods on
 `JacRuntimeInterface` in [`runtime/runtime.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/runtime/runtime.jac).
 
@@ -633,7 +657,7 @@ user-facing reference, [Primitives & Codespace Semantics](../reference/language/
 | `sv → na` | In-process `ctypes.CFUNCTYPE` over the JIT'd function address (MCJIT); an AOT `--lib` build is loaded across the process boundary instead | `JcirGenPass` emits the ctypes stub; `NaIRGenPass` exposes the function with C ABI |
 | `na → sv` | Python callback wrapped in a `ctypes.CFUNCTYPE` and registered as a JIT symbol (`llvm.add_symbol`), so MCJIT resolves the native call back into CPython | `interop_bridge.register_py_callbacks`, alongside the `sv → na` stub |
 | `na → na` | Direct symbol reference resolved by the in-tree linker | `BoundaryAnalysisPass` records the import; `NativeCompilePass` emits the relocation |
-| `sv → sv` (cross-app) | A typed-async stub keyed by the provider **app name** when an import's target is owned by a different app; in-process when the provider app is colocated, HTTP `POST` when it runs as its own process | `JcirGenPass` emits a generated `async` `__jac_sv_client` stub (`call` / `spawn_walker`; un-awaited statement spawns become `_deferred`, the outbox); the manifest's app edges drive the built-in `scale` subsystem's boot order |
+| `sv → sv` (cross-app) | A typed-async stub keyed by the provider **app name** when an import's target is compiled in a different app context; in-process when the provider app is colocated, HTTP `POST` when it runs as its own process | `JcirGenPass` emits a generated `async` `__jac_sv_client` stub (`call` / `spawn_walker`; un-awaited statement spawns become `_deferred`, the outbox); the manifest's app edges drive the built-in `scale` subsystem's boot order |
 
 Boundary types are serialised through the schemas in
 [`codeinfo.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/frontend/codeinfo.jac).
@@ -735,7 +759,7 @@ A short index, organised by the role each file plays in the pipeline.
 
 **Orchestration**
 
-- [`compiler/driver/schedules.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/schedules.jac)
+- [`compiler/driver/pipeline.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/pipeline.jac)
   -- `JacCompiler`, schedule functions, codespace coercion
 - [`compiler/driver/program.jac`](https://github.com/Jaseci-Labs/jaseci/blob/main/jac/jaclang/compiler/driver/program.jac)
   -- `JacProgram`, the module hub passes operate on

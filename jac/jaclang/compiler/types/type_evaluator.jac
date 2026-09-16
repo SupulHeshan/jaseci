@@ -1,3 +1,4 @@
+import from jaclang.compiler.passes.context { CompileContext }
 import from jaclang.compiler.types.builtin_extensions { install_builtin_extensions }
 import os;
 import from pathlib { Path }
@@ -112,15 +113,15 @@ import from jaclang.compiler.frontend.unitree {
     WithStmt,
     YieldExpr
 }
+import from jaclang.runtime.constants { EdgeDir }
 import from jaclang.compiler.frontend.constant {
     TOKEN_MAP,
     BindingKind,
     CodeContext,
     SymbolType,
     Tokens as Tok,
-    EdgeDir,
     SymbolAccess,
-    OwnershipKind,
+    OwnershipKind
 }
 import from jaclang.compiler.types.types {
     AnyType,
@@ -145,8 +146,8 @@ import from jaclang.compiler.types.types {
     UnknownType,
     create_callable_type
 }
-import from jaclang.compiler.frontend.helpers { read_file_with_encoding }
-import from jaclang.compiler.passes.transform { Transform }
+import from jaclang.project.source { read_file_with_encoding }
+
 import type from jaclang.compiler.driver.program { JacProgram }
 
 import from jaclang.compiler.types.operations {
@@ -202,6 +203,7 @@ import from jaclang.compiler.types.ts_decl_parser {
 import from jaclang.compiler.frontend.diagnostics {
     DiagnosticInfo,
     E1001,
+    E1002,
     E1010,
     E1023,
     E1030,
@@ -363,7 +365,7 @@ walker TypeEvaluator {
         ct_eval: CtEvaluator postinit,
         ct_quiet: bool = False,
         prefetch: PrefetchedTypes postinit,
-        _pass: Transform | None = None,
+        _pass: CompileContext | None = None,
         _diagnostic_suppression_depth: int = 0,
         builtins_module: Module | None = None,
         _flow_node_type_cache: dict[tuple[int, int], TypeBase | None] = {},
@@ -556,6 +558,8 @@ walker TypeEvaluator {
 
     def slice_assignment_is_valid(target: Expr, value_node: Expr) -> bool;
     def is_sub_class(super_cls: ClassType, sub_cls: ClassType) -> bool;
+    def _heal_ancestry(cls: ClassType) -> None;
+    def _heal_class_bases(cls: ClassType) -> None;
     def _assign_callable(
         src_func: FunctionType, dest_func: FunctionType, strict: bool = False
     ) -> bool;

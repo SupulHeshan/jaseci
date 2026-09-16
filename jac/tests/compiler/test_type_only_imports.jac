@@ -20,7 +20,7 @@ import from tempfile { TemporaryDirectory }
 import from typing { cast }
 import jaclang;
 import from jaclang.compiler.driver.program { JacProgram }
-import from jaclang.compiler.passes.transform { Alert }
+import from jaclang.compiler.passes.context { Alert }
 import from tests.compiler.passes.checker_npm_harness {
     check_npm_file,
     client_node_modules,
@@ -44,7 +44,6 @@ glob KIND_DTS: str = (
          "export default mermaid;\n"
      );
 
-
 """The diagnostic codes carried by a list of alerts, in order."""
 def codes_of(alerts: list[Alert]) -> list[str] {
     return [
@@ -54,7 +53,6 @@ def codes_of(alerts: list[Alert]) -> list[str] {
     ];
 }
 
-
 """Every alert in `alerts` registered under `code`."""
 def alerts_with(alerts: list[Alert], code: str) -> list[Alert] {
     return [
@@ -63,7 +61,6 @@ def alerts_with(alerts: list[Alert], code: str) -> list[Alert] {
         if a.code is not None and a.code.code == code
     ];
 }
-
 
 """Install a package shipping one `.d.ts` and write the client project."""
 def make_dts_project(
@@ -79,12 +76,9 @@ def make_dts_project(
             '"import":"./dist/index.mjs"}}}',
         {"dist/index.mjs": mjs, "dist/index.d.ts": dts}
     );
-    write_client_jac_project(
-        proj_dir, project_name, "lib/app.jac", pkg + ' = "^1.0.0"\n'
-    );
+    write_client_jac_project(proj_dir, project_name, "lib.app", pkg + ' = "^1.0.0"\n');
     return proj_dir;
 }
-
 
 """Materialize the mixed-kind `kindpkg` fixture project."""
 def make_kind_project(proj_dir: Path) -> Path {
@@ -97,7 +91,6 @@ def make_kind_project(proj_dir: Path) -> Path {
     );
 }
 
-
 """Materialize the `mermaid` reproduction fixture project."""
 def make_mermaid_project(proj_dir: Path) -> Path {
     return make_dts_project(
@@ -109,16 +102,14 @@ def make_mermaid_project(proj_dir: Path) -> Path {
     );
 }
 
-
 """Write a JavaScript package project root directory and return it."""
 def write_client_project(proj_root: Path) -> Path {
     (proj_root / "jac.toml").write_text(
         '[project]\nname = "typeonly"\nversion = "0.1.0"\n'
-        'kind = "js-package"\nentry-point = "app.jac"\n'
+        'kind = "js-package"\nentry-point = "app"\n'
     );
     return proj_root;
 }
-
 
 """Compile `path` and return (program, module)."""
 def compile_module(path: Path) -> tuple[JacProgram, any] {
@@ -126,7 +117,6 @@ def compile_module(path: Path) -> tuple[JacProgram, any] {
     mod = prog.compile(str(path));
     return (prog, mod);
 }
-
 
 # ---------------------------------------------------------------------------
 # 1. npm `.d.ts`: only the type-only kinds are refused
@@ -156,7 +146,6 @@ test "plain import of a d.ts interface is refused, its sibling function is not" 
     }
 }
 
-
 test "plain import of a d.ts type alias is refused" {
     with TemporaryDirectory() as td {
         proj = make_kind_project(Path(cast(str, td)));
@@ -169,7 +158,6 @@ test "plain import of a d.ts type alias is refused" {
     }
 }
 
-
 test "plain import of a d.ts class, const, or function is accepted" {
     with TemporaryDirectory() as td {
         proj = make_kind_project(Path(cast(str, td)));
@@ -181,7 +169,6 @@ test "plain import of a d.ts class, const, or function is accepted" {
         )}";
     }
 }
-
 
 # ---------------------------------------------------------------------------
 # 2. `import type` is the accepted spelling and emits no JS
@@ -209,7 +196,6 @@ test "import type of a d.ts interface checks clean and emits no specifier" {
         assert "Iface" not in js , f"A type-only binding must not reach the ESM output:\n{js}";
     }
 }
-
 
 # ---------------------------------------------------------------------------
 # 3. Jac-to-Jac: a `type` alias is type-only with no npm involved
@@ -245,7 +231,6 @@ test "plain import of a jac type alias is refused; import type is clean" {
     }
 }
 
-
 glob BRAND_SRC: str = "type UserId := int;\n",
      BRAND_USE_SRC: str = (
          "import from .brands { UserId }\n\n"
@@ -253,7 +238,6 @@ glob BRAND_SRC: str = "type UserId := int;\n",
          "    return UserId(raw);\n"
          "}\n"
      );
-
 
 """Write an unpinned (server) jac project root and return it."""
 def write_server_project(proj_root: Path, entry_mod: str) -> Path {
@@ -265,14 +249,13 @@ def write_server_project(proj_root: Path, entry_mod: str) -> Path {
     return proj_root;
 }
 
-
 test "a server module may value-import a jac type alias and construct it" {
     # The python backend lowers `type UserId := int;` to a real runtime binding
     # (`UserId = int`), so `UserId(raw)` is the documented way to build a brand
     # -- E1107 exists to keep the base primitive precisely so this works. E1131
     # must not push cross-module brand construction onto `import type`.
     with TemporaryDirectory() as td {
-        proj_root = write_server_project(Path(cast(str, td)), "use.jac");
+        proj_root = write_server_project(Path(cast(str, td)), "use");
         (proj_root / "brands.jac").write_text(BRAND_SRC);
         f = proj_root / "use.jac";
         f.write_text(BRAND_USE_SRC);
@@ -282,7 +265,6 @@ test "a server module may value-import a jac type alias and construct it" {
         ]}";
     }
 }
-
 
 test "a client module may not value-import a jac type alias" {
     # Only the ES backend erases an alias, so the very same pair is an error
@@ -305,13 +287,12 @@ test "a client module may not value-import a jac type alias" {
     }
 }
 
-
 test "import type of a jac alias erases it on the server too, so value use is E1132" {
     # The remedy E1131 offers has teeth: on the server an `import type` lowers
     # to a TYPE_CHECKING guard, so the name is not there at run time and the
     # constructor call is refused rather than left to fail as a NameError.
     with TemporaryDirectory() as td {
-        proj_root = write_server_project(Path(cast(str, td)), "use.jac");
+        proj_root = write_server_project(Path(cast(str, td)), "use");
         (proj_root / "brands.jac").write_text(BRAND_SRC);
         f = proj_root / "use.jac";
         f.write_text(
@@ -327,13 +308,12 @@ test "import type of a jac alias erases it on the server too, so value use is E1
     }
 }
 
-
 test "a server has-field may be typed by a plainly imported jac alias" {
     # The docs' own caveat: an archetype field type is resolved at run time
     # through typing.get_type_hints, so pushing this onto `import type` would
     # break it. A plain import has to stay legal here.
     with TemporaryDirectory() as td {
-        proj_root = write_server_project(Path(cast(str, td)), "store.jac");
+        proj_root = write_server_project(Path(cast(str, td)), "store");
         (proj_root / "rows.jac").write_text("type Row = dict[str, int];\n");
         f = proj_root / "store.jac";
         f.write_text(
@@ -348,7 +328,6 @@ test "a server has-field may be typed by a plainly imported jac alias" {
         ]}";
     }
 }
-
 
 # ---------------------------------------------------------------------------
 # 4. E1132: a type-only binding used in value position
@@ -380,7 +359,6 @@ glob POINT_SRC: str = (
          "}\n"
      );
 
-
 test "value uses of an import-type binding are refused in a client module" {
     with TemporaryDirectory() as td {
         proj_root = write_client_project(Path(cast(str, td)));
@@ -398,7 +376,6 @@ test "value uses of an import-type binding are refused in a client module" {
     }
 }
 
-
 test "type uses of an import-type binding are accepted in a client module" {
     with TemporaryDirectory() as td {
         proj_root = write_client_project(Path(cast(str, td)));
@@ -412,13 +389,12 @@ test "type uses of an import-type binding are accepted in a client module" {
     }
 }
 
-
 test "value uses of an import-type binding are refused in a server module" {
     with TemporaryDirectory() as td {
         proj_root = Path(cast(str, td));
         (proj_root / "jac.toml").write_text(
             '[project]\nname = "typeonlysv"\nversion = "0.1.0"\n'
-            'entry-point = "uses.jac"\n'
+            'entry-point = "uses"\n'
         );
         (proj_root / "point.jac").write_text(POINT_SRC);
         f = proj_root / "uses.jac";
@@ -431,13 +407,12 @@ test "value uses of an import-type binding are refused in a server module" {
     }
 }
 
-
 test "type uses of an import-type binding are accepted in a server module" {
     with TemporaryDirectory() as td {
         proj_root = Path(cast(str, td));
         (proj_root / "jac.toml").write_text(
             '[project]\nname = "typeonlysv"\nversion = "0.1.0"\n'
-            'entry-point = "typeuses.jac"\n'
+            'entry-point = "typeuses"\n'
         );
         (proj_root / "point.jac").write_text(POINT_SRC);
         f = proj_root / "typeuses.jac";
@@ -448,7 +423,6 @@ test "type uses of an import-type binding are accepted in a server module" {
         )}";
     }
 }
-
 
 # ---------------------------------------------------------------------------
 # 5. Guard: the bridged-import stub path still skips archetypes, keeps functions
@@ -463,7 +437,7 @@ test "bridged import stubs skip archetype items and keep function items" {
         proj_root = Path(cast(str, td));
         (proj_root / "jac.toml").write_text(
             '[project]\nname = "svstub"\nversion = "0.1.0"\n'
-            'entry-point = "page.jac"\n\n'
+            'entry-point = "page"\n\n'
             '[placement.pins]\napi = "server"\n'
         );
         (proj_root / "api.jac").write_text(
@@ -495,7 +469,6 @@ test "bridged import stubs skip archetype items and keep function items" {
         assert "Todo = async" not in js , f"Todo is a type item and must not get an RPC stub:\n{js}";
     }
 }
-
 
 # ---------------------------------------------------------------------------
 # 6. The original shape: mermaid's default export plus its interface
@@ -537,7 +510,6 @@ test "the mermaid shape is refused as written and clean when split" {
         assert "Mermaid" not in js.replace('import mermaid from "mermaid"', "") , f"The interface must not reach the ESM output:\n{js}";
     }
 }
-
 
 # ---------------------------------------------------------------------------
 # 6. The binding's symbol category agrees with its kind
@@ -583,7 +555,6 @@ test "an imported d.ts binding takes the symbol category its kind implies" {
         )}";
     }
 }
-
 
 # ---------------------------------------------------------------------------
 # 7. The import chain is walked once, and every hop still counts

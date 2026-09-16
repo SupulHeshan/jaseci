@@ -988,6 +988,9 @@ impl ClassType.is_edge_type -> bool {
 
 impl ClassType.is_walker_type -> bool {
     import from jaclang.compiler.frontend.constant { SymbolType }
+    if self.is_builtin("Walker") {
+        return True;
+    }
     return _class_scope_category(self.shared.symbol_table) == SymbolType.WALKER_ARCH;
 }
 
@@ -1021,7 +1024,7 @@ impl ClassType.is_builtin(class_name: (str | list[str] | None) = None) -> bool {
 }
 
 impl ClassType.lookup_member_symbol(
-    member: str, r_overloaded: list | None = None
+    member: str, r_overloaded: list[Symbol] | None = None
 ) -> (Symbol | None) {
     import from jaclang.compiler.frontend.unitree {
         Ability,
@@ -1031,7 +1034,11 @@ impl ClassType.lookup_member_symbol(
         FuncSignature,
         ParamVar
     }
-    import from jaclang.compiler.types.type_utils { collect_member_syms }
+    import from jaclang.compiler.types.type_utils {
+        collect_member_syms,
+        ensure_mro_fresh
+    }
+    ensure_mro_fresh(self);
     for cls in self.shared.mro {
         all_syms = collect_member_syms(cls.shared.symbol_table, member);
         if all_syms {

@@ -447,6 +447,15 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
      E1035 = _err(
          "E1035", Category.TYPE, "Type \"{src}\" is not assignable to type \"{dest}\""
      ),
+     E1036 = _err(
+         "E1036",
+         Category.TYPE,
+         "Generic type \"{type}\" requires explicit type arguments",
+         help="Name the element types, for example \"dict[str, int]\" or"
+         " \"list[Item]\". Where the values are genuinely heterogeneous, say so"
+         " explicitly with \"dict[str, any]\"; a bare \"{type}\" no longer"
+         " defaults to any."
+     ),
      W1036 = _warn(
          "W1036",
          Category.TYPE,
@@ -1485,28 +1494,14 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.SEMANTIC,
          "'{name}' belongs to app '{app}'; app '{user_app}' may only use it "
          "through shared code or its bridge surface",
-         help="An app boundary is structural: modules under one [apps.<name>] root are private to that app. Another app reaches them only through the owner's bridge surface -- a walker or a `def:pub` function the compiler bridges to the owner's server (`:pub` only marks an endpoint unauthenticated; a walker bridges without it) -- or by moving the code to a shared module outside every app root."
+         help="An app's declared entry is its boundary. Import a walker or public function from that entry to use its bridge surface. Ordinary imported modules participate in the selected app's compilation context."
      ),
      W2039 = _warn(
          "W2039",
          Category.SEMANTIC,
          "'{name}' belongs to app '{app}'; app '{user_app}' may only use it "
          "through shared code or its bridge surface",
-         help="An app boundary is structural: modules under one [apps.<name>] root are private to that app. Another app reaches them only through the owner's bridge surface -- a walker or a `def:pub` function the compiler bridges to the owner's server (`:pub` only marks an endpoint unauthenticated; a walker bridges without it) -- or by moving the code to a shared module outside every app root."
-     ),
-     E2040 = _err(
-         "E2040",
-         Category.SEMANTIC,
-         "Shared module '{module}' imports '{name}' from app '{app}'; shared "
-         "code may not depend on app modules",
-         help="Shared modules sit below every app and are compiled once per app that reaches them, so a dependency on one app's module would pull that app into every other. Move '{name}' into shared code, or move the importing module under the app that owns it."
-     ),
-     W2040 = _warn(
-         "W2040",
-         Category.SEMANTIC,
-         "Shared module '{module}' imports '{name}' from app '{app}'; shared "
-         "code may not depend on app modules",
-         help="Shared modules sit below every app and are compiled once per app that reaches them, so a dependency on one app's module would pull that app into every other. Move '{name}' into shared code, or move the importing module under the app that owns it."
+         help="An app's declared entry is its boundary. Import a walker or public function from that entry to use its bridge surface. Ordinary imported modules participate in the selected app's compilation context."
      ),
      E2084 = _err(
          "E2084",
@@ -2067,13 +2062,6 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          help="A node or edge lives in the graph of the app that owns it, so another app cannot construct or hold one. Spawn one of '{provider}''s walkers and work with what it reports, or move the type into shared code as an obj.",
          blocks_codegen=True
      ),
-     E5107 = _err(
-         "E5107",
-         Category.CODEGEN,
-         "Server-placed shared module '{module}' has no single owner: reached by serving apps {apps}; declare it as a service app or pin an owner",
-         help="A shared module with server-placed elements runs on exactly one app's server so that every other app bridges to the same owner. With more than one serving app in the workspace the compiler cannot pick one. Give the module its own `[apps.<name>]` table (`kind = \"service\"`, `entry-point = \"<path>\"`), or pin it to an owner with `[apps.<owner>.placement.pins] \"<module>\" = \"server\"`.",
-         blocks_codegen=True
-     ),
      E5104 = _err(
          "E5104",
          Category.CODEGEN,
@@ -2196,4 +2184,13 @@ glob E0001 = _err("E0001", Category.SYNTAX, "Expected '{expected}', got '{got}'"
          Category.RUNTIME,
          "Client error could not be traced to Jac source: {message}",
          help="The dev loop kept the raw location it was given, but nothing under .jac/client/compiled claims it -- a browser extension, a dependency with no source map, or an artifact from a build that has since been replaced. Reload after a clean build if the location should be yours."
+     ),
+     E0059 = _err(
+         "E0059",
+         Category.SYNTAX,
+         "'continue' is not valid inside a loop's else block",
+         help="the else block runs after the loop has already exhausted, so there"
+         " is no next iteration for 'continue' to skip to (Python would re-enter"
+         " the loop test here, usually re-running the else forever). Use 'break'"
+         " to leave the loop from the else block, or restructure the condition."
      );

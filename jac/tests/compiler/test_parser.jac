@@ -18,7 +18,7 @@ import jaclang.compiler.frontend.unitree as uni;
 import from jaclang.compiler.frontend.constant { CodeContext }
 import from jaclang.compiler.frontend.parser { parse as rd_parse }
 import from jaclang.compiler.driver.program { JacProgram }
-import from jaclang.compiler.frontend.helpers { read_file_with_encoding }
+import from jaclang.project.source { read_file_with_encoding }
 import from jaclang.testing.test { parametrize }
 import from tests.fixtures_list { MICRO_JAC_FILES }
 
@@ -81,7 +81,6 @@ test "a comprehension iterable is any operator expression short of the ternary" 
     assert isinstance(compr[0].collection, uni.BinaryExpr) , type(compr[0].collection);
 }
 
-
 test "staticmethod checks out" {
     (module, had_error) = rd_parse(load_fixture("staticcheck.jac"), "");
     out = print_ast_tree(module);
@@ -101,7 +100,7 @@ test "parser mod doc test" {
 
 test "all ast has normalize" {
     import from jaclang.compiler.tools.normalize_pass { NormalizePass }
-    import from jaclang.compiler.frontend.helpers { pascal_to_snake }
+    import from jaclang.project.source { pascal_to_snake }
 
     exclude = [
         "UniNode",
@@ -780,8 +779,8 @@ test "docstring attaches to all member types inside archetype body" {
     (mod, err) = rd_parse(load_fixture("docstring_with_entry.jac"), "");
     assert not err , "Parser reported errors for docstrings on archetype members";
 
-    def collect_doc_nodes(nd: uni.UniNode) -> list {
-        results: list = [];
+    def collect_doc_nodes(nd: uni.UniNode) -> list[any] {
+        results: list[any] = [];
         if isinstance(nd, (uni.ArchHas, uni.Ability, uni.ModuleCode, uni.Archetype))
             and nd.doc is not None {
             results.append(nd);
@@ -839,7 +838,7 @@ test "parser core sources are foreign-free" {
     core = (pkg / "parser.jac").read_text(encoding="utf-8")
         + (pkg / "impl" / "parser.impl.jac").read_text(encoding="utf-8");
     banned = [
-        "passes.transform",
+        "passes.context",
         "CodeLocInfo",
         "JacProgram",
         "compiler.frontend.diagnostics",
