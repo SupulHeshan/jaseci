@@ -1091,58 +1091,55 @@ test "plain client kwargs lower to ordered js arguments" {
     );
 }
 
-test "bridged call duplicate kwarg is a compile error" {
-    # Calling ``greet(input_text, name=other)`` gives the ``name`` parameter
-    # twice — once positionally and once by keyword.  This mirrors Python's
-    # ``TypeError: got multiple values for argument 'name'`` and must be
-    # reported as a compile-time error so the build fails fast rather than
-    # silently emitting a JS object with a duplicated key.
+test "duplicate keyword argument is a compile error (bridged call and builtin)" {
+    # Giving the same argument both positionally and by keyword mirrors
+    # Python's ``TypeError: got multiple values for argument``. The bridged/
+    # RPC call path (``greet(input_text, name=other)``) and the builtin call
+    # path (``round(x, 2, ndigits=3)``, #9120) resolve keyword arguments
+    # through the same by-name slot resolver, so both must be reported as a
+    # compile-time error (E5080) rather than silently emitting a malformed
+    # call -- a JS object with a duplicated key for the bridged case, or a
+    # 3-argument call to the 2-parameter ``_jac.builtin.round`` helper for
+    # the builtin case.
     import from jaclang.compiler.driver.program { JacProgram }
     import from jaclang.compiler.backends.es { EsastGenPass }
 
-    fixture = os.path.join(FIXTURES, "svc_kwargs/sv_import_kwargs_dup.jac");
-    prog = JacProgram();
-    ir = prog.compile(file_path=fixture, no_cgen=True);
-    run_pass(EsastGenPass, ir, prog);
-
-    dup_errs = [
-        e
-        for e in prog.errors_had
-        if "given both positionally and by keyword" in str(e)
+    cases = [
+        (
+            "bridged call",
+            os.path.join(FIXTURES, "svc_kwargs/sv_import_kwargs_dup.jac"),
+            ["name", "greet"]
+        ),
+        (
+            "builtin call",
+            write_temp_jac(
+                "def r(x: float) -> float {\n"
+                "    return round(x, 2, ndigits=3);\n"
+                "}\n"
+            ),
+            ["ndigits", "round"]
+        )
     ];
-    assert len(dup_errs) == 1 , (
-        "Expected exactly one E5080 collision diagnostic, got "
-        + str([str(e) for e in prog.errors_had])
-    );
-    assert "name" in str(dup_errs[0]) and "greet" in str(dup_errs[0]);
-}
+    for (label, fixture, needles) in cases {
+        prog = JacProgram();
+        ir = prog.compile(file_path=fixture, no_cgen=True);
+        run_pass(EsastGenPass, ir, prog);
 
-test "builtin duplicate keyword argument is a compile error (#9120)" {
-    # `round(x, 2, ndigits=3)` gives `ndigits` both positionally and by
-    # keyword. Builtins now resolve keyword arguments through the same
-    # by-name slot resolver as bridged/RPC calls above, so this malformed
-    # call is caught as a compile error instead of silently emitting a
-    # 3-argument call to the 2-parameter `_jac.builtin.round` helper.
-    import from jaclang.compiler.driver.program { JacProgram }
-    import from jaclang.compiler.backends.es { EsastGenPass }
-
-    jac_path = write_temp_jac(
-        "def r(x: float) -> float {\n" "    return round(x, 2, ndigits=3);\n" "}\n"
-    );
-    prog = JacProgram();
-    ir = prog.compile(file_path=jac_path, no_cgen=True);
-    run_pass(EsastGenPass, ir, prog);
-
-    dup_errs = [
-        e
-        for e in prog.errors_had
-        if "given both positionally and by keyword" in str(e)
-    ];
-    assert len(dup_errs) == 1 , (
-        "Expected exactly one E5080 collision diagnostic, got "
-        + str([str(e) for e in prog.errors_had])
-    );
-    assert "ndigits" in str(dup_errs[0]) and "round" in str(dup_errs[0]);
+        dup_errs = [
+            e
+            for e in prog.errors_had
+            if "given both positionally and by keyword" in str(e)
+        ];
+        assert len(dup_errs) == 1 , (
+            f"{label}: expected exactly one E5080 collision diagnostic, got "
+            + str([str(e) for e in prog.errors_had])
+        );
+        for needle in needles {
+            assert needle in str(dup_errs[0]) , (
+                f"{label}: expected {needle!r} in diagnostic, got {dup_errs[0]}"
+            );
+        }
+    }
 }
 
 test "bridged import nested in a client block emits no dead import" {
@@ -2914,6 +2911,7 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         + "  min_max_key: min_max_by_key([\"ccc\", \"a\", \"bb\"]),"
         + "  min_spread: min_of_spread([5, 1, 3]),"
         + "  min_max_varargs: min_max_varargs(3, 1, 2),"
+        + "  sorted_kwargs_order: sorted_kwargs_order([\"ccc\", \"a\", \"bb\"]),"
         + "  empty_error: _emptyErr"
         + "}));\n"
     );
@@ -2934,6 +2932,9 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     assert got["summarize"]["enumerated"] == [[0, 3], [1, 1], [2, 2]] , (
         got["summarize"]
     );
+    assert got["summarize"]["enumerated_kwarg"] == [[5, 3], [6, 1], [7, 2]] , (
+        got["summarize"]
+    );
     assert got["summarize"]["ranged"] == [0, 1, 2] , got["summarize"];
     assert got["numeric"]["abs"] == 5 , got["numeric"];
     assert got["numeric"]["round"] == 3.14 , got["numeric"];
@@ -2950,6 +2951,15 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     # one `...xs` entry, which the fix must wrap in `[...]` rather than pass
     # straight through -- otherwise xs's elements splice into the runtime
     # helper's own argument list instead of forming the array it expects.
+    #
+    # `sorted_reverse`/`sum_kwarg`/`round_kwarg` cover `sorted`/`sum`/`round`
+    # taking their sole optional argument by keyword (#9120): the compiler
+    # used to append a keyword value to the positional list in source order
+    # regardless of its name, which happened to still land in the right
+    # runtime-helper slot when only one keyword was given. `sorted_kwargs_order`
+    # is the case that same scheme got wrong: `key=`/`reverse=` written in
+    # the two different orders must still resolve to the same slots and
+    # produce identical output, not silently swap `key` and `reverse`.
     expected_scalars = {
         "combined min(a)": (got["combined"][0], 1),
         "combined max(a)": (got["combined"][1], 2),
@@ -2957,74 +2967,36 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         "max(items, key=)": (got["min_max_key"][1], "ccc"),
         "min(*xs)": (got["min_spread"], 1),
         "min(a, b, c)": (got["min_max_varargs"][0], 1),
-        "max(a, b, c)": (got["min_max_varargs"][1], 3)
+        "max(a, b, c)": (got["min_max_varargs"][1], 3),
+        "sorted(xs, reverse=True)": (got["summarize"]["sorted_reverse"], [3, 2, 1]),
+        "sum(xs, start=)": (got["summarize"]["sum_kwarg"], 16),
+        "round(x, ndigits=)": (got["numeric"]["round_kwarg"], 3.14),
+        "sorted(key=, reverse=)": (
+            got["sorted_kwargs_order"]["key_then_reverse"],
+            ["ccc", "bb", "a"]
+        ),
+        "sorted(reverse=, key=)": (
+            got["sorted_kwargs_order"]["reverse_then_key"],
+            ["ccc", "bb", "a"]
+        )
     };
     for (label, (actual, expected)) in expected_scalars.items() {
         assert actual == expected , (
             f"{label}: expected {expected!r}, got {actual!r}\njs:\n{js_code}"
         );
     }
+    assert (
+        got["sorted_kwargs_order"]["key_then_reverse"]
+        == got["sorted_kwargs_order"]["reverse_then_key"]
+    ) , (
+        "swapping keyword-argument order must not change the result:\n"
+        f"{got['sorted_kwargs_order']}\njs:\n{js_code}"
+    );
     assert got["empty_error"] and "empty" in got["empty_error"].lower() , (
         f"min([]) without a default must raise, got: {got['empty_error']}\njs:\n{js_code}"
     );
 
     assert_balanced_syntax(js_code, "builtin_func_untyped.jac");
-}
-
-test "builtin keyword arguments resolve by name, not source position (#9120)" {
-    # `sorted(xs, reverse=True)` used to lower to `_jac.builtin.sorted(xs,
-    # true)`, mis-slotting `true` into the runtime helper's `key` parameter
-    # (crashing with "key is not a function") because keyword-argument
-    # values were appended to the positional arg list in source order
-    # instead of being resolved by name. The same bug made
-    # `sorted(xs, key=f, reverse=True)` and `sorted(xs, reverse=True,
-    # key=f)` -- logically identical calls -- compile to different (and
-    # sometimes wrong) argument order. This regression test locks in that
-    # keyword resolution is order-independent for `sorted`/`round`/`sum`/
-    # `enumerate`.
-    if not shutil.which("node") {
-        testskip("node not on PATH");
-    }
-    js_code = compile_fixture_to_js("builtin_kwargs_order.jac", FIXTURES);
-
-    wrapper = (
-        js_code
-        + "\nconsole.log(JSON.stringify({"
-        + "  sorted_variants: sorted_variants([\"ccc\", \"a\", \"bb\"]),"
-        + "  round_kwarg: round_kwarg(3.14159),"
-        + "  sum_kwarg: sum_kwarg([1, 2, 3]),"
-        + "  enumerate_kwarg: enumerate_kwarg([\"x\", \"y\"])"
-        + "}));\n"
-    );
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", wrapper],
-        capture_output=True,
-        text=True,
-        timeout=30
-    );
-    assert result.returncode == 0 , (
-        "builtin keyword-argument codegen crashed in Node:\n"
-        f"stderr={result.stderr!r}\njs:\n{js_code}"
-    );
-    got = json.loads(result.stdout.strip());
-
-    variants = got["sorted_variants"];
-    assert variants["reverse_only"] == ["ccc", "bb", "a"] , (
-        f"sorted(xs, reverse=True) mismatch: {variants}\njs:\n{js_code}"
-    );
-    assert variants["key_then_reverse"] == ["ccc", "bb", "a"] , (
-        f"sorted(xs, key=f, reverse=True) mismatch: {variants}\njs:\n{js_code}"
-    );
-    assert variants["reverse_then_key"] == variants["key_then_reverse"] , (
-        "swapping keyword-argument order must not change the result:\n"
-        f"{variants}\njs:\n{js_code}"
-    );
-
-    assert got["round_kwarg"] == 3.14 , got;
-    assert got["sum_kwarg"] == 16 , got;
-    assert got["enumerate_kwarg"] == [[5, "x"], [6, "y"]] , got;
-
-    assert_balanced_syntax(js_code, "builtin_kwargs_order.jac");
 }
 
 test "getattr default with or/and emits parenthesized nullish coalescing (#6562)" {
