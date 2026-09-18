@@ -71,6 +71,8 @@ def builtins_introspection_py -> dict {
         "type_bool_isnot_int": 1 if type(True) is not int else 0,
         "type_arch_is": 1 if type(o) is _I else 0,
         "type_arch_name": type(o).__name__,
+        # type() of a builtin type object is `type` itself (#8887 review).
+        "type_of_type_is_type": 1 if type(str) is type else 0,
         "isinstance_dict_t": 1 if isinstance({"a": 1}, dict) else 0,
         # emit_repr
         "repr_42": repr(42),
@@ -118,6 +120,7 @@ def builtins_introspection_cl -> dict {
         "type_bool_isnot_int": 1 if type(True) is not int else 0,
         "type_arch_is": 1 if type(o) is _I else 0,
         "type_arch_name": type(o).__name__,
+        "type_of_type_is_type": 1 if type(str) is type else 0,
         "isinstance_dict_t": 1 if isinstance({"a": 1}, dict) else 0
     };
 }
@@ -125,4 +128,18 @@ def builtins_introspection_cl -> dict {
 
 def builtins_introspection_na -> dict[str, any] {
     return {};
+}
+
+"""Known type()-identity gaps (#8887 review): a tuple lowers to a plain
+array and JS has one `number` type, so these read the opposite of
+Python. Pinned so closing or regressing either is a conscious update.
+"""
+def type_identity_known_gaps_cl -> dict {
+    t: tuple = (1, 2);
+    f: float = 3.0;
+    return {
+        "type_tuple_is_list": 1 if type(t) is list else 0,
+        "type_tuple_is_tuple": 1 if type(t) is tuple else 0,
+        "type_float_is_float": 1 if type(f) is float else 0
+    };
 }

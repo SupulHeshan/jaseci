@@ -310,6 +310,9 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       if (t === "boolean") return "bool";
       if (t === "number") return Number.isInteger(o) ? "int" : "float";
       if (t === "bigint") return "int";
+      // A builtin type object is a tagged function; without this it
+      // falls through to the JS `Function` constructor below.
+      if (t === "function" && o.__jac_type__ !== undefined) return "type";
       if (_jac.poly._isPlainObject(o)) return "dict";
       if (t === "object") return (o.constructor && o.constructor.name) || "object";
       return t;
@@ -1258,18 +1261,15 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       return false;
     },
     // `x`'s actual type object -- the same singleton a bare type name lowers
-    // to, so `type(x) is str` is a plain identity check.
+    // to, so `type(x) is str` is a plain identity check. __name__ is set at
+    // declaration time, not here, so this never mutates what it inspects.
     type(o) {
       const tag = _jac.poly._typename(o); // own-property: skip inherited "constructor"
       if (Object.prototype.hasOwnProperty.call(_jac.types, tag)) {
         return _jac.types[tag];
       }
       if (o !== null && o !== undefined && o.constructor) {
-        const ctor = o.constructor;
-        if (!Object.prototype.hasOwnProperty.call(ctor, "__name__")) {
-          ctor.__name__ = ctor.name; // archetypes get a __name__ too
-        }
-        return ctor;
+        return o.constructor;
       }
       return _jac.types.object;
     },
