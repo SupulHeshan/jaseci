@@ -71,6 +71,14 @@ walker SyncInventory {
 
 A `STATIC` schedule needs exactly one of `interval`, `cron`, or `date`. A `DYNAMIC` target takes no timing arguments in code; the timing arrives later with each API call.
 
+The server checks every `@schedule` when it starts and refuses to start, listing each offending target, if a schedule has no timing or more than one kind of it, an `interval` that is not a positive number of seconds, a `cron` expression it cannot honour (see [Cron Expressions](#cron-expressions)), a `date` that is not an ISO date-time, or timing arguments on a `DYNAMIC` target:
+
+```
+cannot start the server:
+  - @schedule on 'bad_minute': cron '60 * * * *': minute value 60 is outside 0-59
+  - @schedule on 'spin': interval must be a positive number of seconds, got 0
+```
+
 Scheduled walkers are spawned on a graph root when they fire, so they need an ability with a `Root entry`. Scheduled functions are called with no arguments.
 
 ## Static Schedules
@@ -101,7 +109,7 @@ def year_end_cleanup -> None {
 ```
 
 !!! warning
-    A static `date` that has already passed by the time the server boots is dropped without an error: the task is simply never registered, and the startup log counts one fewer static task. Since a bare timestamp is read in the server's local timezone, a time meant as UTC can land in the past on a server running east of UTC. Pin the offset to avoid this.
+    A static `date` that has already passed by the time the server boots is not an error, since a restart after the date is normal. The server logs a warning naming the target and does not register it. Since a bare timestamp is read in the server's local timezone, a time meant as UTC can land in the past on a server running east of UTC. Pin the offset to avoid this.
 
 Static tasks run as the system user. Use them for app-wide work such as cache warming, digests, and cleanup, not for per-user logic.
 
@@ -121,7 +129,7 @@ Cron schedules use the standard 5-field layout, always interpreted in UTC:
 * * * * *
 ```
 
-Each field accepts `*` (any), `*/n` (every n steps), `a-b` (range), and `a,b,c` (list).
+Each field accepts `*` (any), `*/n` (every n steps), `a-b` (range), and `a,b,c` (list). Every number must lie in the field's range. The server refuses to start on anything else, such as `60` in the minute field, a stepped range like `1-5/2`, or a day that never occurs in the listed months (`0 0 30 2 *`). A rare but real date is fine: `0 0 29 2 *` runs on the next February 29 however many years away it is.
 
 | Expression | Meaning |
 |------------|---------|
@@ -342,6 +350,8 @@ collection = "scheduled_jobs"
 thread_pool_size = 10
 misfire_grace_time = 60
 shutdown_timeout = 10
+min_interval = 1.0
+max_jobs_per_user = 25
 ```
 
 | Key | Default | Meaning |
@@ -353,6 +363,8 @@ shutdown_timeout = 10
 | `shutdown_timeout` | `10` | Seconds to wait for in-flight jobs when the server stops |
 | `system_user_password` | `"__no_login__"` | Password assigned to the internal `__system__` account that static tasks run as, created on first boot. The default is a sentinel; set a real value if you need to log in as that account |
 | `user_exists_ttl` | `30.0` | Seconds the scheduler caches the creator-still-exists check for dynamic jobs before re-querying the user store |
+| `min_interval` | `1.0` | Shortest interval a dynamic job may ask for, in seconds. `POST`/`PUT /jobs` answer `400` below it, and a stored row asking for less is clamped to it when scheduled. A value that is not a finite number above zero is reported at boot and the default is used, so the floor cannot be switched off by a typo |
+| `max_jobs_per_user` | `25` | Active jobs one non-admin account may hold. `POST /jobs` answers `429 QUOTA_EXCEEDED` at the cap; admins are exempt and `0` means unlimited. The count and the write happen together in the job store, serialised per account, so concurrent requests cannot race past the cap. A value that is not a whole number of zero or more is reported at boot and the default is used, so a fractional typo cannot round down into `0` and lift the cap |
 
 ## Behavior Notes
 
