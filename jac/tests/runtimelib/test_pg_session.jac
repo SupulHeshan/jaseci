@@ -15,6 +15,8 @@ import from jaclang.runtime.graph_query { GraphQuery, QHop }
 import from jaclang.runtime.runtime { JacRuntime }
 import from jaclang.runtime.context { ExecutionContext }
 import from jaclang.data.query_planner { resolve_query }
+import from jaclang.server.session { Session }
+import from typing { cast }
 
 def _as_any(v: any) -> any {
     return v;
@@ -58,9 +60,9 @@ def _root(ctx: ExecutionContext) -> NodeAnchor {
 }
 
 
-def _out_items(ctx: ExecutionContext, ranch: NodeAnchor) -> list {
+def _out_items(ctx: ExecutionContext, ranch: NodeAnchor) -> list[any] {
     q = GraphQuery(ranch.archetype, hops=[QHop(dir=2, nd=SItem)]);
-    return resolve_query(ctx.mem, q);
+    return resolve_query(cast(Session, ctx.mem), q);
 }
 
 
@@ -232,7 +234,7 @@ test "read barrier hashes only dirty anchors, not the whole session" {
         ctx = _make_ctx(td);
         JacRuntime.exec_ctx = ctx;
         orig = smod._persist_hash;
-        calls: list = [];
+        calls: list[int] = [];
         def counting_hash(anchor: Anchor) -> int {
             calls.append(1);
             return orig(anchor);
@@ -278,7 +280,7 @@ test "on_commit fires exactly once, after successful commit" {
         JacRuntime.exec_ctx = ctx;
         try {
             _root(ctx);
-            fired: list = [];
+            fired: list[int] = [];
             ctx.mem.on_commit(lambda { fired.append(1); });
             assert fired == [];
             ctx.mem.commit();

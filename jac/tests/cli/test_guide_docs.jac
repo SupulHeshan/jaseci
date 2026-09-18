@@ -81,7 +81,7 @@ test "nav manifest and corpus files agree exactly" {
     assert manifest["version"] == 1;
 
     pages: list[str] = [];
-    def walk(items: list[dict]) {
+    def walk(items: list[dict[str, any]]) {
         for `entry in items {
             assert `entry.get("title") , f"nav entry missing a title: {`entry}";
             if "page" in `entry {
@@ -105,6 +105,40 @@ test "nav manifest and corpus files agree exactly" {
         f"only on disk: {sorted(on_disk - nav_set)}"
     );
     assert len(pages) == len(set(pages)) , "duplicate pages in nav.json";
+}
+
+
+test "nav_pages flattens the manifest in reading order with section trails" {
+    import from jaclang.cli.guide_store { docs_dir, nav_manifest, nav_pages }
+    manifest = nav_manifest();
+    assert manifest.get("version") == 1 , "nav_manifest did not load nav.json";
+    pages = nav_pages();
+    assert pages , "nav_pages returned nothing";
+    assert [p.order for p in pages] == list(range(len(pages)));
+    for p in pages {
+        assert p.title , f"{p.page} has no title";
+        assert p.section , f"{p.page} has no section trail";
+        assert (docs_dir() / p.page).is_file() , f"{p.page} is not in the corpus";
+    }
+    assert len({p.page for p in pages}) == len(pages) , "duplicate pages";
+    on_disk = len(list(docs_dir().rglob("*.md")));
+    assert len(pages) == on_disk , f"nav lists {len(pages)} pages, corpus has {on_disk}";
+}
+
+
+test "guide --nav prints the tree and --nav --json emits the manifest" {
+    payload = _capture_json(lambda { guide(nav=True, as_json=True); });
+    assert payload["version"] == 1;
+    assert payload["nav"] , "manifest has no nav sections";
+
+    buf = io.StringIO();
+    with redirect_stdout(buf) {
+        rc = guide(nav=True);
+    }
+    out = buf.getvalue();
+    assert rc == 0;
+    assert "Bundled docs navigation" in out , "nav header missing";
+    assert "[quick-guide/index]" in out , "nav tree lacks the quick-guide index";
 }
 
 
@@ -304,4 +338,7 @@ test "mcp resources index the docs corpus" {
     assert "jac://guide/jac-types" in uris , "skill guides missing from MCP";
     content = provider.read_resource("jac://docs/reference/diagnostics");
     assert "diagnostic" in content.lower();
+    assert "jac://docs/nav" in uris , "nav manifest missing from MCP";
+    nav = json.loads(provider.read_resource("jac://docs/nav"));
+    assert nav["version"] == 1 and nav["nav"];
 }

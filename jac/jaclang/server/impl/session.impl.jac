@@ -1,4 +1,4 @@
-def _toml_section(base_path: (str | None), section: str) -> dict {
+def _toml_section(base_path: (str | None), section: str) -> dict[str, any] {
     if not base_path {
         return {};
     }
@@ -20,7 +20,7 @@ def _toml_section(base_path: (str | None), section: str) -> dict {
 
 
 impl promotions_for(base_path: (str | None)) -> dict[str, list[str]] {
-    raw = _toml_section(base_path, 'database').get('indexes') or {};
+    raw: any = _toml_section(base_path, 'database').get('indexes') or {};
     out: dict[str, list[str]] = {};
     for (arch, fields_l) in raw.items() {
         if isinstance(fields_l, list) {
@@ -74,7 +74,10 @@ impl scratch_requested(base_path: (str | None)) -> bool {
         not in ('', '0', 'false', 'no') {
         return True;
     }
-    return bool(base_path) and os.path.abspath(base_path) in _scratch_bases;
+    if not base_path {
+        return False;
+    }
+    return os.path.abspath(base_path) in _scratch_bases;
 }
 
 
@@ -86,7 +89,8 @@ impl scratch_lease(base_path: str) -> ScratchLease {
         _scratch.append(
             ScratchState(
                 database=f"{SCRATCH_PREFIX}{os.getpid()}_{secrets.token_hex(3)}",
-                base_path=base
+                base_path=base,
+                owner_pid=os.getpid()
             )
         );
         atexit.register(drop_scratch_database);
@@ -101,6 +105,10 @@ impl scratch_lease(base_path: str) -> ScratchLease {
 
 impl drop_scratch_database -> None {
     if not _scratch {
+        return;
+    }
+    if _scratch[0].owner_pid != os.getpid() {
+        _scratch.clear();
         return;
     }
     state = _scratch.pop();
@@ -235,14 +243,9 @@ def _persist_hash(anchor: Anchor) -> int {
 
 
 impl Session.postinit -> None {
-    import threading;
-    self._lock = threading.RLock();
+    self._init_memory();
     self._fetch_count = 0;
-    self.__mem__ = {};
-    self._dirty = {};
-    self._deleted = set();
     self._flushed_hash = {};
-    self._on_commit = [];
     self._txn_changed = set();
     self._runtime = None;
     self._active_units = 0;
@@ -294,11 +297,6 @@ impl Session.data_location -> (str | None) {
 }
 
 
-impl Session.is_available -> bool {
-    return True;
-}
-
-
 impl Session.get(id: UUID) -> (Anchor | None) {
     if id in self._deleted {
         return None;
@@ -310,23 +308,6 @@ impl Session.get(id: UUID) -> (Anchor | None) {
         return None;
     }
     return self.batch_get([id]).get(id);
-}
-
-
-impl Session.put(anchor: Anchor) -> None {
-    aid = anchor.ensure_id();
-    with self._lock {
-        self.__mem__[aid] = anchor;
-        self._dirty[aid] = None;
-        self._deleted.discard(aid);
-    }
-}
-
-
-impl Session.mark_dirty(anchor: Anchor) -> None {
-    if anchor.id in self.__mem__ {
-        self._dirty[anchor.id] = None;
-    }
 }
 
 
@@ -364,17 +345,6 @@ impl Session.`has(id: UUID) -> bool {
 }
 
 
-impl Session.query(
-    filter: (Callable[[Anchor], bool] | None) = None
-) -> Generator[Anchor, None, None] {
-    for anchor in list(self.__mem__.values()) {
-        if filter is None or filter(anchor) {
-            yield anchor;
-        }
-    }
-}
-
-
 impl Session.get_roots -> Generator[Root, None, None] {
     seen: set[UUID] = set();
     for anchor in list(self.__mem__.values()) {
@@ -392,33 +362,12 @@ impl Session.get_roots -> Generator[Root, None, None] {
         ];
         root_rows = self.store.load_full(remote);
         for (rid, row) in root_rows.items() {
-            anchor = self._materialize(row, edge_ids=row.adjacency);
+            anchor = self._materialize(row);
             if anchor is not None and isinstance(anchor.archetype, Root) {
                 yield anchor.archetype;
             }
         }
     }
-}
-
-
-impl Session.find(
-    ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-) -> Generator[Anchor, None, None] {
-    id_list = [ids] if isinstance(ids, UUID) else list(ids);
-    for id in id_list {
-        if (anchor := self.get(id)) {
-            if filter is None or filter(anchor) {
-                yield anchor;
-            }
-        }
-    }
-}
-
-
-impl Session.find_one(
-    ids: (UUID | Iterable[UUID]), filter: (Callable[[Anchor], Anchor] | None) = None
-) -> (Anchor | None) {
-    return next(self.find(ids, filter), None);
 }
 
 
@@ -441,7 +390,7 @@ impl Session.batch_get(ids: list[UUID]) -> dict[UUID, Anchor] {
                 self.read_barrier();
                 loaded = self.store.load_full(missing);
                 for (rid, row) in loaded.items() {
-                    anchor = self._materialize(row, edge_ids=row.adjacency);
+                    anchor = self._materialize(row);
                     if anchor is not None {
                         self._fetch_count += 1;
                         out[rid] = anchor;
@@ -526,11 +475,6 @@ impl Session._evict_uncommitted -> None {
 }
 
 
-impl Session.get_mem -> dict[UUID, Anchor] {
-    return self.__mem__;
-}
-
-
 impl Session.quarantine_ref(referrer: (Anchor | None), stub: Anchor) -> None {
     import from jaclang.runtime.osp_graph_sv { sv_forget_by_id }
     sid = stub.ensure_id();
@@ -542,54 +486,6 @@ impl Session.quarantine_ref(referrer: (Anchor | None), stub: Anchor) -> None {
             );
         } except Exception as e {
             logger.debug(f"quarantine record failed: {e}");
-        }
-    }
-}
-
-
-impl Session.is_recoverable_quarantine(id: UUID) -> bool {
-    return False;
-}
-
-
-impl Session.aget(id: UUID) -> (Anchor | None) {
-    return self.get(id);
-}
-
-
-impl Session.aput(anchor: Anchor) -> None {
-    self.put(anchor);
-}
-
-
-impl Session.adelete(id: UUID) -> None {
-    self.delete(id);
-}
-
-
-impl Session.ahas(id: UUID) -> bool {
-    return self.`has(id);
-}
-
-
-impl Session.acommit(anchor: (Anchor | None) = None) -> None {
-    self.commit(anchor);
-}
-
-
-impl Session.on_commit(callback: Callable) -> None {
-    self._on_commit.append(callback);
-}
-
-
-impl Session._fire_on_commit -> None {
-    fired = self._on_commit;
-    self._on_commit = [];
-    for cb in fired {
-        try {
-            cb();
-        } except Exception as e {
-            logger.warning(f"on_commit callback failed: {type(e).__name__}: {e}");
         }
     }
 }
@@ -856,16 +752,7 @@ impl Session._flush_locked(full: bool) -> None {
             pending.append((anchor, h));
         }
         if rows or self._deleted {
-            if self.store.txn_isolation() is TxnIsolation.SNAPSHOT_READ_ONLY {
-                if self._ro_units > 0 {
-                    self._raise_ro_retry();
-                }
-                self.store.commit();
-                self._drop_snapshot_reads();
-                self.store.begin(TxnIsolation.SERIALIZABLE);
-            } else {
-                self._ensure_txn();
-            }
+            self.ensure_writable_txn();
         }
         if rows {
             self.store.upsert(rows);
@@ -932,9 +819,8 @@ impl Session._serialize(anchor: Anchor) -> AnchorRow {
 }
 
 
-impl Session._materialize(
-    row: AnchorRow, edge_ids: (list[UUID] | None) = None
-) -> (Anchor | None) {
+impl Session._materialize(row: AnchorRow) -> (Anchor | None) {
+    import from functools { partial }
     import from jaclang.data.serializer { Serializer }
     existing = self.__mem__.get(row.id);
     if existing is not None and existing.is_populated() {
@@ -955,23 +841,11 @@ impl Session._materialize(
         return None;
     }
     anchor: Anchor = got;
-    if isinstance(anchor, NodeAnchor) and self.store is not None {
-        adj = edge_ids if edge_ids is not None else [];
-        live = [
-            i
-            for i in adj
-            if i not in self._deleted
-        ];
-        edges = [];
-        for eid in live {
-            if (stub := Serializer._id_to_stub(EdgeAnchor, str(eid))) is not None
-                and isinstance(stub, EdgeAnchor) {
-                edges.append(stub);
-            }
-        }
-        anchor.edges = edges;
-    }
     if isinstance(anchor, NodeAnchor) {
+        if self.store is not None {
+            anchor.__dict__.pop('edges', None);
+            anchor.__dict__['_edge_loader'] = partial(self._load_edges, anchor);
+        }
         anchor.version = row.version;
     }
     self._version_seen[row.id] = row.version;
@@ -985,6 +859,61 @@ impl Session._materialize(
     return anchor;
 }
 
+
+impl Session._load_edges(nd: NodeAnchor) -> list[EdgeAnchor] {
+    import from jaclang.data.serializer { Serializer }
+    loaded = nd.__dict__.get('edges');
+    if loaded is not None {
+        return loaded;
+    }
+    ids: list[UUID] = [];
+    if self.store is not None and nd.id is not None {
+        self.read_barrier();
+        after: (tuple[int, UUID] | None) = None;
+        while True {
+            page = self.store.adjacency(nd.id, after, EDGE_PAGE);
+            for (seq, eid) in page {
+                if eid not in self._deleted {
+                    ids.append(eid);
+                }
+            }
+            if len(page) < EDGE_PAGE {
+                break;
+            }
+            after = page[-1];
+        }
+    }
+    edges: list[EdgeAnchor] = [];
+    for eid in ids {
+        stub = Serializer._id_to_stub(EdgeAnchor, str(eid));
+        if isinstance(stub, EdgeAnchor) {
+            edges.append(stub);
+        }
+    }
+    nd.__dict__['edges'] = edges;
+    nd.__dict__['_initial_edge_ids'] = frozenset(ids);
+    nd.__dict__.pop('_edge_loader', None);
+    return edges;
+}
+
+
+impl Session.ensure_writable_txn -> None {
+    with self._lock {
+        if self.store is None {
+            return;
+        }
+        if self.store.txn_isolation() is TxnIsolation.SNAPSHOT_READ_ONLY {
+            if self._ro_units > 0 {
+                self._raise_ro_retry();
+            }
+            self.store.commit();
+            self._drop_snapshot_reads();
+            self.store.begin(TxnIsolation.SERIALIZABLE);
+        } elif not self.store.in_txn() {
+            self.store.begin(TxnIsolation.SERIALIZABLE);
+        }
+    }
+}
 
 impl Session.run_request(body: Callable) -> any {
     attempt = 0;

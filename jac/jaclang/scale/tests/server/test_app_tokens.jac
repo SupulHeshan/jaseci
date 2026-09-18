@@ -14,11 +14,7 @@ import uuid;
 import requests;
 import from concurrent.futures { ThreadPoolExecutor }
 import from pathlib { Path }
-import from jaclang.scale.tests.server_support {
-    get_free_port,
-    register_user,
-    start_server
-}
+import from jaclang.scale.tests.support { get_free_port, register_user, start_server }
 
 glob FIXTURES_DIR: Path = Path(__file__).parent.parent / "fixtures" / "app_tokens";
 
@@ -78,7 +74,7 @@ def _prewarm {
     }
 }
 
-def _call(base: str, name: str, token: str, payload: dict) -> dict {
+def _call(base: str, name: str, token: str, payload: dict[str, any]) -> dict[str, any] {
     res = requests.post(
         f"{base}/function/{name}",
         json=payload,

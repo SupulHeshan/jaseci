@@ -510,7 +510,10 @@ obj OspGraph {
         if row.src == origin {
             return row.tgt;
         }
-        return row.src;
+        if row.tgt == origin {
+            return row.src;
+        }
+        return -1;
     }
 
     def _unlink(rid: int) {
@@ -806,6 +809,45 @@ def _new_graph -> OspGraph {
 }
 
 glob DEFAULT_GRAPH: OspGraph = _new_graph();
+
+def osp_adj_pairs(origin: int, dir: int) -> list[int] {
+    out: list[int] = [];
+    if origin in DEFAULT_GRAPH.adj {
+        a: Adj = DEFAULT_GRAPH.adj[origin];
+        if dir == 2 {
+            for rid in a.rows_out {
+                row: EdgeRow = DEFAULT_GRAPH.rows[rid];
+                if row.live {
+                    out.append(row.tag);
+                    out.append(row.tgt);
+                }
+            }
+            for k in a.out {
+                peers: list[int] = a.out[k];
+                for t in peers {
+                    out.append(k);
+                    out.append(t);
+                }
+            }
+        } else {
+            for rid in a.rows_in {
+                row: EdgeRow = DEFAULT_GRAPH.rows[rid];
+                if row.live {
+                    out.append(row.tag);
+                    out.append(row.src);
+                }
+            }
+            for k in a.inn {
+                srcs: list[int] = a.inn[k];
+                for t in srcs {
+                    out.append(k);
+                    out.append(t);
+                }
+            }
+        }
+    }
+    return out;
+}
 
 def osp_has_edge(eh: int) -> int {
     return 1 if DEFAULT_GRAPH.has_edge(eh) else 0;

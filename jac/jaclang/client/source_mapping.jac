@@ -67,6 +67,23 @@ def generate_source_map_json(
             }
         );
     }
+
+    segments = [
+        s
+        for s in segments
+        if s[2] >= 1 and s[3] >= 1
+    ];
+    if not segments {
+        return json.dumps(
+            {
+                "version": 3,
+                "file": output_file,
+                "sources": [source_file],
+                "names": [],
+                "mappings": ""
+            }
+        );
+    }
     by_line: dict[int, list[tuple[int, int, int, int, str]]] = {};
     for seg in segments {
         by_line.setdefault(seg[0], []).append(seg);
@@ -378,7 +395,7 @@ obj SourceMapper {
             for map_file in compiled_dir.rglob("*.js.map") {
                 try {
                     with open(map_file, encoding="utf-8") as f {
-                        raw: dict = dict(json.load(f));
+                        raw: dict[str, any] = dict(json.load(f));
                     }
                     sources: list[str] = list(raw.get("sources", []));
                     mappings: str = str(raw.get("mappings", ""));
@@ -407,7 +424,7 @@ obj SourceMapper {
             for map_file in dist_dir.`glob("*.js.map") {
                 try {
                     with open(map_file, encoding="utf-8") as f {
-                        raw: dict = dict(json.load(f));
+                        raw: dict[str, any] = dict(json.load(f));
                     }
                     sources: list[str] = list(raw.get("sources", []));
                     mappings: str = str(raw.get("mappings", ""));
@@ -732,7 +749,7 @@ obj JacLocator {
 
     def _load_map(rel: str) -> (SourceMap | None) {
         try {
-            raw: dict = dict(
+            raw: dict[str, any] = dict(
                 json.loads(
                     (self.compiled_dir / (rel + ".map")).read_text(encoding="utf-8")
                 )

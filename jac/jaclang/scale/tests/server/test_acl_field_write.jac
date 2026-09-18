@@ -15,11 +15,7 @@ import time;
 import uuid;
 import requests;
 import from pathlib { Path }
-import from jaclang.scale.tests.server_support {
-    get_free_port,
-    register_user,
-    start_server
-}
+import from jaclang.scale.tests.support { get_free_port, register_user, start_server }
 
 glob FIXTURES_DIR: Path = Path(__file__).parent.parent
          / "fixtures"
@@ -82,7 +78,9 @@ def _prewarm {
 }
 
 """POST /function/<name> with a bearer token; return the full response body."""
-def _call(base_url: str, name: str, token: str, payload: dict) -> dict {
+def _call(
+    base_url: str, name: str, token: str, payload: dict[str, any]
+) -> dict[str, any] {
     res = requests.post(
         f"{base_url}/function/{name}",
         json=payload,
@@ -97,7 +95,7 @@ def _call(base_url: str, name: str, token: str, payload: dict) -> dict {
     return body;
 }
 
-def _result(body: dict) -> dict {
+def _result(body: dict[str, any]) -> dict[str, any] {
     data = body.get("data");
     assert isinstance(data, dict) , f"no data in {body!r}";
     result = data.get("result");
@@ -105,7 +103,7 @@ def _result(body: dict) -> dict {
     return result;
 }
 
-def _field_write_denials(body: dict) -> list {
+def _field_write_denials(body: dict[str, any]) -> list[any] {
     data = body.get("data");
     warnings = data.get("warnings", []) if isinstance(data, dict) else [];
     return [

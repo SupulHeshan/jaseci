@@ -1,4 +1,5 @@
 """Tests for Jac Loader."""
+import from jaclang.compiler.driver.compilation_context { artifact_cache_path }
 
 import io;
 import os;
@@ -19,7 +20,6 @@ import from jaclang.cli.commands { analysis }
 import from jaclang.compiler.driver.program { JacProgram }
 import from jaclang.compiler.driver.compiler { JacCompiler }
 import from jaclang.compiler.driver.jir {
-    get_module_cache_path,
     read_bytecode_only,
     SEC_LLVM_IR,
     SEC_PLACEMENT,
@@ -271,7 +271,7 @@ test "get bytecode uses JIR cache on second call" {
         assert code1 is not None , "First compilation should succeed";
 
         # JIR cache should exist and contain bytecode section
-        cache_path = get_module_cache_path(jac_file);
+        cache_path = artifact_cache_path(jac_file, JacProgram());
         assert cache_path.exists() , "JIR cache file should exist after first compile";
         jir_data = cache_path.read_bytes();
         bc = read_bytecode_only(jir_data);
@@ -284,7 +284,7 @@ test "get bytecode uses JIR cache on second call" {
         assert marshal.dumps(code1) == marshal.dumps(code2);
     } finally {
         os.unlink(jac_file);
-        cache_path2 = get_module_cache_path(jac_file);
+        cache_path2 = artifact_cache_path(jac_file, JacProgram());
         if cache_path2.exists() {
             cache_path2.unlink();
         }
@@ -316,7 +316,7 @@ test "pyi stubs derive identically in every process" {
 
         import from jaclang.compiler.frontend.unitree { Archetype }
         import from jaclang.compiler.frontend.constant { Tokens as Tok }
-        foo2: list = [];
+        foo2: list[any] = [];
         for a in mod2.get_all_sub_nodes(Archetype) {
             if a.name is not None and a.name.value == "Foo" {
                 foo2.append(a);
@@ -468,7 +468,7 @@ test "resolve_import_source_module never compiles pyi stubs" {
 
 """A cache newer than its source is not thereby valid: the mtime covers the
 source bytes only, so every environment input the module key folds in (the node
-schema, the codegen fingerprint, the placement/cut/codespace facts) must be
+schema, the analysis fingerprint, the placement/cut/codespace facts) must be
 compared before the mtime fast path can accept the file.  #8181 shortened a
 NODE_SPECS entry by one field, which a fresh-mtime cache written under the old
 schema would then be decoded against, position by position."""
@@ -487,7 +487,7 @@ test "fresh mtime does not admit a cache written under a different environment" 
     try {
         compiler = JacCompiler();
         assert compiler.get_bytecode(jac_file, JacProgram()) is not None;
-        cache_path = get_module_cache_path(jac_file);
+        cache_path = artifact_cache_path(jac_file, JacProgram());
         assert cache_path.exists() , "JIR cache was not written";
         assert os.path.getmtime(cache_path) > os.path.getmtime(jac_file) , (
             "cache must be newer than source for the mtime fast path to apply"
@@ -509,12 +509,29 @@ test "fresh mtime does not admit a cache written under a different environment" 
             "restoring the compiler digest should restore validity"
         );
 
+        import from jaclang.compiler.driver.compile_options {
+            push_native_target,
+            pop_native_target
+        }
+        prev_tgt = push_native_target("wasm32-unknown-unknown");
+        try {
+            assert not is_module_cache_valid(jac_file, cache_path) , (
+                "a fresh mtime served a cache written under a different "
+                "analysis fingerprint"
+            );
+        } finally {
+            pop_native_target(prev_tgt);
+        }
+        assert is_module_cache_valid(jac_file, cache_path) , (
+            "restoring the analysis fingerprint should restore validity"
+        );
+
         prev_opt = os.environ.get("JAC_OPT_LEVEL");
         try {
             os.environ["JAC_OPT_LEVEL"] = "0" if prev_opt != "0" else "1";
-            assert not is_module_cache_valid(jac_file, cache_path) , (
-                "a fresh mtime served a cache written under a different "
-                "codegen fingerprint"
+            assert is_module_cache_valid(jac_file, cache_path) , (
+                "a native-only codegen knob (opt level) must not invalidate "
+                "a bytecode cache"
             );
         } finally {
             if prev_opt is None {
@@ -523,12 +540,9 @@ test "fresh mtime does not admit a cache written under a different environment" 
                 os.environ["JAC_OPT_LEVEL"] = prev_opt;
             }
         }
-        assert is_module_cache_valid(jac_file, cache_path) , (
-            "restoring the codegen fingerprint should restore validity"
-        );
     } finally {
         os.unlink(jac_file);
-        cache_path2 = get_module_cache_path(jac_file);
+        cache_path2 = artifact_cache_path(jac_file, JacProgram());
         if cache_path2.exists() {
             cache_path2.unlink();
         }
@@ -555,6 +569,7 @@ def _cached_pins(jir_bytes: bytes) -> dict[str, str] {
 
 test "editing placement pins in jac.toml invalidates the module cache" {
     import from jaclang.compiler.driver.jir { is_module_cache_valid }
+    import from jaclang.compiler.driver.compilation_context { cache_scope, program_for }
     with tempfile.TemporaryDirectory(dir=_test_tmp_dir) as proj {
         toml_path = os.path.join(proj, "jac.toml");
         jac_file = os.path.join(proj, "m.jac");
@@ -569,37 +584,39 @@ test "editing placement pins in jac.toml invalidates the module cache" {
         os.utime(toml_path, (past, past));
         compiler = JacCompiler();
         assert compiler.get_bytecode(jac_file, JacProgram()) is not None;
-        cache_path = get_module_cache_path(jac_file);
+        cache_path = artifact_cache_path(jac_file, JacProgram());
+        cache_program = program_for(jac_file, JacProgram());
         try {
-            assert cache_path.exists() , "JIR cache was not written";
-            assert os.path.getmtime(cache_path) > os.path.getmtime(jac_file) , (
-                "cache must be newer than source for the mtime fast path to apply"
-            );
-            assert is_module_cache_valid(jac_file, cache_path) , (
-                "fresh cache should be valid"
-            );
-
-            stale = cache_path.read_bytes();
-            assert _cached_pins(stale).get("helper_fn", "") == "" , (
-                "the pre-edit placement summary should carry no pin"
-            );
-            with open(toml_path, "a") as f {
-                f.write('\n[placement.pins]\n"m.helper_fn" = "server"\n');
+            with cache_scope(cache_program.context_key, cache_program.options) {
+                assert cache_path.exists() , "JIR cache was not written";
+                assert os.path.getmtime(cache_path) > os.path.getmtime(jac_file) , (
+                    "cache must be newer than source for the mtime fast path to apply"
+                );
+                assert is_module_cache_valid(jac_file, cache_path) , (
+                    "fresh cache should be valid"
+                );
+                stale = cache_path.read_bytes();
+                assert _cached_pins(stale).get("helper_fn", "") == "" , (
+                    "the pre-edit placement summary should carry no pin"
+                );
+                with open(toml_path, "a") as f {
+                    f.write('\n[placement.pins]\n"m.helper_fn" = "server"\n');
+                }
+                assert not is_module_cache_valid(jac_file, cache_path) , (
+                    "a jac.toml pins edit must invalidate the module cache"
+                );
+                assert compiler.get_bytecode(jac_file, JacProgram()) is not None;
+                assert cache_path.read_bytes() != stale , (
+                    "a recompile must overwrite the stale cache entry"
+                );
+                assert is_module_cache_valid(jac_file, cache_path) , (
+                    "the rewritten cache must be valid under the new pins"
+                );
+                assert _cached_pins(cache_path.read_bytes()).get("helper_fn")
+                    == "server" , (
+                    "the recompiled placement summary must honor the new pin"
+                );
             }
-            assert not is_module_cache_valid(jac_file, cache_path) , (
-                "a jac.toml pins edit must invalidate the module cache"
-            );
-
-            assert compiler.get_bytecode(jac_file, JacProgram()) is not None;
-            assert cache_path.read_bytes() != stale , (
-                "a recompile must overwrite the stale cache entry"
-            );
-            assert is_module_cache_valid(jac_file, cache_path) , (
-                "the rewritten cache must be valid under the new pins"
-            );
-            assert _cached_pins(cache_path.read_bytes()).get("helper_fn") == "server" , (
-                "the recompiled placement summary must honor the new pin"
-            );
         } finally {
             if cache_path.exists() {
                 cache_path.unlink();
@@ -626,9 +643,18 @@ test "stub module cache key is source focused" {
         assert stub_key == module_cache_key(stub_file) , (
             "module_cache_key should use stub key for .pyi"
         );
-        jac_key = compute_module_key(stub_file);
+        jac_probe = stub_file[:-4] + ".jac";
+        with open(jac_probe, "w") as jac_tmp {
+            jac_tmp.write("class KeyProbe:\n    k: int\n");
+        }
+        try {
+            jac_key = compute_module_key(jac_probe);
+        } finally {
+            os.unlink(jac_probe);
+        }
         assert stub_key != jac_key , (
-            "stub cache key should not include placement/client config"
+            "a project module's key folds in placement/client config; "
+            "a stub's key must not"
         );
     } finally {
         os.unlink(stub_file);
@@ -712,7 +738,7 @@ test "get_bytecode busts in-memory hub when .impl.jac changes" {
         def tag_of -> int {
             code = compiler.get_bytecode(mod, prog);
             assert code is not None , "get_bytecode returned None";
-            ns: dict = {};
+            ns: dict[str, any] = {};
             exec(code, ns);
             return ns["Thing"]().get_tag();
         }

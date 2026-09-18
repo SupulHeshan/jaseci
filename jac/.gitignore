@@ -25,6 +25,9 @@ downloads/
 eggs/
 .eggs/
 lib/
+# ...but the jac-shadcn registry ships one: its component templates
+# import `...lib.utils`, so the module that placeholder names is source.
+!jaclang/cli/shadcn/registry/lib/
 lib64/
 parts/
 sdist/
@@ -73,6 +76,7 @@ out.txt
 zig-out/
 /dist/
 .pbs-build/
+.python-build/
 # Pinned bun fetched per target by the payload tool's fetch-bun subcommand
 # (jaclang/dist/payload/) and bundled into the payload (never committed). See
 # build.zig's fetch-bun step.
@@ -97,6 +101,17 @@ jaclang/vendor/typeshed/stdlib
 libjacllvm.so
 libjacllvm.dylib
 jacllvm.dll
+# Kit-built native compiler kernel (#8824), staged in-tree by mkpayload.
+libjac_compiler.so
+libjac_compiler.dylib
+libjac_compiler.so.layout.json
+libjac_compiler.dylib.layout.json
+# Any other `nacompile --shared` unit that lands in-tree with its layout
+# sidecar (a stray libjac_npy.so was committed once).
+libjac_*.so
+libjac_*.dylib
+libjac_*.so.layout.json
+libjac_*.dylib.layout.json
 # Zig-built libjacpyembed desktop shim, placed in-tree per host platform.
 libjacpyembed.so
 libjacpyembed.dylib
