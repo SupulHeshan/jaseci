@@ -1117,6 +1117,34 @@ test "bridged call duplicate kwarg is a compile error" {
     assert "name" in str(dup_errs[0]) and "greet" in str(dup_errs[0]);
 }
 
+test "builtin duplicate keyword argument is a compile error (#9120)" {
+    # `round(x, 2, ndigits=3)` gives `ndigits` both positionally and by
+    # keyword. Builtins now resolve keyword arguments through the same
+    # by-name slot resolver as bridged/RPC calls above, so this malformed
+    # call is caught as a compile error instead of silently emitting a
+    # 3-argument call to the 2-parameter `_jac.builtin.round` helper.
+    import from jaclang.compiler.driver.program { JacProgram }
+    import from jaclang.compiler.backends.es { EsastGenPass }
+
+    jac_path = write_temp_jac(
+        "def r(x: float) -> float {\n" "    return round(x, 2, ndigits=3);\n" "}\n"
+    );
+    prog = JacProgram();
+    ir = prog.compile(file_path=jac_path, no_cgen=True);
+    run_pass(EsastGenPass, ir, prog);
+
+    dup_errs = [
+        e
+        for e in prog.errors_had
+        if "given both positionally and by keyword" in str(e)
+    ];
+    assert len(dup_errs) == 1 , (
+        "Expected exactly one E5080 collision diagnostic, got "
+        + str([str(e) for e in prog.errors_had])
+    );
+    assert "ndigits" in str(dup_errs[0]) and "round" in str(dup_errs[0]);
+}
+
 test "bridged import nested in a client block emits no dead import" {
     # Regression: a client block clobbered a nested bridged import's SERVER
     # context, making it emit a dead client import of the server.
@@ -2941,6 +2969,62 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     );
 
     assert_balanced_syntax(js_code, "builtin_func_untyped.jac");
+}
+
+test "builtin keyword arguments resolve by name, not source position (#9120)" {
+    # `sorted(xs, reverse=True)` used to lower to `_jac.builtin.sorted(xs,
+    # true)`, mis-slotting `true` into the runtime helper's `key` parameter
+    # (crashing with "key is not a function") because keyword-argument
+    # values were appended to the positional arg list in source order
+    # instead of being resolved by name. The same bug made
+    # `sorted(xs, key=f, reverse=True)` and `sorted(xs, reverse=True,
+    # key=f)` -- logically identical calls -- compile to different (and
+    # sometimes wrong) argument order. This regression test locks in that
+    # keyword resolution is order-independent for `sorted`/`round`/`sum`/
+    # `enumerate`.
+    if not shutil.which("node") {
+        testskip("node not on PATH");
+    }
+    js_code = compile_fixture_to_js("builtin_kwargs_order.jac", FIXTURES);
+
+    wrapper = (
+        js_code
+        + "\nconsole.log(JSON.stringify({"
+        + "  sorted_variants: sorted_variants([\"ccc\", \"a\", \"bb\"]),"
+        + "  round_kwarg: round_kwarg(3.14159),"
+        + "  sum_kwarg: sum_kwarg([1, 2, 3]),"
+        + "  enumerate_kwarg: enumerate_kwarg([\"x\", \"y\"])"
+        + "}));\n"
+    );
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", wrapper],
+        capture_output=True,
+        text=True,
+        timeout=30
+    );
+    assert result.returncode == 0 , (
+        "builtin keyword-argument codegen crashed in Node:\n"
+        f"stderr={result.stderr!r}\njs:\n{js_code}"
+    );
+    got = json.loads(result.stdout.strip());
+
+    variants = got["sorted_variants"];
+    assert variants["reverse_only"] == ["ccc", "bb", "a"] , (
+        f"sorted(xs, reverse=True) mismatch: {variants}\njs:\n{js_code}"
+    );
+    assert variants["key_then_reverse"] == ["ccc", "bb", "a"] , (
+        f"sorted(xs, key=f, reverse=True) mismatch: {variants}\njs:\n{js_code}"
+    );
+    assert variants["reverse_then_key"] == variants["key_then_reverse"] , (
+        "swapping keyword-argument order must not change the result:\n"
+        f"{variants}\njs:\n{js_code}"
+    );
+
+    assert got["round_kwarg"] == 3.14 , got;
+    assert got["sum_kwarg"] == 16 , got;
+    assert got["enumerate_kwarg"] == [[5, "x"], [6, "y"]] , got;
+
+    assert_balanced_syntax(js_code, "builtin_kwargs_order.jac");
 }
 
 test "getattr default with or/and emits parenthesized nullish coalescing (#6562)" {
