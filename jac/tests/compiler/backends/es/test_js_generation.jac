@@ -2912,6 +2912,8 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         + "  min_spread: min_of_spread([5, 1, 3]),"
         + "  min_max_varargs: min_max_varargs(3, 1, 2),"
         + "  sorted_kwargs_order: sorted_kwargs_order([\"ccc\", \"a\", \"bb\"]),"
+        + "  sorted_kwargs_spread: sorted_kwargs_spread("
+        + "[\"ccc\", \"a\", \"bb\"], {key: (s) => s.length}),"
         + "  empty_error: _emptyErr"
         + "}));\n"
     );
@@ -2965,7 +2967,13 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     # `pow(exp=3, base=n)` cover the same defect for a call that names its
     # *required* arguments out of order, which the naive append also got
     # wrong (`base`/`exp` would swap) before builtins resolved keywords by
-    # name.
+    # name. `sorted_kwargs_spread` covers a call that mixes an explicit
+    # `reverse=True` with a `**opts` spread supplying `key=`: the by-name
+    # resolver must read the spread's `key` entry at the right runtime
+    # slot instead of falling back to the old append-in-source-order path,
+    # which silently dropped the spread's contents entirely and still
+    # mis-slotted `reverse=True`'s value into `key` (a P1 gap caught in
+    # review).
     expected_scalars = {
         "combined min(a)": (got["combined"][0], 1),
         "combined max(a)": (got["combined"][1], 2),
@@ -2986,7 +2994,8 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
             ["ccc", "bb", "a"]
         ),
         "pow(base=, exp=)": (got["numeric"]["pow_base_exp"], 125),
-        "pow(exp=, base=)": (got["numeric"]["pow_exp_base"], 125)
+        "pow(exp=, base=)": (got["numeric"]["pow_exp_base"], 125),
+        "sorted(reverse=, **spread)": (got["sorted_kwargs_spread"], ["ccc", "bb", "a"])
     };
     for (label, (actual, expected)) in expected_scalars.items() {
         assert actual == expected , (

@@ -1256,14 +1256,21 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
             _call_args: list[(es.Expression | es.SpreadElement)] = args;
             _call_props: list[(es.Property | es.SpreadElement)] = props;
             _builtin_params = builtin_kwarg_param_names(_builtin_name);
-            if (
-                _builtin_params is not None
-                and props
-                and all(isinstance(_p, es.Property) for _p in props)
-            ) {
+            _use_kwargs_temp = False;
+            _spread_arg: (es.Expression | None) = None;
+            if _builtin_params is not None and props {
+                (_spread_arg, _spread_read_source) = self._make_kwargs_spread_context(
+                    props, here
+                );
+                _use_kwargs_temp = _spread_read_source is not None;
                 _ordered = self._call_args_from_slots(
                     self._resolve_call_arg_slots(
-                        here, args, props, _builtin_params, _builtin_name, None
+                        here,
+                        args,
+                        props,
+                        _builtin_params,
+                        _builtin_name,
+                        _spread_read_source
                     )
                 );
                 if _ordered is not None {
@@ -1311,9 +1318,15 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
                 if "_jac." in str(_result) {
                     self.needs_jac_runtime = True;
                 }
-                here.gen.es_ast = self.sync_loc(
+                _raw_expr: es.Expression = self.sync_loc(
                     es.RawCode(code=_result), jac_node=here
                 );
+                if _use_kwargs_temp and _spread_arg is not None {
+                    _raw_expr = self._wrap_with_kwargs_temp(
+                        _raw_expr, _spread_arg, here
+                    );
+                }
+                here.gen.es_ast = _raw_expr;
                 return;
             }
         }

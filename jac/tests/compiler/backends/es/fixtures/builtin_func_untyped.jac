@@ -45,6 +45,10 @@ def sorted_kwargs_order(items: list[any]) -> dict[any, any] {
     };
 }
 
+def sorted_kwargs_spread(items: list[any], opts: dict[str, any]) -> list[any] {
+    return sorted(items, reverse=True, **opts);
+}
+
 def min_of_empty -> int {
     return min([]);
 }
