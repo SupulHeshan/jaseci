@@ -87,6 +87,7 @@ glob BUILTIN_KWARG_PARAM_NAMES: dict[str, list[str]] = {
          "sum": ["iterable", "start"],
          "sorted": ["iterable", "key", "reverse"],
          "enumerate": ["iterable", "start"],
+         "pow": ["base", "exp", "mod"],
 
      };
 

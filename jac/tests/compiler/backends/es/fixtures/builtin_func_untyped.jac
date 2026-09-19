@@ -17,7 +17,9 @@ def numeric(n: int) -> dict[any, any] {
     return {
         "abs": abs(0 - n),
         "round": round(3.14159, 2),
-        "round_kwarg": round(3.14159, ndigits=2)
+        "round_kwarg": round(3.14159, ndigits=2),
+        "pow_base_exp": pow(base=n, exp=3),
+        "pow_exp_base": pow(exp=3, base=n)
     };
 }
 

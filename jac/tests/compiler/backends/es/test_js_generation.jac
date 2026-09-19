@@ -2959,7 +2959,13 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     # runtime-helper slot when only one keyword was given. `sorted_kwargs_order`
     # is the case that same scheme got wrong: `key=`/`reverse=` written in
     # the two different orders must still resolve to the same slots and
-    # produce identical output, not silently swap `key` and `reverse`.
+    # produce identical output, not silently swap `key` and `reverse`. `pow`
+    # has no trailing-optional shape at all -- every one of its parameters
+    # is nameable in real Python -- so `pow(base=n, exp=3)` and
+    # `pow(exp=3, base=n)` cover the same defect for a call that names its
+    # *required* arguments out of order, which the naive append also got
+    # wrong (`base`/`exp` would swap) before builtins resolved keywords by
+    # name.
     expected_scalars = {
         "combined min(a)": (got["combined"][0], 1),
         "combined max(a)": (got["combined"][1], 2),
@@ -2978,7 +2984,9 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         "sorted(reverse=, key=)": (
             got["sorted_kwargs_order"]["reverse_then_key"],
             ["ccc", "bb", "a"]
-        )
+        ),
+        "pow(base=, exp=)": (got["numeric"]["pow_base_exp"], 125),
+        "pow(exp=, base=)": (got["numeric"]["pow_exp_base"], 125)
     };
     for (label, (actual, expected)) in expected_scalars.items() {
         assert actual == expected , (
