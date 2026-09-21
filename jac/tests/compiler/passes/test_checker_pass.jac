@@ -1840,7 +1840,7 @@ test "return_type" {
     program = JacProgram();
     path = os.path.join(CHECKER_FIXTURES, "checker_return_type.jac");
     mod = program.compile(path, options=NO_TC);
-    assert len(program.errors_had) == 4;
+    assert len(program.errors_had) == 5;
 
     expected_errors = [
         """
@@ -1856,7 +1856,7 @@ test "return_type" {
         """
         Cannot return Literal[""], expected int
 
-        def bar()  -> int {
+        def bar -> int {
             return "";  # <-- Error
             ^^^^^^^^^^
         """,
@@ -1864,9 +1864,19 @@ test "return_type" {
         Cannot return float, expected int
             return 1.1;  # <-- Error
             ^^^^^^^^^^
+        """,
+        """
+        Return type annotation required when function returns a value
+            return 0;  # <-- Error (no return annotation, but returning a value)
+            ^^^^^^^^^
         """
     ];
 
+    # Regression (#9094): `bump` (no annotation) earns the E1003 above for its
+    # own `return 0;`, but calling it from `caller -> None` must not also
+    # raise a spurious E1002 ("Cannot return NoneType, expected NoneType").
+    # The exact 5-error count and ordered messages checked below already
+    # prove `caller`'s `return bump();` produced no error of its own.
     for i in range(len(expected_errors)) {
         assert_error_pretty_found(
             expected_errors[i], program.errors_had[i].pretty_print()
