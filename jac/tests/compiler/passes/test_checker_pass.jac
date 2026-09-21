@@ -1908,11 +1908,7 @@ test "return_type" {
         """
     ];
 
-    # Regression (#9094): `bump` (no annotation) earns the E1003 above for its
-    # own `return 0;`, but calling it from `caller -> None` must not also
-    # raise a spurious E1002 ("Cannot return NoneType, expected NoneType").
-    # The exact 5-error count and ordered messages checked below already
-    # prove `caller`'s `return bump();` produced no error of its own.
+    # Regression (#9094): caller's `return bump();` must not also raise E1002.
     for i in range(len(expected_errors)) {
         assert_error_pretty_found(
             expected_errors[i], program.errors_had[i].pretty_print()
