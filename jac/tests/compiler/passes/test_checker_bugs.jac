@@ -117,6 +117,12 @@ Bug index:
                the declaration path widens literals, so an annotated
                `list[str]` local was narrowed to `list[LiteralString]` anyway
                (#8982 item 12)
+  #NONECALL-1 - an unannotated function's inferred return type stayed in
+                class form (raw NoneType) instead of the instance form every
+                annotated return type is converted to, so calling it from a
+                `-> None` function reported a spurious E1002 ("Cannot return
+                NoneType, expected NoneType") alongside the expected E1003
+                (#9094)
 """
 
 import os;
@@ -2043,5 +2049,38 @@ test "bug_selfovl1_receiver_selects_the_self_typed_overload" {
     );
     assert len(program.errors_had) == 0 , "\n".join(
         e.pretty_print() for e in program.errors_had
+    );
+}
+
+# =========================================================================
+# Bug #NONECALL-1: implicit None return of an unannotated call flagged
+# against an explicit `-> None` return type (#9094)
+# =========================================================================
+test "bug_nonecall1_unannotated_call_matches_declared_none" {
+    program = compile_and_check("checker_bug_none_return_call.jac");
+    e1002 = [
+        e.pretty_print()
+        for e in program.errors_had
+        if e.code and e.code.code == "E1002"
+    ];
+    assert not e1002 , (
+        "Bug #NONECALL-1: calling an unannotated function that implicitly "
+        "returns None from a `-> None` function must not raise E1002. "
+        f"Got: {chr(10).join(e1002)}"
+    );
+
+    e1003 = [
+        e.pretty_print()
+        for e in program.errors_had
+        if e.code and e.code.code == "E1003"
+    ];
+    assert len(e1003) == 1 , (
+        "Bug #NONECALL-1: `bump` returns a value with no annotation, so "
+        f"exactly one E1003 is still expected. Got: {len(e1003)}."
+    );
+
+    assert len(program.errors_had) == 1 , (
+        "Bug #NONECALL-1: expected only the E1003 diagnostic. "
+        f"Got: {[e.pretty_print() for e in program.errors_had]}"
     );
 }
