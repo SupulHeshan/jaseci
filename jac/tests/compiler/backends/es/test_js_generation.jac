@@ -1109,15 +1109,8 @@ test "plain client kwargs lower to ordered js arguments" {
 }
 
 test "duplicate keyword argument is a compile error (bridged call and builtin)" {
-    # Giving the same argument both positionally and by keyword mirrors
-    # Python's ``TypeError: got multiple values for argument``. The bridged/
-    # RPC call path (``greet(input_text, name=other)``) and the builtin call
-    # path (``round(x, 2, ndigits=3)``, #9120) resolve keyword arguments
-    # through the same by-name slot resolver, so both must be reported as a
-    # compile-time error (E5080) rather than silently emitting a malformed
-    # call -- a JS object with a duplicated key for the bridged case, or a
-    # 3-argument call to the 2-parameter ``_jac.builtin.round`` helper for
-    # the builtin case.
+    # Same argument given both positionally and by keyword must be an
+    # E5080 compile error for both the bridged/RPC and builtin call paths.
     import from jaclang.compiler.driver.program { JacProgram }
     import from jaclang.compiler.backends.es { EsastGenPass }
 
@@ -2971,26 +2964,11 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     # straight through -- otherwise xs's elements splice into the runtime
     # helper's own argument list instead of forming the array it expects.
     #
-    # `sorted_reverse`/`sum_kwarg`/`round_kwarg` cover `sorted`/`sum`/`round`
-    # taking their sole optional argument by keyword (#9120): the compiler
-    # used to append a keyword value to the positional list in source order
-    # regardless of its name, which happened to still land in the right
-    # runtime-helper slot when only one keyword was given. `sorted_kwargs_order`
-    # is the case that same scheme got wrong: `key=`/`reverse=` written in
-    # the two different orders must still resolve to the same slots and
-    # produce identical output, not silently swap `key` and `reverse`. `pow`
-    # has no trailing-optional shape at all -- every one of its parameters
-    # is nameable in real Python -- so `pow(base=n, exp=3)` and
-    # `pow(exp=3, base=n)` cover the same defect for a call that names its
-    # *required* arguments out of order, which the naive append also got
-    # wrong (`base`/`exp` would swap) before builtins resolved keywords by
-    # name. `sorted_kwargs_spread` covers a call that mixes an explicit
-    # `reverse=True` with a `**opts` spread supplying `key=`: the by-name
-    # resolver must read the spread's `key` entry at the right runtime
-    # slot instead of falling back to the old append-in-source-order path,
-    # which silently dropped the spread's contents entirely and still
-    # mis-slotted `reverse=True`'s value into `key` (a P1 gap caught in
-    # review).
+    # The remaining keys (#9120) cover builtin keyword args resolving by
+    # name instead of source position: `sorted_kwargs_order` checks
+    # `key=`/`reverse=` in both written orders agree, `pow_*` checks the
+    # same for fully-named required args, and `sorted_kwargs_spread`
+    # checks a `**opts` spread mixed with an explicit keyword.
     expected_scalars = {
         "combined min(a)": (got["combined"][0], 1),
         "combined max(a)": (got["combined"][1], 2),
