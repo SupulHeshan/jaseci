@@ -92,8 +92,6 @@ glob BUILTIN_KWARG_PARAM_NAMES: dict[str, list[str]] = {
      };
 
 def builtin_kwarg_param_names(name: str) -> (list[str] | None) {
-    """Slot order for name's keyword arguments, or None if name isn't one
-    of the fixed-signature builtins in BUILTIN_KWARG_PARAM_NAMES.""";
     return BUILTIN_KWARG_PARAM_NAMES.get(name);
 }
 
