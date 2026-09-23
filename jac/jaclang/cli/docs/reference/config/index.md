@@ -471,6 +471,19 @@ A built binary reads two environment variables at run time and no others: `JAC_G
 
 ---
 
+### [arch]
+
+The default for modules that `arch.jac` does not name. See [Project Wiring](../wiring.md).
+
+```toml
+[arch]
+closed = []               # Module-name patterns sealed even when arch.jac never names them
+```
+
+A module `arch.jac` names is sealed in both directions: its project-module imports must be wires, and it flows only where a rule admits. `closed` extends that to modules the file never mentions, including packages not yet written, and applies even before `arch.jac` exists. `["*"]` closes the whole project; a pattern list such as `["core.*"]` closes it one package at a time. The policy is part of every module's cache identity, so changing it rebuilds the affected modules.
+
+---
+
 ### [test]
 
 Defaults for `jac test`:
@@ -1108,9 +1121,12 @@ A `jac scale deploy` reads the same file when it stages the app bundle, so a par
 | Variable | Description |
 |----------|-------------|
 | `JAC_DB_URL` | Postgres connection URL for **this process** (overrides `[scale.database].url` at runtime). A deploy ignores it: what database the deployed app gets is decided by `[scale.kubernetes]` `database_mode` / `database_url`, then `[scale.database]` `url`, then provisioning |
-| `JAC_CACHE_HOME` | Root of the machine-wide jac cache; the shared embedded Postgres cluster lives in `<JAC_CACHE_HOME>/pg/main` (default `~/.cache/jac`) |
+| `JAC_CACHE_HOME` | Root of the machine-wide jac cache, every bucket included (`jac cache status`); the shared embedded Postgres cluster lives in `<JAC_CACHE_HOME>/pg/main`. Unset, the root is `XDG_CACHE_HOME/jac` when that is set, else `~/.cache/jac` (Linux), `~/Library/Caches/jac` (macOS) or `%LOCALAPPDATA%\jac\cache` (Windows) |
+| `JAC_CACHE_TTL_DAYS` | Overrides every cache bucket's "unused for N days" retention at once (`0` turns the age sweep off); `JAC_CACHE_GENERATION_TTL_DAYS` still wins for the compiled-module generations |
 | `JAC_DB_RETENTION_DAYS` | Drop databases unused for this many days when the embedded cluster starts; overrides `[database] retention_days`, unset means never |
-| `JAC_DB_SCRATCH` | `1` makes this process open one throwaway database that is dropped when it exits, instead of a per-project one (used by the test runner and deploy staging) |
+| `JAC_DB_ORPHAN_GRACE_HOURS` | How long a project database's directory must have been missing before a cluster start drops it (default `24`; the first start to notice marks it, a later start past the grace drops it; `0` means the next start after the mark) |
+| `JAC_DB_SCRATCH` | `1` makes this process open one throwaway database that is dropped when it exits, instead of a per-project one (used by the test runner for its per-file bases and by deploy staging) |
+| `JAC_DB_SCRATCH_OWNER` | A pid; every project database this process opens is recorded as a scratch database owned by that pid, keeping its project name, and is reaped once the pid is gone (the test runner exports its own pid so nothing its children create outlives the run) |
 | `FIREBASE_PROJECT_ID` | Shared Firebase project ID fallback for Auth SSO and Storage |
 
 Project ID vars (`FIREBASE_AUTH_PROJECT_ID`, `JAC_STORAGE_FIREBASE_PROJECT_ID`, `JAC_STORAGE_GCS_PROJECT_ID`) override `FIREBASE_PROJECT_ID` when set.

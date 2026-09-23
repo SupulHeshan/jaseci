@@ -1,4 +1,5 @@
 import from jaclang.compiler.passes.context { CompileContext }
+import from jaclang.compiler.passes.scope_walk { ScopeWalker }
 import from jaclang.compiler.frontend.unitree {
     Ability,
     Archetype,
@@ -22,9 +23,9 @@ import from jaclang.compiler.frontend.unitree {
     Float,
     ForeverStmt,
     FormattedValue,
-    FuncSignature,
     IfStmt,
     ImplDef,
+    ImplImport,
     Import,
     InForStmt,
     Int,
@@ -40,12 +41,12 @@ import from jaclang.compiler.frontend.unitree {
     RaiseStmt,
     ReturnStmt,
     Semi,
-    SubTag,
     Test,
     Token,
     UniNode,
     UniScopeNode,
-    WhileStmt
+    WhileStmt,
+    in_type_position
 }
 
 import from jaclang.compiler.frontend.constant { ExprCtx, SymbolType }
@@ -66,7 +67,8 @@ import from jaclang.compiler.frontend.diagnostics {
     E2027,
     E2055,
     E2083,
-    E2085
+    E2085,
+    E2086
 }
 import type from jaclang.compiler.driver.program { JacProgram }
 
@@ -259,11 +261,18 @@ def is_ambient_provider_module(mod_path: str) -> bool {
         and "runtime" in mod_path;
 }
 
+walker UnusedSymbolWalker(ScopeWalker) {
+    has analysis: StaticAnalysisPass;
+
+    can check_scope with UniScopeNode entry {
+        self.analysis._check_unused_symbols(here);
+    }
+}
+
 walker StaticAnalysisPass {
     has ctx: CompileContext,
         prog: JacProgram,
-        module: Module,
-        _checked_scopes: set[int] = set();
+        module: Module;
 
     static has HOST_PASS: bool = True;
 
@@ -272,6 +281,7 @@ walker StaticAnalysisPass {
     def _check_unused_symbols(scope: UniScopeNode) -> None;
     def _check_undefined_names(mod: Module) -> None;
     def _literal_case_suggestion(name: str) -> (str | None);
+    def _enclosing_class_member(name_nd: Name) -> (str | None);
     def _osp_shape_position(name_nd: Name) -> (str | None);
     def _native_type_position(name_nd: Name) -> (str | None);
     def _check_unreachable_code(mod: Module) -> None;

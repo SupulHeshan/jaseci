@@ -1,7 +1,15 @@
 import os;
 import jaclang.compiler.frontend.unitree as uni;
-import from jaclang.compiler.frontend.constant { CodeContext, Tokens as Tok }
+import from jaclang.compiler.frontend.constant {
+    CodeContext,
+    Tokens as Tok,
+    SymbolAccess
+}
 import from jaclang.compiler.driver.program { JacProgram }
+import from jaclang.compiler.placement.placement_pins {
+    BareImportVerdict,
+    classify_bare_import
+}
 import from jaclang.project.workspace { AppSpec, app_for_path, workspace_for_path }
 
 def _coerce_module(module: uni.Module, context: CodeContext) {
@@ -67,6 +75,23 @@ def module_has_client_top(module: (uni.Module | None)) -> bool {
     return False;
 }
 
+def ability_delegates_to_model(ab: uni.Ability) -> bool {
+    if isinstance(ab.body, uni.Expr) {
+        return True;
+    }
+    if isinstance(ab.body, uni.ImplDef) and isinstance(ab.body.body, uni.Expr) {
+        return True;
+    }
+    sig = ab.signature;
+    return (
+        isinstance(sig, uni.FuncSignature)
+        and sig.return_type is not None
+        and isinstance(sig.return_type, uni.BinaryExpr)
+        and isinstance(sig.return_type.op, uni.Token)
+        and sig.return_type.op.name == Tok.KW_BY
+    );
+}
+
 def is_server_anchored_module(module: (uni.Module | None)) -> bool {
     if module is None {
         return True;
@@ -88,27 +113,32 @@ def is_server_anchored_module(module: (uni.Module | None)) -> bool {
             return True;
         }
     }
+    for ab in module.get_all_sub_nodes(uni.Ability) {
+        if ability_delegates_to_model(ab) {
+            return True;
+        }
+    }
     for imp in module.get_all_sub_nodes(uni.Import) {
         if imp.has_clib_decls or imp.is_virtual_jac or imp.has_string_path {
             continue;
         }
-        if imp.from_loc is None {
-            return True;
-        }
-        resolved = imp.from_loc.resolve_relative_path();
-        if not isinstance(resolved, str) or not resolved.endswith('.jac') {
-            import from jaclang.compiler.placement.placement_pins {
-                is_client_npm_import
-            }
-            if is_client_npm_import(
-                imp.from_loc.dot_path_str, module.loc.mod_path or ''
-            ) {
-                continue;
-            }
+        if classify_import(imp).world == 'py' {
             return True;
         }
     }
     return False;
+}
+
+def classify_import(imp: uni.Import) -> BareImportVerdict {
+    if imp.from_loc is None {
+        return BareImportVerdict();
+    }
+    if imp.is_jac {
+        return BareImportVerdict(
+            world='jac', rule='jac module', path=imp.from_loc.resolve_relative_path()
+        );
+    }
+    return classify_bare_import(imp.from_loc.dot_path_str, imp.loc.mod_path or '');
 }
 
 def module_own_native_anchor(module: (uni.Module | None)) -> bool {
@@ -431,24 +461,12 @@ def classify_client_import_item(
     if owner.code_context == CodeContext.CLIENT {
         return ClientImportVerdict.CLIENT;
     }
+    if isinstance(owner, (uni.Ability, uni.Archetype)) and owner.surface_kind {
+        return ClientImportVerdict.BRIDGED
+            if owner.exposure != SymbolAccess.PRIVATE
+            else ClientImportVerdict.DEAD;
+    }
     if isinstance(owner, uni.Ability) {
-        consumer = item.find_parent_of_type(uni.Module);
-        provider_app = module_app(source_mod);
-        authenticated_endpoint = (
-            owner.access is not None
-            and owner.access.tag.name in (Tok.KW_PRIV, Tok.KW_PROT)
-            and consumer is not None
-            and bool(provider_app)
-            and module_app(consumer) == provider_app
-            and same_workspace(consumer.loc.mod_path, source_mod.loc.mod_path)
-        );
-        if (
-            not owner.is_method
-            and owner.access is not None
-            and (owner.access.tag.name == Tok.KW_PUB or authenticated_endpoint)
-        ) {
-            return ClientImportVerdict.BRIDGED;
-        }
         return ClientImportVerdict.DEAD;
     }
     if isinstance(owner, (uni.Archetype, uni.Enum, uni.TypeAlias)) {

@@ -1,9 +1,10 @@
+import from jaclang.compiler.frontend.roles { Kid }
 import from jaclang.compiler.frontend.unitree { TreeWalker }
 import from jaclang.compiler.passes.context { CompileContext }
 import jaclang.compiler.frontend.unitree as uni;
 
 import from jaclang.compiler.frontend.constant { OwnershipKind, is_mut_kind }
-import from jaclang.compiler.frontend.roles { BodyRole }
+import from jaclang.compiler.frontend.roles { BodyRole, Role }
 
 walker UnparsePass(TreeWalker) {
     can enter_walk with uni.UniNode entry {
@@ -44,6 +45,11 @@ walker UnparsePass(TreeWalker) {
     can exit_module_item with uni.ModuleItem exit;
     can exit_archetype with uni.Archetype exit;
     can exit_impl_def with uni.ImplDef exit;
+    can exit_impl_import with uni.ImplImport exit;
+    can exit_import_wire with uni.ImportWire exit;
+    can exit_import_rule with uni.ImportRule exit;
+    can exit_module_pattern with uni.ModulePattern exit;
+    can exit_wire_item with uni.WireItem exit;
     can exit_sem_def with uni.SemDef exit;
     can exit_enum with uni.Enum exit;
     can exit_ability with uni.Ability exit;
@@ -143,7 +149,7 @@ def unparse_node(nd: uni.UniNode) -> str {
     if isinstance(nd, uni.Token) {
         return nd.value;
     }
-    _kids = list(nd.kid);
+    _kids = list([nd->:Kid:->]);
     if not _kids {
         _v = nd?.value;
         if isinstance(_v, str) {
@@ -160,7 +166,7 @@ def unparse_module(mod: uni.Module, requires_format: bool = True) -> str {
 
     own_path = mod.loc.mod_path;
     saved_body = mod.body;
-    saved_kid = mod.kid;
+    saved_kid = [mod->:Kid:->];
     head_kid = [
         k
         for k in saved_kid

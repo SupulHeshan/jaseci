@@ -2,7 +2,7 @@ def _join_kids(nd: uni.UniNode, sep: str = " ") -> str {
     return sep.join(
         [
             k.gen.jac
-            for k in nd.kid
+            for k in [nd->:Kid:->]
             if k and k.gen.jac
         ]
     );
@@ -19,8 +19,8 @@ impl UnparsePass._comma_sep(nodes: Sequence[uni.UniNode]) -> str {
 }
 
 impl UnparsePass.unparse_prepare_exit with uni.UniNode exit {
-    for attr in vars(here).values() {
-        if isinstance(attr, uni.Token) and not attr.gen.jac {
+    for attr in [here->:Role:->[?:uni.Token]] {
+        if not attr.gen.jac {
             attr.gen.jac = attr.value;
         }
     }
@@ -33,7 +33,7 @@ impl UnparsePass.unparse_default_exit with uni.UniNode exit {
         here.gen.jac = " ".join(
             [
                 k.gen.jac
-                for k in here.kid
+                for k in [here->:Kid:->]
                 if k and k.gen.jac
             ]
         );
@@ -52,8 +52,7 @@ impl UnparsePass.exit_name with uni.Name exit {
         return;
     }
     prefix = "`" if here.is_kwesc else "";
-    suffix = ",\n" if here.is_enum_stmt else "";
-    here.gen.jac = prefix + here.value + suffix;
+    here.gen.jac = prefix + here.value;
 }
 
 impl UnparsePass.exit_string with uni.String exit {
@@ -712,14 +711,15 @@ impl UnparsePass.exit_return_stmt with uni.ReturnStmt exit {
 
 impl UnparsePass.exit_visit_stmt with uni.VisitStmt exit {
     parts: list[str] = ["visit"];
-    if here.insert_loc {
-        parts.append(here.insert_loc.gen.jac);
+    if here.insert_loc is not None {
+        parts[0] += ":" + here.insert_loc.gen.jac + ":";
     }
     parts.append(here.target.gen.jac);
     if here.else_body {
         parts.append(here.else_body.gen.jac);
+    } else {
+        parts.append(";");
     }
-    parts.append(";");
     here.gen.jac = " ".join(parts);
 }
 
@@ -756,11 +756,12 @@ impl UnparsePass.exit_assignment with uni.Assignment exit {
     }
     result = " ".join(parts);
 
-    if not here.is_enum_stmt
-        and not (
-            isinstance(here.parent, uni.IterForStmt)
-            and (here == here.parent.iter or here == here.parent.count_by)
-        ) {
+    if here.is_enum_stmt {
+        result += ",";
+    } elif not (
+        isinstance(here.parent, uni.IterForStmt)
+        and (here == here.parent.iter or here == here.parent.count_by)
+    ) {
         result = result + ";";
     }
     here.gen.jac = result;
@@ -1106,7 +1107,7 @@ impl UnparsePass.exit_jsx_expression with uni.JsxExpression exit {
 
 impl UnparsePass.exit_jsx_slot with uni.JsxSlot exit {
     parts: list[str] = [];
-    for k in here.kid {
+    for k in [here->:Kid:->] {
         s = k.gen.jac;
         if s is not None {
             parts.append(s);
@@ -1190,7 +1191,7 @@ impl UnparsePass.exit_match_mapping with uni.MatchMapping exit {
 impl UnparsePass.exit_match_k_v_pair with uni.MatchKVPair exit {
     here.gen.jac = here.key.gen.jac
         + " "
-        + here.kid[1].gen.jac
+        + [here->:Kid:->][1].gen.jac
         + " "
         + here.value.gen.jac;
 }
@@ -1212,4 +1213,67 @@ impl UnparsePass.exit_match_arch with uni.MatchArch exit {
         parts.extend([k.gen.jac for k in here.kw_patterns]);
     }
     here.gen.jac = here.name.gen.jac + "(" + ", ".join(parts) + ")";
+}
+
+impl UnparsePass.exit_impl_import with uni.ImplImport exit {
+    head = "impl import";
+    if here.scope {
+        head = head + " " + here.scope.gen.jac;
+    }
+    body = " ".join([s.gen.jac for s in here.body]);
+    here.gen.jac = head + " { " + body + " }";
+}
+
+impl UnparsePass.exit_import_wire with uni.ImportWire exit {
+    parts: list[str] = [];
+    if here.is_comptime {
+        parts.append("comptime");
+    }
+    if here.is_absorb {
+        parts.append("include");
+    } elif here.is_typed {
+        parts.append("type");
+    }
+    parts.append(here.provider.gen.jac);
+    parts.append("-->");
+    consumers = " | ".join([c.gen.jac for c in here.consumers]);
+    if not here.is_module_form {
+        parts.append(consumers);
+        parts.append("{ " + self._comma_sep(here.items) + " }");
+    } else {
+        parts.append(consumers + ";");
+    }
+    here.gen.jac = " ".join(parts);
+}
+
+impl UnparsePass.exit_import_rule with uni.ImportRule exit {
+    parts: list[str] = ["edge", here.name.gen.jac + ":"];
+    parts.append(" | ".join([s.gen.jac for s in here.sources]));
+    parts.append("-->");
+    targets = " | ".join([t.gen.jac for t in here.targets]);
+    if not here.is_open {
+        parts.append(targets);
+        parts.append("{ " + self._comma_sep(here.items) + " }");
+    } else {
+        parts.append(targets + ";");
+    }
+    here.gen.jac = " ".join(parts);
+}
+
+impl UnparsePass.exit_module_pattern with uni.ModulePattern exit {
+    if here.is_any {
+        here.gen.jac = "any";
+    } elif here.path is None {
+        here.gen.jac = "*";
+    } else {
+        here.gen.jac = here.path.gen.jac + (".*" if here.is_glob else "");
+    }
+}
+
+impl UnparsePass.exit_wire_item with uni.WireItem exit {
+    result = here.name.gen.jac;
+    if here.alias {
+        result = result + " as " + here.alias.gen.jac;
+    }
+    here.gen.jac = result;
 }

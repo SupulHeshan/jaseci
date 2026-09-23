@@ -34,7 +34,7 @@ import from jaclang.runtime.archetype {
     light_hop_answers
 }
 import from jaclang.runtime.constants { EdgeDir, colors }
-import from jaclang.runtime.graph_query { GraphQuery, QHop }
+import from jaclang.runtime.graph_query { GraphQuery, QHop, QPred, filter_query_nodes }
 import from jaclang.runtime.constructs {
     AccessLevel,
     access_level_cast,
@@ -197,9 +197,9 @@ class JacClassReferences {
 obj LLMModel(Protocol) {
     has call_params: dict[(str, object)];
 
-    def __call__(**kwargs: object) -> LLMModel;
-    def invoke(mt_run: MTRuntime) -> object;
-    async def ainvoke(mt_run: MTRuntime) -> object;
+    def __call__(**kwargs: object) -> LLMModel abst;
+    def invoke(mt_run: MTRuntime) -> object abst;
+    async def ainvoke(mt_run: MTRuntime) -> object abst;
 }
 
 class JacContext {
@@ -224,7 +224,8 @@ class JacPersistence {
     static def get_object(id: str) -> (Archetype | None);
     static async def aget_object(id: str) -> (Archetype | None);
     static def object_ref(`obj: Archetype) -> str;
-    static def save(`obj: (Archetype | Anchor)) -> None;
+    static def save(`obj: (Archetype | Anchor), owner: (UUID | None) = None) -> None;
+    static def owner_of(`obj: (Archetype | Anchor)) -> (UUID | None);
     static def destroy(objs: any, strict: bool = False) -> None;
     static def _destroy_anchors(objs: any, strict: bool) -> list[Anchor];
     static def peek_attr(`obj: any, name: str) -> any;
@@ -330,7 +331,13 @@ class JacGraph {
     ) -> EdgeArchetype;
 
     static def hop(
-        origin: any, dir: int, edge_type: (type | None) = None, edges_only: bool = False
+        origin: any,
+        dir: int,
+        edge_type: (type | None) = None,
+        edges_only: bool = False,
+        nd: (type | tuple[type, ...] | None) = None,
+        preds: (list[QPred] | None) = None,
+        from_visit: bool = False
     ) -> list[any];
 
     static def clear_edges(

@@ -56,7 +56,7 @@ impl NaIRGenPass._lower_type(t: any) -> (ir.Type | None) {
         }
         _had_none = len(_members) < len(t.types or []);
         if _members {
-            _mreprs: list[ir.Type] = [];
+            _mreprs: list[ir.Type | None] = [];
             for _m in _members {
                 _mr = self._lower_type(_m);
                 if self._str_desc_ty is not None and _mr == self._str_desc_ty {
@@ -86,7 +86,7 @@ impl NaIRGenPass._lower_type(t: any) -> (ir.Type | None) {
     return lowered;
 }
 
-impl NaIRGenPass._unify_repr_lowering(reprs: list[ir.Type]) -> (ir.Type | None) {
+impl NaIRGenPass._unify_repr_lowering(reprs: list[ir.Type | None]) -> (ir.Type | None) {
     """One representation for a set of lowerings that share a slot.
 
     Members that share a lowering keep it. An all-pointer set keeps the
@@ -144,7 +144,7 @@ impl NaIRGenPass._unify_repr_lowering(reprs: list[ir.Type]) -> (ir.Type | None) 
 
         if _all_callable {
             for _r in reprs {
-                if self._closure_struct_of(_r) is not None {
+                if _r is not None and self._closure_struct_of(_r) is not None {
                     return _r;
                 }
             }
@@ -1200,12 +1200,6 @@ impl NaIRGenPass._tuple_struct_of(elem_types: list[ir.Type]) -> ir.LiteralStruct
 impl NaIRGenPass._resolve_field_type(var: uni.UniNode) -> ir.Type {
     _ptb = var?.type;
     if _ptb is not None {
-        try {
-            import from jaclang.compiler.types.types { FunctionType as _FieldFnType }
-            if isinstance(_ptb, _FieldFnType) {
-                return self._lower_function_type_raw(_ptb);
-            }
-        } except ImportError {}
         lowered = self._lower_type(_ptb);
         if lowered is not None {
             if self._str_desc_ty is not None and lowered == self._str_desc_ty {
@@ -2258,9 +2252,13 @@ impl NaIRGenPass._coerce_type_inner(val: ir.Value, target_type: ir.Type) -> ir.V
             _pv_nn = self.builder.icmp_unsigned(
                 "!=", _pv, ir.Constant(_opt_tgt, None), name="opt.wrap.nn"
             );
-            return self.builder.select(
+            _wrapped = self.builder.select(
                 _pv_nn, _ov, ir.Constant(target_type, None), name="opt.wrap.sel"
             );
+            if _pv is not val and self._is_owned(_pv) {
+                self._mark_owned(_wrapped);
+            }
+            return _wrapped;
         }
         if _tgt_is_jacval and isinstance(val.type, ir.PointerType) {
             _object_present = self.builder.icmp_unsigned(
@@ -2690,8 +2688,8 @@ impl NaIRGenPass._emit_binary_op(
     unsigned: bool = False,
     checked: bool = False
 ) -> (ir.Value | None) {
-    left = self._str_norm(left);
-    right = self._str_norm(right);
+    left = self._str_view(left);
+    right = self._str_view(right);
     if isinstance(left.type, ir.PointerType)
         or isinstance(right.type, ir.PointerType) {
         _dunder_res = self._emit_arch_dunder_binop(op, left, right);
@@ -2973,77 +2971,8 @@ impl NaIRGenPass._emit_binary_op(
     }
 
     ctype_ptr = self.complex_struct_type.as_pointer();
-    if left.type == ctype_ptr and right.type == ctype_ptr {
-        f64 = ir.DoubleType();
-        i64 = ir.IntType(64);
-        i32 = ir.IntType(32);
-        z0 = ir.Constant(i32, 0);
-        z1 = ir.Constant(i32, 1);
-        ar = self.builder.load(
-            self.builder.gep(left, [z0, z0], name="c.ar.p"), name="c.ar"
-        );
-        ai = self.builder.load(
-            self.builder.gep(left, [z0, z1], name="c.ai.p"), name="c.ai"
-        );
-        br = self.builder.load(
-            self.builder.gep(right, [z0, z0], name="c.br.p"), name="c.br"
-        );
-        bi = self.builder.load(
-            self.builder.gep(right, [z0, z1], name="c.bi.p"), name="c.bi"
-        );
-        rr: (ir.Value | None) = None;
-        ri: (ir.Value | None) = None;
-        if op == Tok.PLUS {
-            rr = self.builder.fadd(ar, br, name="c.add.r");
-            ri = self.builder.fadd(ai, bi, name="c.add.i");
-        } elif op == Tok.MINUS {
-            rr = self.builder.fsub(ar, br, name="c.sub.r");
-            ri = self.builder.fsub(ai, bi, name="c.sub.i");
-        } elif op == Tok.STAR_MUL {
-            rr = self.builder.fsub(
-                self.builder.fmul(ar, br, name="c.m1"),
-                self.builder.fmul(ai, bi, name="c.m2"),
-                name="c.mul.r"
-            );
-            ri = self.builder.fadd(
-                self.builder.fmul(ar, bi, name="c.m3"),
-                self.builder.fmul(ai, br, name="c.m4"),
-                name="c.mul.i"
-            );
-        } elif op == Tok.DIV {
-            denom = self.builder.fadd(
-                self.builder.fmul(br, br, name="c.d1"),
-                self.builder.fmul(bi, bi, name="c.d2"),
-                name="c.denom"
-            );
-            rr = self.builder.fdiv(
-                self.builder.fadd(
-                    self.builder.fmul(ar, br, name="c.d3"),
-                    self.builder.fmul(ai, bi, name="c.d4"),
-                    name="c.div.rn"
-                ),
-                denom,
-                name="c.div.r"
-            );
-            ri = self.builder.fdiv(
-                self.builder.fsub(
-                    self.builder.fmul(ai, br, name="c.d5"),
-                    self.builder.fmul(ar, bi, name="c.d6"),
-                    name="c.div.in"
-                ),
-                denom,
-                name="c.div.i"
-            );
-        }
-        if rr is not None and ri is not None {
-            raw = self.builder.call(
-                self.rc_alloc_fn, [ir.Constant(i64, 16)], name="c.res.raw"
-            );
-            ptr = self.builder.bitcast(raw, ctype_ptr, name="c.res.ptr");
-            self.builder.store(rr, self.builder.gep(ptr, [z0, z0], name="c.res.rp"));
-            self.builder.store(ri, self.builder.gep(ptr, [z0, z1], name="c.res.ip"));
-            return ptr;
-        }
+    if left.type == ctype_ptr or right.type == ctype_ptr {
+        return self._emit_complex_binop(op, left, right);
     }
 
     if self?.jacval_type
@@ -3555,8 +3484,8 @@ impl NaIRGenPass._emit_comparison(
             return self.builder.icmp_signed(_cmp_op, _sc3, _z32c, name="scmp3");
         }
     }
-    left = self._str_norm(left);
-    right = self._str_norm(right);
+    left = self._str_view(left);
+    right = self._str_view(right);
     left_type = left.type;
     right_type = right.type;
     left_layout = left_type.pointee
@@ -4125,21 +4054,8 @@ impl NaIRGenPass._emit_comparison(
         ctype_ptr = self.complex_struct_type.as_pointer();
         if left.type == ctype_ptr and right.type == ctype_ptr {
             i1_t = ir.IntType(1);
-            i32 = ir.IntType(32);
-            z0 = ir.Constant(i32, 0);
-            z1 = ir.Constant(i32, 1);
-            ar = self.builder.load(
-                self.builder.gep(left, [z0, z0], name="ceq.ar.p"), name="ceq.ar"
-            );
-            ai = self.builder.load(
-                self.builder.gep(left, [z0, z1], name="ceq.ai.p"), name="ceq.ai"
-            );
-            br = self.builder.load(
-                self.builder.gep(right, [z0, z0], name="ceq.br.p"), name="ceq.br"
-            );
-            bi = self.builder.load(
-                self.builder.gep(right, [z0, z1], name="ceq.bi.p"), name="ceq.bi"
-            );
+            (ar, ai) = self._load_complex_parts(left);
+            (br, bi) = self._load_complex_parts(right);
             req = self.builder.fcmp_ordered("==", ar, br, name="ceq.r");
             ieq = self.builder.fcmp_ordered("==", ai, bi, name="ceq.i");
             complex_equal = self.builder.and_(req, ieq, name="ceq.both");
@@ -4498,7 +4414,7 @@ impl NaIRGenPass._lower_untyped_annotation(nd: uni.UniNode) -> (ir.Type | None) 
         if not _live {
             return None;
         }
-        _lreprs: list[ir.Type] = [];
+        _lreprs: list[ir.Type | None] = [];
         for _lv in _live {
             _lr = self._lower_untyped_annotation(_lv);
             if _lr is None {
@@ -4597,7 +4513,10 @@ impl NaIRGenPass._lower_untyped_annotation(nd: uni.UniNode) -> (ir.Type | None) 
                         _fpl = self._lower_untyped_annotation(_fp);
                         _fnparams.append(_fpl if _fpl is not None else ir.IntType(64));
                     }
-                    return ir.FunctionType(_fnret, _fnparams).as_pointer();
+                    (_, closure_type, _) = self._closure_sig_struct(
+                        ir.FunctionType(_fnret, _fnparams)
+                    );
+                    return closure_type.as_pointer();
                 }
             }
             return None;

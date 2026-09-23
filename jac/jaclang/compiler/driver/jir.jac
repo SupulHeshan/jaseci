@@ -5,7 +5,12 @@ import struct;
 import sys;
 import zlib;
 import from pathlib { Path }
-import from jaclang.bootstrap_manifest { SOURCE_ONLY_PATHS }
+import from jaclang.bootstrap_manifest {
+    COMPILER_DIGEST_ROOTS,
+    COMPILER_IDENTITY_NAME,
+    NATIVE_LOWERED_PATHS,
+    is_native_lowered
+}
 
 glob MAGIC = b"JIR\x00",
      FORMAT_VERSION: int = 26,
@@ -232,9 +237,6 @@ def is_compiler_tree_path(source_path: str) -> bool {
         return False;
     }
     rel = resolved[len(base):].replace(os.sep, "/");
-    if any(rel.startswith(prefix) for prefix in SOURCE_ONLY_PATHS) {
-        return False;
-    }
     for digest_root in COMPILER_DIGEST_ROOTS {
         if rel == digest_root or rel.startswith(digest_root + "/") {
             return True;
@@ -264,25 +266,16 @@ def _module_codespace_mode(source_path: str) -> str {
     }
 }
 
-glob COMPILER_DIGEST_ROOTS: tuple[str, ...] = (
-         "jac0.py",
-         "bootstrap_manifest.py",
-         "meta_importer.py",
-         "jac0core",
-         "compiler",
-         "runtime",
-         "lib",
-         "cli/cli_boot.jac",
-         "project",
-         "dist/precompile_bytecode.jac"
-     ),
-     COMPILER_DIGEST_SUFFIXES: tuple[str, ...] = (".jac", ".py"),
+glob COMPILER_DIGEST_SUFFIXES: tuple[str, ...] = (".jac", ".py"),
      COMPILER_DIGEST_SKIP_DIRS: tuple[str, ...] = ("tests", "test", "__pycache__"),
      COMPILER_DIGEST_SKIP: tuple[str, ...] = ();
 
 def compiler_source_files(pkg_dir: str) -> list[str] {
     base = str(Path(pkg_dir));
     rels: list[str] = [];
+    if os.path.isfile(os.path.join(base, "compiler_inputs.txt")) {
+        rels.append("compiler_inputs.txt");
+    }
     for `entry in COMPILER_DIGEST_ROOTS {
         target = os.path.join(base, `entry.replace("/", os.sep));
         if os.path.isfile(target) {
@@ -305,9 +298,6 @@ def compiler_source_files(pkg_dir: str) -> list[str] {
                 rel = os.path.relpath(os.path.join(walk_dir, name), base).replace(
                     os.sep, "/"
                 );
-                if any(rel.startswith(prefix) for prefix in SOURCE_ONLY_PATHS) {
-                    continue;
-                }
                 if rel in COMPILER_DIGEST_SKIP {
                     continue;
                 }
@@ -318,19 +308,101 @@ def compiler_source_files(pkg_dir: str) -> list[str] {
     return sorted(rels);
 }
 
-def compiler_source_digest(pkg_dir: str) -> str {
-    base = str(Path(pkg_dir));
-    rels = compiler_source_files(base);
-    h = hashlib.sha256();
-    for rel in rels {
-        h.update(rel.encode());
-        h.update(
-            compute_content_sha256(
-                os.path.join(base, rel.replace("/", os.sep))
-            ).encode()
+def compiler_identity_path(pkg_dir: str) -> Path {
+    return Path(pkg_dir) / COMPILER_IDENTITY_NAME;
+}
+
+def read_compiler_identity(pkg_dir: str) -> dict[str, str] {
+    import json;
+    try {
+        raw = json.loads(compiler_identity_path(pkg_dir).read_text());
+    } except Exception {
+        return {};
+    }
+    recorded = raw.get("inputs", {}) or {};
+    return {str(k): str(v) for (k, v) in recorded.items()};
+}
+
+def declared_compiler_inputs(pkg_dir: str, recorded: dict[str, str]) -> list[str] {
+    base = str(pkg_dir);
+    declares = os.path.isfile(os.path.join(base, "compiler_inputs.txt"));
+    for prefix in (NATIVE_LOWERED_PATHS if declares else ()) {
+        if os.path.isdir(os.path.join(base, prefix.replace("/", os.sep))) {
+            continue;
+        }
+        if any(rel.startswith(prefix + "/") for rel in recorded) {
+            continue;
+        }
+        raise RuntimeError(
+            f"compiler identity is incomplete: {base!r} carries no sources under "
+            f"{prefix!r} and no recorded hashes for it in {COMPILER_IDENTITY_NAME}. A "
+            "staging that drops a natively lowered input must record what it dropped, "
+            "or its digest silently describes a smaller compiler than the one it was "
+            "built from."
         );
     }
-    return f"{len(rels)}:{h.hexdigest()}";
+    rels: set = set(compiler_source_files(base));
+    rels.update(recorded.keys());
+    return sorted(rels);
+}
+
+def resolve_compiler_input(pkg_dir: str, rel: str, recorded: dict[str, str]) -> str {
+    full = os.path.join(str(pkg_dir), rel.replace("/", os.sep));
+    if os.path.isfile(full) {
+        return compute_content_sha256(full);
+    }
+    if is_native_lowered(rel) and rel in recorded {
+        return recorded[rel];
+    }
+    raise RuntimeError(
+        f"compiler identity is incomplete: declared input {rel!r} is absent from "
+        f"{pkg_dir!r} and carries no recorded hash in {COMPILER_IDENTITY_NAME}. A "
+        "staging may omit an input only when it is natively lowered "
+        f"({', '.join(NATIVE_LOWERED_PATHS)}) and records its hash."
+    );
+}
+
+def fold_compiler_digest(rows: list[tuple[str, str]]) -> str {
+    h = hashlib.sha256();
+    for (rel, sha) in rows {
+        h.update(rel.encode());
+        h.update(sha.encode());
+    }
+    return f"{len(rows)}:{h.hexdigest()}";
+}
+
+def compiler_source_digest(pkg_dir: str) -> str {
+    base = str(Path(pkg_dir));
+    recorded = read_compiler_identity(base);
+    rows = [
+        (rel, resolve_compiler_input(base, rel, recorded))
+        for rel in declared_compiler_inputs(base, recorded)
+    ];
+    return fold_compiler_digest(rows);
+}
+
+def write_compiler_identity(pkg_dir: str, dest_dir: str) -> str {
+    import json;
+    base = str(Path(pkg_dir));
+    recorded = read_compiler_identity(base);
+    rels = declared_compiler_inputs(base, recorded);
+    rows = [(rel, resolve_compiler_input(base, rel, recorded)) for rel in rels];
+    digest = fold_compiler_digest(rows);
+    out = Path(dest_dir) / COMPILER_IDENTITY_NAME;
+    out.parent.mkdir(parents=True, exist_ok=True);
+    out.write_text(
+        json.dumps(
+            {
+                "format": 1,
+                "digest": digest,
+                "lowered": list(NATIVE_LOWERED_PATHS),
+                "inputs": dict(rows)
+            },
+            indent=1,
+            sort_keys=True
+        )
+    );
+    return digest;
 }
 
 glob _COMPILER_DIGEST_CACHE: list[str] = [];
@@ -343,7 +415,8 @@ def _digest_manifest_path(pkg_dir: str) -> Path {
 def _manifest_compiler_digest(pkg_dir: str) -> str {
     import json;
     base = str(Path(pkg_dir));
-    rels = compiler_source_files(base);
+    recorded = read_compiler_identity(base);
+    rels = declared_compiler_inputs(base, recorded);
     manifest_path = _digest_manifest_path(base);
     entries: dict[str, any] = {};
     stored_digest = "";
@@ -357,10 +430,19 @@ def _manifest_compiler_digest(pkg_dir: str) -> str {
     }
     changed = False;
     new_entries: dict[str, list[float | int | str]] = {};
-    h = hashlib.sha256();
+    rows: list[tuple[str, str]] = [];
     for rel in rels {
         full = os.path.join(base, rel.replace("/", os.sep));
-        st = os.stat(full);
+        st: any = None;
+        try {
+            st = os.stat(full);
+        } except OSError {
+            st = None;
+        }
+        if st is None {
+            rows.append((rel, resolve_compiler_input(base, rel, recorded)));
+            continue;
+        }
         prev = entries.get(rel);
         if (
             isinstance(prev, list)
@@ -374,37 +456,30 @@ def _manifest_compiler_digest(pkg_dir: str) -> str {
             changed = True;
         }
         new_entries[rel] = [st.st_mtime, st.st_size, sha];
-        h.update(rel.encode());
-        h.update(sha.encode());
+        rows.append((rel, sha));
     }
     if len(new_entries) != len(entries) {
         changed = True;
     }
-    digest = f"{len(rels)}:{h.hexdigest()}";
-    if changed or digest != stored_digest {
-        try {
+    digest = fold_compiler_digest(rows);
+    try {
+        import from jaclang.cache.registry { bucket, maybe_sweep }
+        if changed or digest != stored_digest {
             manifest_path.parent.mkdir(parents=True, exist_ok=True);
             tmp = manifest_path.with_suffix(f".{os.getpid()}.tmp");
             tmp.write_text(json.dumps({"entries": new_entries, "digest": digest}));
             tmp.rename(manifest_path);
-        } except Exception {}
-    }
+            maybe_sweep("jir-digests");
+        } else {
+            bucket("jir-digests").note_hit(manifest_path);
+        }
+    } except Exception {}
     return digest;
 }
 
 def running_compiler_digest -> str {
     if not _COMPILER_DIGEST_CACHE {
-        pinned = os.environ.get("JAC_COMPILER_DIGEST_PIN", "").strip();
-        if pinned {
-            _COMPILER_DIGEST_CACHE.append(f"pin:{pinned}");
-        } else {
-            try {
-                digest = _manifest_compiler_digest(_jaclang_pkg_dir);
-            } except Exception {
-                digest = compiler_source_digest(_jaclang_pkg_dir);
-            }
-            _COMPILER_DIGEST_CACHE.append(digest);
-        }
+        _COMPILER_DIGEST_CACHE.append(_manifest_compiler_digest(_jaclang_pkg_dir));
     }
     return _COMPILER_DIGEST_CACHE[0];
 }
@@ -469,9 +544,33 @@ def _analysis_fingerprint_for(source_path: str) -> str {
     ).analysis_fingerprint();
 }
 
+def _check_policy_digest(source_path: str) -> str {
+    import json;
+    cfg: any = None;
+    try {
+        cfg = _config_for_module(Path(source_path).resolve());
+    } except Exception {
+        cfg = None;
+    }
+    check = cfg.check if cfg is not None else None;
+    if check is None {
+        return "";
+    }
+    lint = check.lint;
+    policy = {
+        "suppress": sorted(check.suppress),
+        "categories": sorted(check.suppress_categories),
+        "select": sorted(lint.select) if lint is not None else [],
+        "ignore": sorted(lint.ignore) if lint is not None else [],
+        "exclude": sorted(lint.exclude) if lint is not None else []
+    };
+    return hashlib.sha256(json.dumps(policy, sort_keys=True).encode()).hexdigest();
+}
+
 def _project_env_fingerprint(source_path: str) -> str {
     h = hashlib.sha256();
     h.update(_module_codespace_mode(source_path).encode());
+    h.update(_check_policy_digest(source_path).encode());
     import from jaclang.compiler.placement.placement_pins {
         pins_digest,
         config_kind_space
@@ -511,16 +610,23 @@ def module_env_fingerprint(source_path: str) -> str {
     return h.hexdigest();
 }
 
+def _owner_projection -> str {
+    import from jaclang.compiler.driver.compilation_context { active_options }
+    options = active_options();
+    return options.module_projection() if options is not None else '';
+}
+
 def compute_module_key(source_path: str) -> str {
-    import from jaclang.compiler.driver.compilation_context { cache_identity }
     h = hashlib.sha256();
-    h.update(cache_identity().encode());
+    h.update(_owner_projection().encode());
     h.update(_env_fingerprint_for(source_path).encode());
     h.update(compute_content_sha256(source_path).encode());
     for (rel, digest) in _related_files(source_path) {
         h.update(rel.encode());
         h.update(digest.encode());
     }
+    import from jaclang.compiler.driver.wiring { wiring_digest_for }
+    h.update(wiring_digest_for(source_path).encode());
     return h.hexdigest();
 }
 
@@ -752,7 +858,7 @@ def compute_precompile_module_key(source_path: str, compiler_digest: str = "") -
     import from jaclang.compiler.driver.compilation_context { cache_scope }
     h = hashlib.sha256();
 
-    with cache_scope('') {
+    with cache_scope() {
         h.update(module_cache_key(source_path).encode());
     }
     h.update(b"|compiler=");
@@ -776,11 +882,39 @@ def jir_cacheable_source_path(source_path: str) -> bool {
         or (source_path.endswith('.jac') and not source_path.endswith('.na.jac'));
 }
 
+glob ENV_TRUTHY: set[str] = {
+         '1',
+         'true',
+         'True',
+         'TRUE',
+         'yes',
+         'YES',
+         'on',
+         'ON'
+     };
+
 def cache_mode -> tuple[bool, bool] {
-    truthy: set = {'1', 'true', 'True', 'TRUE', 'yes', 'YES', 'on', 'ON'};
-    rebuild = os.environ.get('JAC_REBUILD', '') in truthy;
-    no_precompile = os.environ.get('JAC_NO_PRECOMPILE', '') in truthy;
+    rebuild = os.environ.get('JAC_REBUILD', '') in ENV_TRUTHY;
+    no_precompile = os.environ.get('JAC_NO_PRECOMPILE', '') in ENV_TRUTHY;
     return (rebuild, no_precompile);
+}
+
+def precompile_required -> bool {
+    return os.environ.get('JAC_PRECOMPILE_REQUIRED', '') in ENV_TRUTHY;
+}
+
+def bundle_dir_allowed(bundle_dir: str) -> bool {
+    dev = os.environ.get('JAC_DEV_SOURCE', '').strip();
+    if not dev {
+        return True;
+    }
+    try {
+        resolved = str(Path(bundle_dir).resolve());
+        dev_root = str(Path(dev).resolve());
+    } except OSError {
+        return False;
+    }
+    return resolved == dev_root or resolved.startswith(dev_root + os.sep);
 }
 
 glob _jaclang_pkg_dir: str = str(
@@ -815,98 +949,50 @@ def _module_cache_root(source_path: str) -> Path {
 }
 
 def _get_module_cache_dir(source_path: str) -> Path {
-    return _module_cache_root(source_path) / compiler_generation();
+    cache_dir = _module_cache_root(source_path) / compiler_generation();
+    _touch_generation(cache_dir);
+    return cache_dir;
 }
 
 def get_module_cache_path(source_path: str) -> Path {
-    import from jaclang.compiler.driver.compilation_context { cache_identity }
     cache_dir = _get_module_cache_dir(source_path);
     source = Path(source_path).resolve();
-    path_hash = hashlib.sha256((str(source) + cache_identity()).encode()).hexdigest()[:8];
+    path_hash = hashlib.sha256((str(source) + _owner_projection()).encode()).hexdigest()[:8];
     (major, minor) = (sys.version_info.major, sys.version_info.minor);
     return cache_dir / f"{source.stem}.{path_hash}.cpython-{major}{minor}.jir";
 }
 
-glob GENERATION_TTL_DAYS: float = 14.0,
-     _SWEPT_ROOTS: set[str] = set();
+glob _TOUCHED_GENERATIONS: set[str] = set();
 
-def generation_ttl_seconds -> float {
-    raw = os.environ.get("JAC_CACHE_GENERATION_TTL_DAYS", "").strip();
-    if not raw {
-        return GENERATION_TTL_DAYS * 86400.0;
+def _touch_generation(cache_dir: Path) {
+    key = str(cache_dir);
+    if key in _TOUCHED_GENERATIONS {
+        return;
     }
-    try {
-        return max(0.0, float(raw)) * 86400.0;
-    } except ValueError {
-        return GENERATION_TTL_DAYS * 86400.0;
+    _TOUCHED_GENERATIONS.add(key);
+    import from jaclang.cache.registry { bucket }
+    if cache_dir.is_dir() {
+        bucket("jir-modules").note_hit(cache_dir);
     }
-}
-
-def _is_generation_name(name: str) -> bool {
-    if len(name) != 16 {
-        return False;
-    }
-    for ch in name {
-        if ch not in "0123456789abcdef" {
-            return False;
-        }
-    }
-    return True;
 }
 
 def sweep_stale_generations(cache_root: Path, keep: str) -> int {
-    import shutil;
-    import time;
-    ttl = generation_ttl_seconds();
-    if ttl <= 0.0 {
-        return 0;
-    }
-    now = time.time();
-    removed = 0;
-    try {
-        items = list(cache_root.iterdir());
-    } except OSError {
-        return 0;
-    }
-    for item in items {
-        name = item.name;
-        is_dir = item.is_dir();
-        if is_dir {
-            if name == keep or not (_is_generation_name(name) or name == "native") {
-                continue;
-            }
-        } elif not name.endswith(".jir") {
-            continue;
-        }
-        try {
-            if now - item.stat().st_mtime <= ttl {
-                continue;
-            }
-        } except OSError {
-            continue;
-        }
-        if is_dir {
-            shutil.rmtree(item, ignore_errors=True);
-        } else {
-            try {
-                item.unlink();
-            } except OSError {
-                continue;
-            }
-        }
-        removed += 1;
-    }
-    return removed;
+    import from jaclang.cache.policy { sweep_dir }
+    import from jaclang.cache.registry { bucket }
+    result = sweep_dir(
+        cache_root, bucket("jir-modules").policy, keep={keep}, bucket="jir-modules"
+    );
+    return len(result.removed);
 }
 
 def _sweep_once(cache_root: Path) {
-    key = str(cache_root);
-    if key in _SWEPT_ROOTS {
-        return;
-    }
-    _SWEPT_ROOTS.add(key);
+    import from jaclang.cache.policy { maybe_sweep_dir }
+    import from jaclang.cache.registry { bucket, maybe_sweep }
     try {
-        sweep_stale_generations(cache_root, compiler_generation());
+        maybe_sweep_dir(
+            cache_root, bucket("jir-modules").policy, keep={compiler_generation()}
+        );
+        maybe_sweep("jir-bootstrap");
     } except Exception {}
 }
 
@@ -1058,7 +1144,8 @@ def read_debug_source(data: bytes) -> (str | None) {
 def is_module_cache_valid(source_path: str, cache_path: Path) -> bool {
     import from jaclang.compiler.driver.bccache {
         discover_annex_files,
-        discover_style_annex
+        discover_style_annex,
+        discover_wiring_file
     }
     if not cache_path.exists() {
         return False;
@@ -1082,6 +1169,10 @@ def is_module_cache_valid(source_path: str, cache_path: Path) -> bool {
         style = discover_style_annex(source_path);
         if style is not None {
             related.append(style);
+        }
+        wiring = discover_wiring_file(source_path);
+        if wiring is not None {
+            related.append(wiring);
         }
         fresh = cache_mtime > os.path.getmtime(source_path);
         if fresh {
@@ -1109,30 +1200,40 @@ def is_module_cache_valid(source_path: str, cache_path: Path) -> bool {
 
 
 def _mergeable_sections(
-    cache_path: Path, key_sections: dict[int, bytes]
-) -> tuple[dict[int, bytes], int] {
+    cache_path: Path,
+    key_sections: dict[int, bytes],
+    incoming: (dict[int, bytes] | None) = None
+) -> tuple[dict[int, bytes], int, bool] {
     try {
         if not cache_path.exists() {
-            return ({}, 0, );
+            return ({}, 0, False);
         }
         data: bytes = cache_path.read_bytes();
         header = parse_header(data[:HEADER_SIZE]);
         if header is None or not header.is_compatible() {
-            return ({}, 0, );
+            return ({}, 0, False);
         }
         magic: any = SECTIONS_MAGIC;
         pos = data.find(magic, HEADER_SIZE);
         if pos < 0 {
-            return ({}, 0, );
+            return ({}, 0, False);
         }
         secs = read_sections(data, pos + len(magic));
         if secs.get(SEC_MODKEY) != key_sections.get(SEC_MODKEY)
             or secs.get(SEC_ENVKEY) != key_sections.get(SEC_ENVKEY) {
-            return ({}, 0, );
+            return ({}, 0, False);
         }
-        return (secs, header.flags, );
+        stale_code = not ct_deps_fresh(data);
+        if incoming is not None {
+            for kind in [SEC_CTDEPS, SEC_INTEROP] {
+                if kind in incoming and incoming[kind] != secs.get(kind, b"") {
+                    stale_code = True;
+                }
+            }
+        }
+        return (secs, header.flags, stale_code);
     } except Exception {
-        return ({}, 0, );
+        return ({}, 0, False);
     }
 }
 
@@ -1149,9 +1250,23 @@ def write_module_cache(
     try {
         cache_path = get_module_cache_path(resolved_path);
         key_sections = module_jir_key_sections(resolved_path);
-        (existing, existing_flags) = _mergeable_sections(cache_path, key_sections);
+        (existing, existing_flags, stale_code) = _mergeable_sections(
+            cache_path, key_sections, extra_sections
+        );
         sections: dict[int, bytes] = {};
         sections.update(existing);
+        if stale_code {
+            for kind in [
+                SEC_BYTECODE,
+                SEC_NATIVE_OBJ,
+                SEC_LLVM_IR,
+                SEC_INTEROP,
+                SEC_MTIR,
+                SEC_CLIENT
+            ] {
+                sections.pop(kind, None);
+            }
+        }
         sections.update(key_sections);
         if bytecode is not None {
             sections[SEC_BYTECODE] = bytecode;
@@ -1159,6 +1274,14 @@ def write_module_cache(
         if extra_sections is not None {
             for (k, v) in extra_sections.items() {
                 sections[k] = v;
+            }
+
+            if SEC_NATIVE_OBJ in extra_sections or SEC_LLVM_IR in extra_sections {
+                for kind in [SEC_NATIVE_OBJ, SEC_LLVM_IR] {
+                    if kind not in extra_sections {
+                        sections.pop(kind, None);
+                    }
+                }
             }
         }
         merged_flags = flags | existing_flags;

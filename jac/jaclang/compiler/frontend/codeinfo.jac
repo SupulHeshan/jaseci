@@ -1,4 +1,5 @@
 import hashlib;
+import from jaclang.runtime.surface { SurfaceEntry }
 import from collections.abc { Sequence }
 import from contextvars { ContextVar }
 import from jaclang.compiler.frontend.constant {
@@ -94,7 +95,7 @@ obj NativeFieldInfo {
         is_func_ptr: bool = False,
         func_param_types: (list[str] | None) = None,
         func_ret_type: (str | None) = None,
-        elem_keys: (list[str] | None) = None,
+        elem_keys: (list[str | None] | None) = None,
         foreign: bool = False;
 }
 
@@ -125,7 +126,7 @@ obj NativeFuncLayout {
         ret_struct_name: (str | None) = None,
         ret_tuple_layout: (NativeTupleLayout | None) = None,
         ret_enum_type: (str | None) = None,
-        ret_elem_keys: (list[str] | None) = None;
+        ret_elem_keys: (list[str | None] | None) = None;
 }
 
 obj NativeTestLayout {
@@ -246,9 +247,10 @@ def install_native_static_init(
     engine.static_init_chained = {"jac_entry"};
 }
 
+glob NATIVE_STDLIB_EXTENSIONS: dict[str, str] = {"os": "_os_native"};
+
 glob NATIVE_SUPPORTED_STDLIB: set[str] = {
          "sys",
-         "math",
          "time",
          "os",
          "random",
@@ -354,6 +356,26 @@ def native_stdlib_root -> (str | None) {
     return stdlib_dir if os.path.isdir(stdlib_dir) else None;
 }
 
+def bundled_native_module_names -> list[str] {
+    import os;
+    stdlib_root = native_stdlib_root();
+    if stdlib_root is None {
+        return [];
+    }
+    names: set[str] = set();
+    for item in os.listdir(stdlib_root) {
+        if item.startswith("_") or item.startswith(".") {
+            continue;
+        }
+        if os.path.isdir(os.path.join(stdlib_root, item)) {
+            names.add(item);
+        } elif item.endswith(".jac") {
+            names.add(item.split(".")[0]);
+        }
+    }
+    return sorted(names);
+}
+
 def is_native_by_location(file_path: str) -> bool {
     import os;
     import jaclang;
@@ -449,7 +471,8 @@ def is_bundled_native_module(module_name: str) -> bool {
     if stdlib_dir is None or not module_name {
         return False;
     }
-    path_name = module_name.lstrip('.').replace('.', os.sep);
+    clean = module_name.lstrip('.');
+    path_name = NATIVE_STDLIB_EXTENSIONS.get(clean, clean).replace('.', os.sep);
     return _native_variant_path(os.path.join(stdlib_dir, path_name)) is not None;
 }
 
@@ -495,8 +518,25 @@ def native_target_os -> str {
     return "linux";
 }
 
+def native_target_arch -> str {
+    import platform;
+    _t = effective_native_target();
+    machine = (_t.split("-")[0] if _t else platform.machine()).lower();
+    if machine in ("arm64", "aarch64") or machine.startswith("arm64") {
+        return "aarch64";
+    }
+    if machine in ("x86_64", "amd64", "x64") {
+        return "x86_64";
+    }
+    return machine;
+}
+
 def _native_variant_path(base_no_ext: str) -> (str | None) {
     import os;
+    _archv = f"{base_no_ext}.{native_target_arch()}.jac";
+    if os.path.exists(_archv) {
+        return _archv;
+    }
     _osv = os.path.join(f"{base_no_ext}.{native_target_os()}.jac");
     if os.path.exists(_osv) {
         return _osv;
@@ -526,6 +566,26 @@ def resolve_native_module(
     import os;
     clean = module_name.lstrip('.');
     path_name = clean.replace('.', os.sep);
+
+    level = len(module_name) - len(clean);
+    if level > 0 {
+        if not allow_inferred {
+            return (None, None);
+        }
+        search = os.path.abspath(base_dir);
+        for _ in range(level - 1) {
+            search = os.path.dirname(search);
+        }
+        candidate = os.path.join(search, path_name);
+        if os.path.isdir(candidate) {
+            candidate = os.path.join(candidate, '__init__');
+        }
+        local = _inferred_native_path(_native_variant_path(candidate));
+        if local is not None {
+            return (str(os.path.relpath(local, os.path.abspath(base_dir))), local);
+        }
+        return (None, None);
+    }
 
     if clean.startswith('jaclang.') {
         import from jaclang.project.modresolver { resolve_module }
@@ -588,7 +648,8 @@ def resolve_native_module(
 
     bundled_root = native_stdlib_root();
     if bundled_root is not None {
-        bundled = _native_variant_path(os.path.join(bundled_root, path_name));
+        bundled_name = NATIVE_STDLIB_EXTENSIONS.get(clean, path_name);
+        bundled = _native_variant_path(os.path.join(bundled_root, bundled_name));
         if bundled is not None {
             return (path_name, bundled);
         }
@@ -709,6 +770,7 @@ obj BoundaryTypeInfo {
         nested_types: list[str] = [];
 }
 
+
 obj InteropBinding {
     has name: str,
         source_context: InteropContext,
@@ -733,8 +795,7 @@ obj InteropManifest {
         boundary_types: dict[(str, BoundaryTypeInfo)] = {},
         boundary_type_names: dict[str, dict[str, str]] = {},
         endpoint_effects: dict[(str, dict[str, any])] = {},
-        func_access: dict[(str, bool)] = {},
-        walker_access: dict[(str, bool)] = {},
+        surface: dict[(str, SurfaceEntry)] = {},
         app_edges: list[tuple[(str, str)]] = [],
         provider_routes: dict[(str, str)] = {},
         native_module_imports: dict[(str, NativeModuleInfo)] = {},
@@ -760,7 +821,7 @@ obj NodeComments {
 }
 
 obj CodeGenTarget {
-    has py: str = '',
+    has _py: (str | None) = None,
         jac: str = '',
         _doc_ir: (Doc | None) = None,
         js: str = '',
@@ -790,6 +851,7 @@ obj CodeGenTarget {
         _exported_symbols: list[str] = [],
         doc_comments: (NodeComments | None) = None;
 
+    has py: str { getter; setter(value: str); }
     has doc_ir: Doc { getter; setter(value: Doc); }
     has client_manifest: ClientManifest { getter; setter(value: ClientManifest); }
     has interop_manifest: InteropManifest { getter; setter(value: InteropManifest); }

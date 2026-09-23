@@ -1,3 +1,4 @@
+import from jaclang.compiler.frontend.roles { Kid }
 import os;
 import sys;
 import jaclang.compiler.frontend.unitree as uni;
@@ -19,12 +20,19 @@ obj ModuleHub {
 
     def stamp(resolved_path: str) {
         import time;
-        import from jaclang.compiler.driver.bccache { discover_annex_files }
+        import from jaclang.compiler.driver.bccache {
+            discover_annex_files,
+            discover_wiring_file
+        }
         seen = time.time();
         try {
             seen = max(seen, os.path.getmtime(resolved_path));
             for related in discover_annex_files(resolved_path) {
                 seen = max(seen, os.path.getmtime(related));
+            }
+            wiring = discover_wiring_file(resolved_path);
+            if wiring is not None {
+                seen = max(seen, os.path.getmtime(wiring));
             }
         } except OSError {}
         self.stamps[resolved_path] = seen;
@@ -32,7 +40,10 @@ obj ModuleHub {
 
     def is_fresh(resolved_path: str) -> bool {
         import os;
-        import from jaclang.compiler.driver.bccache { discover_annex_files }
+        import from jaclang.compiler.driver.bccache {
+            discover_annex_files,
+            discover_wiring_file
+        }
         cached_at = self.stamps.get(resolved_path);
         if cached_at is None {
             return True;
@@ -45,6 +56,10 @@ obj ModuleHub {
                 if os.path.getmtime(related) > cached_at {
                     return False;
                 }
+            }
+            wiring = discover_wiring_file(resolved_path);
+            if wiring is not None and os.path.getmtime(wiring) > cached_at {
+                return False;
             }
             return True;
         } except OSError {
@@ -100,7 +115,7 @@ obj ModuleHub {
         prog_root.set_kids(
             [
                 k
-                for k in prog_root.kid
+                for k in [prog_root->:Kid:->]
                 if id(k) not in dropped_ids
             ],
             pos_update=False

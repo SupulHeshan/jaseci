@@ -78,9 +78,11 @@ impl NaIRGenPass.postinit -> None {
         "JacComplex"
     );
     self.complex_struct_type.set_body(ir.DoubleType(), ir.DoubleType());
+    self.type_map["complex"] = self.complex_struct_type.as_pointer();
 
     self._range_struct_type = self.llvm_module.context.get_identified_type("JacRange");
     self.range_struct_type.set_body(ir.IntType(64), ir.IntType(64), ir.IntType(64));
+    self.type_map["range"] = self.range_struct_type.as_pointer();
 
     self._slice_struct_type = self.llvm_module.context.get_identified_type("JacSlice");
     self.slice_struct_type.set_body(ir.IntType(64), ir.IntType(64), ir.IntType(64));
@@ -137,7 +139,7 @@ impl NaIRGenPass._run_impl(ir_in: uni.Module) -> uni.Module {
     self._register_archetypes(self.module);
     self._register_enum_methods(self.module, declare=False);
 
-    _entry_nodes: list[uni.UniNode] = [];
+    _entry_nodes: list[uni.ModuleCode] = [];
     for stmt in ModuleFacts.iter_context_stmts(self.module, CodeContext.NATIVE) {
         if (
             isinstance(stmt, uni.Ability)
@@ -665,6 +667,14 @@ impl NaIRGenPass._register_imported_struct_types -> None {
             continue;
         }
         self._ensure_dep_inference(imported_mod);
+
+        _dep_path = os.path.realpath(full_path);
+        if _dep_path not in self.module.ct_file_deps {
+            self.module.ct_file_deps.append(_dep_path);
+        }
+        if _dep_path not in self.module.ct_body_deps {
+            self.module.ct_body_deps.append(_dep_path);
+        }
         processed_modules.add(abs_key);
         _canon_src[abs_key] = _kernel_owner or os.path.realpath(full_path);
         imported_mods.append((_canon_src[abs_key], imported_mod));
@@ -1186,7 +1196,16 @@ impl NaIRGenPass._register_imported_globals(
                 }
                 var_type = self._resolve_jac_type(assign.type_tag.tag);
             }
-            global_var = ir.GlobalVariable(self.llvm_module, var_type, name=var_name);
+            import from jaclang.compiler.frontend.codeinfo {
+                native_library_function_symbol
+            }
+            global_var = ir.GlobalVariable(
+                self.llvm_module,
+                var_type,
+                name=native_library_function_symbol(source_path, var_name)
+                    if source_path
+                    else var_name
+            );
             global_var.linkage = "external";
             self.global_vars[var_name] = global_var;
             self.global_var_types[var_name] = var_type;
@@ -1238,6 +1257,11 @@ impl NaIRGenPass._forward_declare_imported_ability(
             );
         if _fd_demoted {
             self._native_skipped_methods.add(name);
+            if declaring_module is not None {
+                self._native_skipped_import_origin.setdefault(name, set()).add(
+                    os.path.realpath(declaring_module.source.file_path)
+                );
+            }
             return;
         }
     }
@@ -1364,6 +1388,9 @@ impl NaIRGenPass._process_clib_imports(module: uni.Module) -> None {
                     (mod_name, _supported) = classify_native_import(item);
                     if _supported and mod_name is not None {
                         self._native_stdlib_modules.add(mod_name);
+                        if is_bundled_native_module(mod_name) {
+                            self._native_module_imports.add(mod_name);
+                        }
                     } elif mod_name is not None
                         and is_bundled_native_module(mod_name) {
                         self._native_module_imports.add(mod_name);
@@ -1570,6 +1597,12 @@ impl NaIRGenPass._primitive_method_names(type_name: str) -> set[str] {
     return _names;
 }
 
+impl NaIRGenPass._primitive_method_takes_kwargs(
+    type_name: str, method_name: str
+) -> bool {
+    return (type_name, method_name) in {("list", "sort"), ("str", "splitlines")};
+}
+
 impl NaIRGenPass._dispatch_primitive_method(
     type_name: str,
     method_name: str,
@@ -1589,7 +1622,7 @@ impl NaIRGenPass._dispatch_primitive_method(
     if _emit_fn is None {
         return None;
     }
-    if kwargs and method_name not in ("sort", ) {
+    if kwargs and not self._primitive_method_takes_kwargs(type_name, method_name) {
         self.ctx.emit(
             E5092,
             node_override=kw_node,
@@ -1648,7 +1681,7 @@ impl NaIRGenPass._dispatch_builtin(
     if _emit_fn is None {
         return None;
     }
-    if kwargs and func_name not in ("sorted", ) {
+    if kwargs and func_name not in ("sorted", "min", "max") {
         self.ctx.emit(
             E5092,
             node_override=kw_node,

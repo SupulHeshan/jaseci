@@ -175,12 +175,8 @@ impl base_expr_is_erased(base: UniNode) -> bool {
     return isinstance(_tail, Name) and _tail.value in NATIVE_ERASED_BASES;
 }
 
-impl name_in_type_position(name_nd: UniNode) -> bool {
-    if name_nd.find_parent_of_type(SubTag) is not None {
-        return True;
-    }
-    sig = name_nd.find_parent_of_type(FuncSignature);
-    if sig is not None and node_within(name_nd, sig.return_type) {
+impl name_erased_natively(name_nd: UniNode) -> bool {
+    if in_type_position(name_nd, include_subscripts=False) {
         return True;
     }
     for _decl in [
@@ -281,7 +277,7 @@ impl native_capability_violations(
             if _nm.find_parent_of_type(Import) is not None {
                 continue;
             }
-            if name_in_type_position(_nm) {
+            if name_erased_natively(_nm) {
                 _type_used.add(_nm.value);
             } else {
                 _runtime_used.add(_nm.value);
@@ -338,15 +334,23 @@ impl native_capability_violations(
                     continue;
                 }
                 if _stdlib_help is None {
+                    import from jaclang.compiler.frontend.codeinfo {
+                        bundled_native_module_names
+                    }
                     _supported_list = ", ".join(
                         f"`import {m}`" for m in sorted(NATIVE_SUPPORTED_STDLIB)
+                    );
+                    _bundled_list = ", ".join(
+                        f"`import {m}`" for m in bundled_native_module_names()
                     );
                     _stdlib_help = (
                         f"Native compilation supports these stdlib imports: "
                         f"{_supported_list}; C-library imports "
                         f"(`import from \"lib\" {{...}}`); and other Jac "
                         f"modules on the native pathway (`import mod` or "
-                        f"`import from mod {{...}}`). Move "
+                        f"`import from mod {{...}}`). The bundled native "
+                        f"standard library also provides "
+                        f"{_bundled_list}. Move "
                         f"Python-dependent code to a @sv/Python context."
                     );
                 }
@@ -501,10 +505,16 @@ impl native_capability_violations(
                     );
                     continue;
                 }
+                _vp_mod = nd.find_parent_of_type(Module);
                 if (
                     _vp_encl is not None
                     and _vp_encl.access is not None
                     and _vp_encl.access.tag.name == Tok.KW_PUB
+                    and not (
+                        _vp_mod is not None
+                        and _vp_mod.loc
+                        and is_native_by_location(_vp_mod.loc.mod_path)
+                    )
                 ) {
                     out.append(
                         (
@@ -648,7 +658,7 @@ impl native_capability_violations(
                     continue;
                 }
             }
-            for k in nd.kid {
+            for k in [nd->:Kid:->] {
                 work.append(k);
             }
         }
@@ -793,6 +803,9 @@ impl PortabilityWarnPass._check_js_globals(mod: Module) -> None {
         }
 
         if name_nd.find_parent_of_type(Import) is not None {
+            continue;
+        }
+        if name_nd.find_parent_of_type(ImplImport) is not None {
             continue;
         }
         if name_nd.value in JS_GLOBALS {
