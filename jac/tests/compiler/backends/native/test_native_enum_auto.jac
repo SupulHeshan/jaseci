@@ -12,7 +12,9 @@ the call, and twenty-one more methods demoted on that.
 members already assigned. That makes it a question about the declaration
 rather than the expression, which is why the answer lives beside the enum's
 layout instead of in the constant folder: the members arrive in source order
-and the generated value is `max(seen) + 1`, counting from 1.
+and the generated value is `max(seen) + 1`, counting from 1. A declared
+member with no value at all (`enum E { A, B }`) is `auto()` too, as the
+Python backend lowers it (#9367).
 
 Counting from the largest rather than the last is the part worth pinning.
 `High = 10; Low = 3; Next = auto()` is `11` in CPython, not `4`, and a rule
@@ -21,16 +23,11 @@ quietly, because nothing else in the file would disagree with it.
 
 Two things still refuse, and they refuse rather than guess. A generated value
 that follows a member the fold could not reach has no maximum to count from,
-so it stays unknown and `all_values_known` reads false. And the name is
-matched through its symbol, not its spelling: a module-local function called
-`auto` is not `enum`'s, so `enum_auto_shadow.jac` keeps its seam and the
-server lane answers what CPython answers.
-
-A declared member with no value at all (`enum E { A, B }`) is `auto()` too:
-the Python backend lowers it so, and the native layout once stored it as `0`,
-making every such member equal (#9367). The same refusal now holds for a
-declared enum as for the class form -- a table the emitter cannot encode is
-reported under E5092 where it is read, never lowered with guessed zeros.
+so it stays unknown and `all_values_known` reads false; such an enum is
+reported under E5092 where it is used, never lowered with guessed zeros. And
+the name is matched through its symbol, not its spelling: a module-local
+function called `auto` is not `enum`'s, so `enum_auto_shadow.jac` keeps its
+seam and the server lane answers what CPython answers.
 """
 
 import contextlib;
