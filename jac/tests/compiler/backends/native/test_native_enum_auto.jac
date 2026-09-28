@@ -189,7 +189,7 @@ test "a module-local auto is not read as the enum's" {
 }
 
 
-test "an unencodable declared enum refuses where it is read" {
+test "an unencodable declared enum refuses where it is used" {
     (prog, _ir) = compile_native("enum_unencodable.jac");
     errs = [str(e) for e in prog.errors_had];
     assert any("Native lowering failed for enum 'Ratio'" in e for e in errs) , (
