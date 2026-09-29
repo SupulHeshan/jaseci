@@ -1264,7 +1264,10 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
             _builtin_params = builtin_kwarg_param_names(_builtin_name);
             _use_kwargs_temp = False;
             _spread_arg: (es.Expression | None) = None;
-            if _builtin_params is not None and props {
+            # A positional spread's length is unknown at compile time, so the
+            # slots it fills are too; keep source order rather than guess.
+            _has_pos_spread = any(isinstance(_a, es.SpreadElement) for _a in args);
+            if _builtin_params is not None and props and not _has_pos_spread {
                 (_spread_arg, _spread_read_source) = self._make_kwargs_spread_context(
                     props, here
                 );

@@ -2945,6 +2945,7 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         + "  sorted_kwargs_order: sorted_kwargs_order([\"ccc\", \"a\", \"bb\"]),"
         + "  sorted_kwargs_spread: sorted_kwargs_spread("
         + "[\"ccc\", \"a\", \"bb\"], {key: (s) => s.length}),"
+        + "  pos_spread_kwargs: pos_spread_with_kwargs([3.14159], [[1, 2, 3]]),"
         + "  empty_error: _emptyErr"
         + "}));\n"
     );
@@ -2985,6 +2986,8 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     # `key=`/`reverse=` in both written orders agree, `pow_*` checks the
     # same for fully-named required args, and `sorted_kwargs_spread`
     # checks a `**opts` spread mixed with an explicit keyword.
+    # `pos_spread_kwargs` checks a positional `*args` spread keeps source
+    # order, since the slots it fills are unknown at compile time.
     expected_scalars = {
         "combined min(a)": (got["combined"][0], 1),
         "combined max(a)": (got["combined"][1], 2),
@@ -3006,7 +3009,9 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         ),
         "pow(base=, exp=)": (got["numeric"]["pow_base_exp"], 125),
         "pow(exp=, base=)": (got["numeric"]["pow_exp_base"], 125),
-        "sorted(reverse=, **spread)": (got["sorted_kwargs_spread"], ["ccc", "bb", "a"])
+        "sorted(reverse=, **spread)": (got["sorted_kwargs_spread"], ["ccc", "bb", "a"]),
+        "round(*args, ndigits=)": (got["pos_spread_kwargs"][0], 3.14),
+        "sum(*args, start=)": (got["pos_spread_kwargs"][1], 16)
     };
     for (label, (actual, expected)) in expected_scalars.items() {
         assert actual == expected , (

@@ -49,6 +49,10 @@ def sorted_kwargs_spread(items: list[any], opts: dict[str, any]) -> list[any] {
     return sorted(items, reverse=True, **opts);
 }
 
+def pos_spread_with_kwargs(args: list[any], nums: list[any]) -> list[any] {
+    return [round(*args, ndigits=2), sum(*nums, start=10)];
+}
+
 def min_of_empty -> int {
     return min([]);
 }
