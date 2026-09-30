@@ -5613,10 +5613,13 @@ def _lambdas__lambda_closure_as_scaler(eng: any, _ir: any) {
     assert f(7, -2) == -14 , f"Expected -14, got {f(7, -2)}";
 }
 
-"""lambda untyped parameter infers its real type from context (#7139)"""
+"""lambda untyped parameter infers its real type from context (#7139)
+
+`x + "!"` uses `x` as a string -- a bare `x;` survives a wrong `i64` slot.
+"""
 def _lambdas__untyped_param_infers_str(eng: any, _ir: any) {
     f = get_sfunc(eng, "untyped_param_infers_str", ctypes.c_char_p);
-    assert f() == b"hello" , f"Expected b'hello', got {f()}";
+    assert f() == b"hello!" , f"Expected b'hello!', got {f()}";
 }
 
 test "lambdas" {
