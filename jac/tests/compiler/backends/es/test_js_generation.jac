@@ -2981,13 +2981,9 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     # straight through -- otherwise xs's elements splice into the runtime
     # helper's own argument list instead of forming the array it expects.
     #
-    # The remaining keys (#9120) cover builtin keyword args resolving by
-    # name instead of source position: `sorted_kwargs_order` checks
-    # `key=`/`reverse=` in both written orders agree, `pow_*` checks the
-    # same for fully-named required args, and `sorted_kwargs_spread`
-    # checks a `**opts` spread mixed with an explicit keyword.
-    # `pos_spread_kwargs` checks a positional `*args` spread keeps source
-    # order, since the slots it fills are unknown at compile time.
+    # The remaining keys (#9120) check builtin kwargs resolve by name:
+    # both kwarg orders, a `**opts` spread, and a positional `*args`
+    # spread (kept in source order).
     expected_scalars = {
         "combined min(a)": (got["combined"][0], 1),
         "combined max(a)": (got["combined"][1], 2),
