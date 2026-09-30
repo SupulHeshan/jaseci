@@ -1,8 +1,7 @@
-import from typing { TypeAlias }
 import from jaclang.compiler.frontend.unitree { UniCFGNode }
 
-glob SymId: TypeAlias = int,
-     DataflowTransfer: TypeAlias = Callable[[UniCFGNode, set[SymId]], set[SymId]];
+type SymId = int;
+type DataflowTransfer = Callable[[UniCFGNode, set[SymId]], set[SymId]];
 
 def _state_at(state: dict[int, set[SymId]], key: int) -> set[SymId] {
     _cur = state.get(key);
@@ -31,6 +30,34 @@ def solve_forward(
             }
         }
         if new_state != _state_at(state, id(n)) {
+            state[id(n)] = new_state;
+            for nb in n.bb_out {
+                worklist.append(nb);
+            }
+        }
+    }
+    return state;
+}
+
+def solve_forward_must(
+    cfg_nodes: list[UniCFGNode], transfer: DataflowTransfer, universe: set[SymId]
+) -> dict[int, set[SymId]] {
+    state: dict[int, set[SymId]] = {};
+    for n in cfg_nodes {
+        state[id(n)] = set() if not n.bb_in else set(universe);
+    }
+    worklist = list(cfg_nodes);
+    while worklist {
+        n = worklist.pop();
+        if not n.bb_in {
+            continue;
+        }
+        new_state: set[SymId] | None = None;
+        for pred in n.bb_in {
+            pred_out = transfer(pred, _state_at(state, id(pred)));
+            new_state = set(pred_out) if new_state is None else new_state & pred_out;
+        }
+        if new_state is not None and new_state != _state_at(state, id(n)) {
             state[id(n)] = new_state;
             for nb in n.bb_out {
                 worklist.append(nb);

@@ -14,17 +14,22 @@ requires a Windows host (or WSL interop) and is not assumed here.
 """
 
 import os;
+import from jaclang.compiler.driver.compile_options {
+    push_native_target,
+    pop_native_target
+}
 import struct;
 import subprocess;
-import sys;
 import tempfile;
 import from pathlib { Path }
-import from tests.support { TESTS_DIR }
+import from tests.support { TESTS_DIR, program_ir }
+import from tests.support { jac_command }
 import jaclang;
 import from jaclang.compiler.driver.program { JacProgram }
 import from jaclang.compiler.driver.compile_options { CompileOptions }
 import from jaclang.compiler.backends.native.pe_linker { PeLinker }
 import jaclang.compiler.backends.native.llvm.binding as llvm;
+import from tests.support { program_ir }
 
 glob FIXTURES = os.path.join(
          TESTS_DIR, "compiler", "backends", "native", "fixtures"
@@ -34,62 +39,12 @@ glob FIXTURES = os.path.join(
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
-"""Inject the PE entry stub the way nacompile does (main + _jac_win_start +
-the _fltused / __getmainargs / exit declarations)."""
-def _inject_pe_entry(ir: str) -> str {
-    glob_ir = ""
-        if "__jac_argc" in ir
-        else ('@__jac_argc = global i32 0\n@__jac_argv = global ptr null\n\n');
-    exit_decl = ""
-        if ("@exit" in ir or '@"exit"' in ir)
-        else 'declare void @exit(i32)\n\n';
-    fltused = "" if "@_fltused" in ir else '@_fltused = global i32 0\n\n';
-    return ir
-        + (
-            '\n'
-            + glob_ir
-            + exit_decl
-            + fltused
-            + 'declare i32 @__getmainargs(ptr, ptr, ptr, i32, ptr)\n\n'
-            + 'define i32 @main(i32 %argc, ptr %argv) {\n'
-            + 'entry:\n'
-            + '  store i32 %argc, ptr @__jac_argc\n'
-            + '  store ptr %argv, ptr @__jac_argv\n'
-            + '  call void @jac_entry()\n'
-            + '  ret i32 0\n'
-            + '}\n\n'
-            + 'define void @_jac_win_start() {\n'
-            + 'entry:\n'
-            + '  %argc.addr = alloca i32\n'
-            + '  %argv.addr = alloca ptr\n'
-            + '  %env.addr = alloca ptr\n'
-            + '  %si = alloca i32\n'
-            + '  store i32 0, ptr %si\n'
-            + '  %gr = call i32 @__getmainargs(ptr %argc.addr, ptr %argv.addr, ptr %env.addr, i32 0, ptr %si)\n'
-            + '  %ac = load i32, ptr %argc.addr\n'
-            + '  %av = load ptr, ptr %argv.addr\n'
-            + '  %r = call i32 @main(i32 %ac, ptr %av)\n'
-            + '  call void @exit(i32 %r)\n'
-            + '  ret void\n'
-            + '}\n'
-        );
-}
-
-
-"""Compile a fixture to a relocatable COFF object the way nacompile does."""
+"""Compile a fixture to a relocatable COFF object the way nacompile does:
+the plan's whole-program IR carries the PE entry (main + _jac_win_start)."""
 def emit_coff_object(fixture: str) -> bytes {
-    prev = os.environ.get("JAC_NATIVE_TARGET", None);
-    os.environ["JAC_NATIVE_TARGET"] = WIN_TRIPLE;
+    prev = push_native_target(WIN_TRIPLE);
     try {
-        prog = JacProgram();
-        ir = prog.compile(
-            file_path=os.path.join(FIXTURES, fixture),
-            options=CompileOptions(aot_mode=True)
-        );
-        assert not prog.errors_had , f"compile errors: {[
-            str(e) for e in prog.errors_had
-        ]}";
-        src = _inject_pe_entry(str(ir.gen.llvm_ir));
+        src = program_ir(fixture, WIN_TRIPLE);
         llvm.initialize_all_targets();
         llvm.initialize_all_asmprinters();
         mod = llvm.parse_assembly(src);
@@ -110,11 +65,7 @@ def emit_coff_object(fixture: str) -> bytes {
         mpm.run(mod, pb);
         relobj = tm.emit_object(mod);
     } finally {
-        if prev is None {
-            os.environ.pop("JAC_NATIVE_TARGET", None);
-        } else {
-            os.environ["JAC_NATIVE_TARGET"] = prev;
-        }
+        pop_native_target(prev);
     }
     return relobj;
 }
@@ -124,14 +75,14 @@ def emit_coff_object(fixture: str) -> bytes {
 def link_pe(relobj: bytes) -> bytes {
     d = tempfile.mkdtemp();
     out = os.path.join(d, "a.exe");
-    ok = PeLinker.link(obj_bytes=relobj, output_path=out);
+    ok = PeLinker.link(objects=[relobj], output_path=out);
     assert ok , "PeLinker.link returned False";
     return Path(out).read_bytes();
 }
 
 
 """Map an image RVA to a file offset using the section table."""
-def _rva_to_off(b: bytes, secs: list, rva: int) -> int {
+def _rva_to_off(b: bytes, secs: list[any], rva: int) -> int {
     for (va, vsz, foff, rsz) in secs {
         if rva >= va and rva < va + max(vsz, rsz) {
             return foff + (rva - va);
@@ -149,7 +100,7 @@ def _cstr(b: bytes, off: int) -> str {
 
 
 """Parse a PE32+ image into a dict of the fields the tests assert on."""
-def parse_pe(b: bytes) -> dict {
+def parse_pe(b: bytes) -> dict[str, any] {
     assert b[0:2] == b"MZ" , "missing MZ signature";
     e_lfanew = struct.unpack_from("<I", b, 0x3C)[0];
     assert b[e_lfanew:e_lfanew + 4] == b"PE\x00\x00" , "missing PE signature";
@@ -163,8 +114,8 @@ def parse_pe(b: bytes) -> dict {
     (imp_rva, imp_sz) = struct.unpack_from("<II", b, dd + 1 * 8);
     # section table
     st = opt + opt_sz;
-    secs: list = [];
-    sec_names: list = [];
+    secs: list[any] = [];
+    sec_names: list[any] = [];
     for i in range(nsec) {
         o = st + i * 40;
         nm = b[o:o + 8].rstrip(b"\x00").decode("latin1");
@@ -173,7 +124,7 @@ def parse_pe(b: bytes) -> dict {
         sec_names.append(nm);
     }
     # import descriptors -> dll -> [imported names]
-    imports: dict = {};
+    imports: dict[str, any] = {};
     base = _rva_to_off(b, secs, imp_rva);
     di = 0;
     while base >= 0 {
@@ -183,7 +134,7 @@ def parse_pe(b: bytes) -> dict {
             break;
         }
         dll = _cstr(b, _rva_to_off(b, secs, name_rva));
-        names: list = [];
+        names: list[any] = [];
         toff = _rva_to_off(b, secs, ilt);
         j = 0;
         while True {
@@ -272,7 +223,7 @@ test "data import: dllimport global resolves through an IAT slot (#7626 C4)" {
     relobj = tm.emit_object(mod);
     img = link_pe(relobj);
     pe = parse_pe(img);
-    _all_names: list = [];
+    _all_names: list[any] = [];
     for (_d, _ns) in pe["imports"].items() {
         _all_names.extend(_ns);
     }
@@ -318,7 +269,7 @@ test "data import: direct reference to imported data is a loud link error (#7626
     out = os.path.join(d, "a.exe");
     raised = False;
     try {
-        PeLinker.link(obj_bytes=relobj, output_path=out);
+        PeLinker.link(objects=[relobj], output_path=out);
     } except ValueError as e {
         raised = True;
         assert "__imp_stdout" in str(e) , (
@@ -336,17 +287,15 @@ test "linking is deterministic" {
 test "nacompile --target windows writes a valid PE via the CLI" {
     out = os.path.join(tempfile.mkdtemp(), "smoke.exe");
     proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "jaclang",
-            "nacompile",
-            "--target",
+        jac_command(
+            "build",
+            "--native",
+            "--target-triple",
             "windows",
             os.path.join(FIXTURES, FIXTURE),
             "-o",
             out
-        ],
+        ),
         capture_output=True,
         text=True,
         timeout=300

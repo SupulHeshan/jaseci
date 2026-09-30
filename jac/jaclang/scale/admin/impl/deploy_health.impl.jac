@@ -3,6 +3,7 @@ import logging;
 import from jaclang.server.serving.datatypes { Request }
 import from jaclang.server.serving.datatypes { JSONResponse }
 import from jaclang.server.serving.endpoint { HTTPMethod, JEndPoint }
+import from jaclang.scale.models.resource_status { assess_workload }
 import from jaclang.scale.admin.k8s_ops {
     apps_api,
     core_api,
@@ -23,45 +24,25 @@ def _s(v: any) -> str {
 }
 
 
-def _rollout_status(dep: dict) -> dict {
-    spec = dep.get("spec", {}) or {};
-    status = dep.get("status", {}) or {};
-    desired = int(spec.get("replicas", 0) or 0);
-    updated = int(status.get("updated_replicas", 0) or 0);
-    available = int(status.get("available_replicas", 0) or 0);
-    conditions = status.get("conditions", []) or [];
-
-    for c in conditions {
-        if c.get("type") == "Progressing"
-            and str(c.get("reason", "")) == "ProgressDeadlineExceeded" {
-            return {
-                "status": "stuck",
-                "reason": "ProgressDeadlineExceeded",
-                "message": _s(c.get("message"))
-            };
-        }
-    }
-
-    if updated == desired and available == desired {
-        return {"status": "complete", "reason": "", "message": ""};
-    }
+def _rollout_status(dep: dict[str, any]) -> dict[str, any] {
+    health = assess_workload(dep);
     return {
-        "status": "progressing",
-        "reason": "",
-        "message": f"{available}/{desired} available, {updated} updated"
+        "status": health.status.value,
+        "reason": health.reason,
+        "message": _s(health.message)
     };
 }
 
 
-def summarize_deployment(dep: dict) -> dict {
-    meta = dep.get("metadata", {}) or {};
-    spec = dep.get("spec", {}) or {};
-    status = dep.get("status", {}) or {};
+def summarize_deployment(dep: dict[str, any]) -> dict[str, any] {
+    meta: any = dep.get("metadata", {}) or {};
+    spec: any = dep.get("spec", {}) or {};
+    status: any = dep.get("status", {}) or {};
     containers = ((spec.get("template", {}) or {}).get("spec", {}) or {}).get(
         "containers", []
     )
         or [];
-    images: list = [];
+    images: list[str] = [];
     for c in containers {
         img = c.get("image");
         if img {
@@ -80,17 +61,17 @@ def summarize_deployment(dep: dict) -> dict {
 }
 
 
-def _container_state(cs: dict) -> dict {
-    state = cs.get("state", {}) or {};
+def _container_state(cs: dict[str, any]) -> dict[str, any] {
+    state: any = cs.get("state", {}) or {};
     if state.get("running") {
         return {"state": "running", "reason": ""};
     }
     if state.get("waiting") {
-        w = state.get("waiting", {}) or {};
+        w: any = state.get("waiting", {}) or {};
         return {"state": "waiting", "reason": _s(w.get("reason"))};
     }
     if state.get("terminated") {
-        t = state.get("terminated", {}) or {};
+        t: any = state.get("terminated", {}) or {};
         return {"state": "terminated", "reason": _s(t.get("reason"))};
     }
     return {"state": "unknown", "reason": ""};
@@ -102,11 +83,11 @@ def summarize_pod(pod: dict[str, any]) -> dict[str, any] {
     spec: dict[str, any] = pod.get("spec", {}) or {};
     status: dict[str, any] = pod.get("status", {}) or {};
     labels: dict[str, any] = meta.get("labels", {}) or {};
-    cstatuses: list[any] = status.get("container_statuses", []) or [];
+    cstatuses: any = status.get("container_statuses", []) or [];
 
     ready_count = 0;
     restart_total = 0;
-    containers: list = [];
+    containers: list[dict[str, any]] = [];
     for cs in cstatuses {
         is_ready = bool(cs.get("ready", False));
         if is_ready {
@@ -142,7 +123,9 @@ def summarize_pod(pod: dict[str, any]) -> dict[str, any] {
 }
 
 
-def build_deploy_health(namespace: str, deployments: list, pods: list) -> dict {
+def build_deploy_health(
+    namespace: str, deployments: list[dict[str, any]], pods: list[dict[str, any]]
+) -> dict[str, any] {
     deps = [summarize_deployment(d) for d in deployments];
     pds = [summarize_pod(p) for p in pods];
     deps.sort(key=lambda (d) { d.get("name", ""); });
@@ -156,7 +139,7 @@ def build_deploy_health(namespace: str, deployments: list, pods: list) -> dict {
 }
 
 
-def _collect_deploy_health -> dict {
+def _collect_deploy_health -> dict[str, any] {
     if not k8s_available() {
         return {"available": False, "detail": unavailable_detail()};
     }

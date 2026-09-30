@@ -10,11 +10,13 @@ import io;
 import logging;
 import from datetime { date, datetime, time }
 import from enum { Enum }
+import from typing { cast }
 import from uuid { UUID, uuid4 }
 import from jaclang.runtime.archetype { NodeAnchor, Root, GenericEdge }
 # archetype_alias is an ambient Jac builtin (no import). Serializer is
 # an explicit import because we directly test its internals here.
 import from jaclang.data.serializer { Serializer }
+import from jaclang.data.type_identity { type_module }
 
 
 # --- Alias registry ---------------------------------------------------------
@@ -31,7 +33,7 @@ obj _AliasedNewName(Root) {
 
 test "register_alias maps old qualified name to new class" {
     # _AliasedNewName's decorator ran at module load; alias should exist.
-    mod = getattr(_AliasedNewName, '__module__');
+    mod = type_module(_AliasedNewName);
     nm = getattr(_AliasedNewName, '__name__');
     key = f"{mod}.{nm}";
     assert Serializer._aliases.get("oldmod.LegacyName") == key , (
@@ -46,7 +48,7 @@ test "register_alias maps old qualified name to new class" {
 
 
 test "alias to same qualified name is a no-op (does not self-alias)" {
-    mod = getattr(_AliasTarget, '__module__');
+    mod = type_module(_AliasTarget);
     nm = getattr(_AliasTarget, '__name__');
     key = f"{mod}.{nm}";
     before = dict(Serializer._aliases);
@@ -87,10 +89,13 @@ glob _PERSISTED_BUILTIN_IDENTITIES: dict[str, dict] = {
 
 
 test "persisted built-ins keep their pinned identity and resolve every prior name" {
-    live = {'Root': Root, 'GenericEdge': GenericEdge};
+    live: dict[str, type] = {
+        'Root': cast(type, Root),
+        'GenericEdge': cast(type, GenericEdge)
+    };
     for (name, spec) in _PERSISTED_BUILTIN_IDENTITIES.items() {
         cls = live[name];
-        actual = f"{getattr(cls, '__module__')}.{getattr(cls, '__name__')}";
+        actual = f"{type_module(cls)}.{getattr(cls, '__name__')}";
         expected = f"{spec['module']}.{name}";
         assert actual == expected , (
             f"{name} moved from {expected} to {actual}. It is a persisted "
@@ -367,7 +372,7 @@ test "non-dict archetype warning re-emits on the ladder, not once per anchor" {
 
 
 test "distinct classes do not share a diagnostic slot" {
-    node_blob = {
+    node_blob: dict[str, object] = {
         '__type__': 'NodeAnchor',
         '__module__': 'jaclang.runtime.archetype',
         'id': str(uuid4()),
@@ -378,7 +383,7 @@ test "distinct classes do not share a diagnostic slot" {
         'edges': [],
         'version': 0
     };
-    edge_blob = dict(node_blob) | {'__type__': 'EdgeAnchor'};
+    edge_blob: dict[str, object] = node_blob | {'__type__': 'EdgeAnchor'};
     buf = io.StringIO();
     capture = logging.StreamHandler(buf);
     logger = logging.getLogger("jaclang.data.serializer");

@@ -1,14 +1,22 @@
 import jaclang.compiler.frontend.parser.lexer as na_lexer;
 
 import from .lexer { Lexer }
-import from .parser { Parser }
+import from .parser { Parser, parse_expression as _parse_expression }
+import from .tokens { CommentData, SrcDiag }
 import from jaclang.compiler.frontend.diagnostics { DIAGNOSTICS }
-import from jaclang.compiler.passes.transform { Alert }
+import from jaclang.compiler.passes.context { Alert }
 import type from jaclang.compiler.driver.program { JacProgram }
 import from jaclang.compiler.frontend.srcloc { Span }
-import from jaclang.compiler.frontend.unitree { CommentToken, Module, Source }
+import from jaclang.compiler.frontend.unitree { CommentToken, Expr, Module, Source }
+import from jaclang.compiler.passes.annex_weave {
+    WovenAnnex,
+    merge_annex_into,
+    prune_generated_imports
+}
 
-def _replay_diags(diags: any, from_pass: type, prog: JacProgram, diag_src: Source) {
+def _replay_diags(
+    diags: list[SrcDiag], from_pass: type, prog: JacProgram, diag_src: Source
+) {
     for d in diags {
         loc = d.loc;
         span = Span.make(
@@ -19,7 +27,7 @@ def _replay_diags(diags: any, from_pass: type, prog: JacProgram, diag_src: Sourc
             (loc.pos_start, loc.pos_end)
         );
         code = DIAGNOSTICS.get(d.code_str) if d.code_str else None;
-        help_text = getattr(d, "help", "") or None;
+        help_text = d.help or None;
         alrt = Alert(d.message, span, from_pass, code=code, help_text=help_text);
         if d.is_error {
             prog.errors_had.append(alrt);
@@ -29,7 +37,9 @@ def _replay_diags(diags: any, from_pass: type, prog: JacProgram, diag_src: Sourc
     }
 }
 
-def parse_diags(source: str, file_path: str = "<input>") -> tuple[(bool, list, list)] {
+def parse_diags(
+    source: str, file_path: str = "<input>"
+) -> tuple[bool, list[SrcDiag], list[SrcDiag]] {
     (tokens, _comments, lex_diags, lex_errs) = na_lexer.tokenize_full(
         source, file_path
     );
@@ -38,25 +48,37 @@ def parse_diags(source: str, file_path: str = "<input>") -> tuple[(bool, list, l
     return (parser.error_count > 0 or lex_errs > 0, parser.diags, lex_diags, );
 }
 
-
 def parse(
     source: str, file_path: str = "<input>", prog: (JacProgram | None) = None
 ) -> tuple[Module, bool] {
     (tokens, comments, lex_diags, lex_errs) = na_lexer.tokenize_full(source, file_path);
     parser = Parser(tokens=tokens, file_path=file_path, source_code=source);
     module = parser.parse();
-    had_error = _finish_parse(
+    had_error = finish_parse(
         module, parser.error_count, parser.diags, comments, lex_diags, lex_errs, prog
     );
     return (module, had_error);
 }
 
-def _finish_parse(
+def parse_expression(
+    source: str, file_path: str = "<input>", prog: JacProgram | None = None
+) -> tuple[Expr, bool] {
+    (expression, had_error, parser_diags, lex_diags) = _parse_expression(
+        source, file_path
+    );
+    if prog is not None {
+        _replay_diags(lex_diags, Lexer, prog, expression.loc.orig_src);
+        _replay_diags(parser_diags, Parser, prog, expression.loc.orig_src);
+    }
+    return (expression, had_error);
+}
+
+def finish_parse(
     module: Module,
     p_errs: int,
-    p_diags: any,
-    comments: any,
-    lex_diags: any,
+    p_diags: list[SrcDiag],
+    comments: list[CommentData],
+    lex_diags: list[SrcDiag],
     lex_errs: int,
     prog: (JacProgram | None)
 ) -> bool {
@@ -90,12 +112,10 @@ def _finish_parse(
     }
 
     if module.source {
-        import re;
-        ignore_pattern = re.compile(r'#\s*jac:ignore\[([^\]]+)\]');
         for comment in module.source.comments {
-            m = ignore_pattern.search(comment.value);
-            if m {
-                codes = {c.strip() for c in m.group(1).split(',')};
+            ignored = ignore_directive(comment.value);
+            if ignored is not None {
+                codes = {c.strip() for c in ignored.split(',')};
                 line = comment.line_no;
                 if line in module.source.inline_suppressions {
                     module.source.inline_suppressions[line].update(codes);
@@ -108,39 +128,37 @@ def _finish_parse(
     return p_errs > 0 or lex_errs > 0;
 }
 
-def _native_parse_woven(
-    source_str: str, file_path: str, prog: (JacProgram | None), annexes: list
-) -> (tuple | None) {
-    import jaclang.compiler.native_compiler as _jc;
-    kernel = _jc.ensure_loaded();
-    if kernel is None {
-        return None;
+def ignore_directive(text: str) -> (str | None) {
+    marker = "jac:ignore[";
+    start = text.find("#");
+    while start >= 0 {
+        pos = start + 1;
+        while pos < len(text) and text[pos].isspace() {
+            pos += 1;
+        }
+        if text.startswith(marker, pos) {
+            body_start = pos + len(marker);
+            body_end = text.find("]", body_start);
+            if body_end > body_start {
+                return text[body_start:body_end];
+            }
+        }
+        start = text.find("#", start + 1);
     }
-    for (a_src, a_path) in annexes {
-        kernel.annex(a_src, a_path);
-    }
-    if kernel.run(source_str, file_path) != 0 {
-        return None;
-    }
-    module = kernel.take_module();
-    if module is None {
-        return None;
-    }
-    p_errs = kernel.err_count();
-    lex_errs = kernel.lex_errs();
-    p_diags = kernel.take_diags();
-    lex_diags = kernel.take_lexdiags();
-    comments = kernel.take_comments();
-    had_error = _finish_parse(
-        module, p_errs, p_diags, comments, lex_diags, lex_errs, prog
-    );
-    return (module, had_error);
+    return None;
 }
 
 def parse_woven(
-    source_str: str, file_path: str, prog: (JacProgram | None), annexes: list
-) -> tuple {
-    nat = _native_parse_woven(source_str, file_path, prog, annexes);
+    source_str: str,
+    file_path: str,
+    prog: (JacProgram | None),
+    annexes: list[WovenAnnex],
+    early_context: str = ""
+) -> tuple[Module, bool] {
+    import from jaclang.compiler.frontend.host { active_host }
+    nat = active_host().native_parse(
+        source_str, file_path, prog, annexes, early_context
+    );
     if nat is not None {
         return nat;
     }
@@ -148,46 +166,59 @@ def parse_woven(
     if had_error or not annexes {
         return (module, had_error);
     }
-    import from jaclang.compiler.passes.annex_weave { merge_annex_into }
-    for (a_src, a_path) in annexes {
-        (a_mod, _a_err) = parse(a_src, a_path, prog=prog);
+    for annex in annexes {
+        (a_mod, _a_err) = parse(annex.source, annex.path, prog=prog);
         merge_annex_into(module, a_mod);
+    }
+    for annex in annexes {
+        if annex.consumer {
+            prune_generated_imports(module, annex.path, annex.consumer);
+        }
     }
     return (module, had_error);
 }
 
-def annex_sources(file_path: str) -> list[tuple[str, str]] {
+def annex_paths(file_path: str) -> list[str] {
     if not file_path.endswith(".jac") {
         return [];
     }
     try {
-        import from jaclang.compiler.driver.bccache {
-            discover_annex_files,
-            discover_base_file
-        }
-        import from jaclang.compiler.frontend.helpers { read_file_with_encoding }
-        if discover_base_file(file_path) is not None {
+        import from jaclang.compiler.frontend.host { active_host }
+        host = active_host();
+        if host.base_file(file_path) is not None {
             return [];
         }
-        paths = [
-            *discover_annex_files(file_path, ".impl.jac"),
-            *discover_annex_files(file_path, ".test.jac")
-        ];
+        found = host.annex_files(file_path, ".impl.jac")
+            + host.annex_files(file_path, ".test.jac");
     } except Exception {
         return [];
     }
-    out: list[tuple[str, str]] = [];
-    seen: set[str] = set();
-    for pth in paths {
-        if pth in seen {
-            continue;
+    unique: list[str] = [];
+    for path in found {
+        if path not in unique {
+            unique.append(path);
         }
-        seen.add(pth);
+    }
+    return unique;
+}
+
+def annex_sources(file_path: str) -> list[WovenAnnex] {
+    import from jaclang.compiler.frontend.host { active_host }
+    host = active_host();
+    out: list[WovenAnnex] = [];
+    for pth in annex_paths(file_path) {
         try {
-            out.append((read_file_with_encoding(pth), pth, ));
+            out.append(WovenAnnex(source=host.read_source(pth), path=pth));
         } except Exception {
             continue;
         }
     }
+    try {
+        import from jaclang.compiler.driver.wiring { wiring_annex_for }
+        wired = wiring_annex_for(file_path);
+        if wired is not None {
+            out.append(wired);
+        }
+    } except Exception {}
     return out;
 }

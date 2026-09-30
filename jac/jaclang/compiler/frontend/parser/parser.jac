@@ -1,9 +1,12 @@
+import from jaclang.compiler.frontend.roles { Kid }
 import from .tokens {
     LexToken,
     TokenKind,
     SourceLoc,
     SrcDiag,
     CommentData,
+    is_builtin_type_kind,
+    is_reserved_kind,
     is_special_var_kind
 }
 import from .lexer { tokenize_full }
@@ -58,11 +61,15 @@ import from jaclang.compiler.frontend.unitree {
     FuncSignature,
     GenCompr,
     GlobalVars,
+    GraphExpr,
     HasVar,
     IfElseExpr,
     IfStmt,
     ImplDef,
+    ImplImport,
     Import,
+    ImportRule,
+    ImportWire,
     InForStmt,
     IndexSlice,
     InnerCompr,
@@ -100,6 +107,7 @@ import from jaclang.compiler.frontend.unitree {
     ModuleCode,
     ModuleItem,
     ModulePath,
+    ModulePattern,
     MultiString,
     Name,
     NameAtom,
@@ -131,6 +139,7 @@ import from jaclang.compiler.frontend.unitree {
     UnaryExpr,
     UniNode,
     VisitStmt,
+    WireItem,
     WhileStmt,
     WithStmt,
     YieldExpr,
@@ -138,9 +147,9 @@ import from jaclang.compiler.frontend.unitree {
 }
 import from jaclang.compiler.frontend.unitree { Ellipsis as EllipsisLit }
 
+import from jaclang.runtime.constants { EdgeDir }
 import from jaclang.compiler.frontend.constant {
     Tokens as Tok,
-    EdgeDir,
     CodeContext,
     OwnershipKind,
     ParamKind
@@ -385,6 +394,7 @@ obj Parser {
         source: Source postinit,
         diags: list[SrcDiag] = [],
         _view_body_depth: int = 0,
+        _no_connect_op_depth: int = 0,
         _gen_test_idx: int = 0;
 
     def postinit;
@@ -405,7 +415,7 @@ obj Parser {
     def match_any(*kinds: TokenKind) -> LexToken | None;
     def expect(kind: TokenKind) -> LexToken;
     def expect_any(*kinds: TokenKind) -> LexToken;
-    def consume_uni(kind: TokenKind) -> Token;
+    def consume_uni(kind: TokenKind, value: str | None = None) -> Token;
     def expect_name(context: str = "identifier") -> LexToken;
     def error(message: str);
     def emit_diag(
@@ -458,6 +468,7 @@ obj Parser {
     def parse_power -> Expr;
     def parse_factor -> Expr;
     def parse_connect -> Expr;
+    def parse_edge_endpoint -> Expr;
     def parse_connect_op -> ConnectOp | DisconnectOp | None;
     def parse_edge_op_ref_inline -> EdgeOpRef | None;
     def parse_atomic_pipe -> Expr;
@@ -480,6 +491,7 @@ obj Parser {
     def parse_builtin_type -> Expr | None;
     def parse_special_ref -> Expr | None;
     def parse_atom -> Expr;
+    def parse_graph_expr -> GraphExpr;
     def parse_tuple_item -> Expr | KWPair;
     def parse_paren_expr -> Expr;
     def parse_bracket_expr -> Expr;
@@ -553,12 +565,12 @@ obj Parser {
         target: Expr, require_semi: bool = True
     ) -> Assignment;
 
-    def parse_ownership_prefix(kids: list[UniNode]) -> OwnershipKind;
+    def parse_ownership_prefix(kids: list[UniNode]) -> tuple[OwnershipKind, bool];
     def parse_import_stmt -> Import;
     def parse_from_path -> tuple[(ModulePath | None, bool)];
     def parse_import_items(
         kid: list[UniNode], is_clib_import: bool
-    ) -> tuple[(list, list)];
+    ) -> tuple[(list[ModuleItem | ModulePath], list[UniNode])];
 
     def parse_archetype -> Archetype;
     def parse_archetype_member -> UniNode | None;
@@ -591,9 +603,17 @@ obj Parser {
     def _is_impl_enum_body -> bool;
     def parse_impl_target_name -> NameAtom;
     def parse_impl_enum_body -> tuple[(list[Assignment], list[Token])];
+    def parse_impl_import -> ImplImport;
+    def parse_import_rule -> ImportRule | None;
+    def parse_import_wire -> ImportWire | None;
+    def parse_module_pattern -> ModulePattern;
+    def parse_wire_module_path(context: str) -> ModulePath;
+    def parse_wire_payload(kid: list[UniNode], in_rule: bool) -> list[WireItem];
+    def _expect_wire_arrow(kid: list[UniNode]) -> bool;
+    def _skip_wiring_stmt -> None;
     def parse_sem_def -> SemDef;
     def parse_type_alias -> TypeAlias;
-    def parse_type_params -> tuple[(list, list)];
+    def parse_type_params -> tuple[(list[TypeParam], list[Token])];
 }
 
 def parse_program(
@@ -609,5 +629,23 @@ def parse_program(
         comments,
         lex_diags,
         lex_error_count
+    );
+}
+
+
+def parse_expression(
+    source: str, file_path: str = "<input>"
+) -> tuple[Expr, bool, list[SrcDiag], list[SrcDiag]] {
+    (tokens, _comments, lex_diags, lex_errors) = tokenize_full(source, file_path);
+    parser = Parser(tokens=tokens, file_path=file_path, source_code=source);
+    expression = parser.parse_expression();
+    if not parser.at_end() {
+        parser.error("Unexpected token after expression");
+    }
+    return (
+        expression,
+        lex_errors > 0 or parser.error_count > 0,
+        parser.diags,
+        lex_diags
     );
 }

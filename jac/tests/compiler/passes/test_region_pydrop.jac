@@ -48,3 +48,61 @@ test "python backend: objects made outside any open never register" {
     }
     assert log == [4];
 }
+
+node Item {
+    has v: int = 0;
+
+    def drop {
+        log.append(self.v);
+    }
+}
+
+walker Sum {
+    can add with Item entry {
+        visit [-->];
+    }
+}
+
+test "python backend: an inferred anonymous open runs drop hooks LIFO too" {
+    log.clear();
+    a = Item(v=1);
+    b = Item(v=2);
+    c = Item(v=3);
+    a ++> b;
+    b ++> c;
+    Sum() spawn a;
+    assert log == [3, 2, 1] , f"log={log}";
+}
+
+# `drop` is an ordinary identifier: an event ability of that name is not a
+# destructor hook, so a region never calls it and neither does `del`.
+walker Collect {
+    has seen: list[int] = [];
+
+    can drop with Item entry {
+        self.seen.append(here.v);
+        visit [-->];
+    }
+}
+
+node Crate {
+    has v: int = 0;
+
+    can drop with Collect entry {
+        log.append(self.v);
+    }
+}
+
+test "python backend: an event ability named drop is not a drop hook" {
+    log.clear();
+    a = Item(v=5);
+    a ++> Item(v=6);
+    in Region() {
+        tick = Collect() spawn a;
+    }
+    assert tick.seen == [5, 6];
+    assert not getattr(tick, "_jac_drop_done", False);
+    crate = Crate(v=7);
+    del crate;
+    assert log == [];
+}

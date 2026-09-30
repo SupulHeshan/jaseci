@@ -1,7 +1,9 @@
+import from jaclang.jac0core.cache_paths { atomic_write }
 import struct;
 import os;
 import hashlib;
 import from jaclang.compiler.backends.native.linker_common {
+    encode_uleb128,
     _align,
     _build_strtab,
     _append_to_blob,
@@ -48,6 +50,7 @@ glob S_REGULAR = 0x0,
 glob EXPORT_SYMBOL_FLAGS_KIND_REGULAR = 0x00;
 
 glob N_EXT = 0x01,
+     N_WEAK_DEF = 0x0080,
      N_TYPE_MASK = 0x0E,
      N_UNDF = 0x00,
      N_SECT = 0x0E;
@@ -97,23 +100,6 @@ glob CSMAGIC_EMBEDDED_SIGNATURE = 0xFADE0CC0,
      CS_HASHTYPE_SHA256 = 2,
      CS_PAGE_SIZE = 4096,
      CS_PAGE_SIZE_LOG2 = 12;
-
-
-def _encode_uleb128(value: int) -> bytes {
-    result = bytearray();
-    while True {
-        byte = value & 0x7F;
-        value >>= 7;
-        if value != 0 {
-            byte |= 0x80;
-        }
-        result.append(byte);
-        if value == 0 {
-            break;
-        }
-    }
-    return bytes(result);
-}
 
 
 def _resolve_macho_name(
@@ -204,18 +190,18 @@ def _build_export_trie(symbols: list[tuple[str, int]]) -> bytes {
         for nd in order {
             term_addr = nd.term;
             if term_addr is not None {
-                info = _encode_uleb128(EXPORT_SYMBOL_FLAGS_KIND_REGULAR)
-                    + _encode_uleb128(term_addr);
-                e = _encode_uleb128(len(info)) + info;
+                info = encode_uleb128(EXPORT_SYMBOL_FLAGS_KIND_REGULAR)
+                    + encode_uleb128(term_addr);
+                e = encode_uleb128(len(info)) + info;
             } else {
-                e = _encode_uleb128(0);
+                e = encode_uleb128(0);
             }
             e += bytes([len(nd.kids)]);
             for label in sorted(nd.kids.keys()) {
                 child = nd.kids[label];
                 e += label.encode("utf-8")
                     + b"\x00"
-                    + _encode_uleb128(offsets[node_index[id(child)]]);
+                    + encode_uleb128(offsets[node_index[id(child)]]);
             }
             encs.append(e);
         }
@@ -492,7 +478,7 @@ impl MachOLinker.parse_object -> bool {
     self.cpu_subtype = cpusubtype;
 
     cmd_offset = 32;
-    symtab_info: tuple | None = None;
+    symtab_info: tuple[int, int, int, int] | None = None;
     self.sections = [];
     self.symbols = [];
     self.relocations = [];
@@ -693,6 +679,15 @@ impl MachOLinker._consolidate(
         dataoff_by_name[key] = sec_dataoff[mi];
     }
 
+    defined_ext: dict[str, int] = {};
+    for (i, s) in enumerate(self.symbols) {
+        if (s.n_type & N_TYPE_MASK) == N_SECT and (s.n_type & N_EXT) != 0 and s.name {
+            if s.name not in defined_ext {
+                defined_ext[s.name] = i;
+            }
+        }
+    }
+
     sym_remap: dict[int, int] = {};
     for (si, sym) in enumerate(syms) {
         ttype = sym.n_type & N_TYPE_MASK;
@@ -701,6 +696,24 @@ impl MachOLinker._consolidate(
             merged_idx = sec_to_merged[msi];
             base = self.sections[merged_idx].addr;
             new_val = base + sec_dataoff[msi] + (sym.n_value - sec_addrbase[msi]);
+            is_ext = (sym.n_type & N_EXT) != 0;
+            prior = defined_ext.get(sym.name) if (is_ext and sym.name) else None;
+            if prior is not None {
+                prior_sym = self.symbols[prior];
+                prior_weak = (prior_sym.n_desc & N_WEAK_DEF) != 0;
+                new_weak = (sym.n_desc & N_WEAK_DEF) != 0;
+                if prior_weak and not new_weak {
+                    self.symbols[prior] = MachOSymbol(
+                        name=sym.name,
+                        n_type=sym.n_type,
+                        n_sect=merged_idx + 1,
+                        n_desc=sym.n_desc,
+                        n_value=new_val
+                    );
+                }
+                sym_remap[si] = prior;
+                continue;
+            }
             ni = len(self.symbols);
             self.symbols.append(
                 MachOSymbol(
@@ -711,6 +724,9 @@ impl MachOLinker._consolidate(
                     n_value=new_val
                 )
             );
+            if is_ext and sym.name {
+                defined_ext[sym.name] = ni;
+            }
             sym_remap[si] = ni;
         } else {
             keep_val = sym.n_value if (sym.n_type & N_TYPE_MASK) == 0x02 else 0;
@@ -1138,14 +1154,14 @@ impl MachOLinker.build_executable -> bytes {
         } else {
             ordinal = lib_ordinals.get(_lib, 1) if _lib is not None else 1;
             bind_data.append(0x20);
-            bind_data.extend(_encode_uleb128(ordinal));
+            bind_data.extend(encode_uleb128(ordinal));
         }
 
         bind_data.append(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM);
         bind_data.extend(sym_name.encode("utf-8") + b"\x00");
         bind_data.append(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
         bind_data.append(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | data_seg_idx);
-        bind_data.extend(_encode_uleb128(got_offset));
+        bind_data.extend(encode_uleb128(got_offset));
         bind_data.append(BIND_OPCODE_DO_BIND);
     }
     if len(bind_data) > 0 {
@@ -1166,7 +1182,11 @@ impl MachOLinker.build_executable -> bytes {
                 sym = self.symbols[rel.symbolnum]
                     if rel.symbolnum < len(self.symbols)
                     else None;
-                if sym is not None and (sym.n_type & N_TYPE_MASK) == N_SECT {
+                if sym is not None
+                    and (
+                        (sym.n_type & N_TYPE_MASK) == N_SECT
+                        or sym.name in extern_func_syms
+                    ) {
                     sec_info = data_sections.get(rel.target_sec);
                     if sec_info is not None {
                         rebase_offsets.append(
@@ -1194,7 +1214,7 @@ impl MachOLinker.build_executable -> bytes {
             rebase_data.append(
                 (REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB & 0xF0) | data_seg_idx
             );
-            rebase_data.extend(_encode_uleb128(off));
+            rebase_data.extend(encode_uleb128(off));
             rebase_data.append(REBASE_OPCODE_DO_REBASE);
         }
         rebase_data.append(REBASE_OPCODE_DONE);
@@ -2106,13 +2126,13 @@ impl MachOLinker.build_shared_object -> bytes {
         } else {
             ordinal = lib_ordinals.get(_lib, 1);
             bind_data.append(0x20);
-            bind_data.extend(_encode_uleb128(ordinal));
+            bind_data.extend(encode_uleb128(ordinal));
         }
         bind_data.append(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM);
         bind_data.extend(sym_name.encode("utf-8") + b"\x00");
         bind_data.append(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
         bind_data.append(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | data_seg_idx);
-        bind_data.extend(_encode_uleb128(got_offset));
+        bind_data.extend(encode_uleb128(got_offset));
         bind_data.append(BIND_OPCODE_DO_BIND);
     }
     if len(bind_data) > 0 {
@@ -2132,7 +2152,11 @@ impl MachOLinker.build_shared_object -> bytes {
                 sym = self.symbols[rel.symbolnum]
                     if rel.symbolnum < len(self.symbols)
                     else None;
-                if sym is not None and (sym.n_type & N_TYPE_MASK) == N_SECT {
+                if sym is not None
+                    and (
+                        (sym.n_type & N_TYPE_MASK) == N_SECT
+                        or sym.name in extern_func_syms
+                    ) {
                     sec_info = data_sections.get(rel.target_sec);
                     if sec_info is not None {
                         rebase_offsets.append(
@@ -2163,7 +2187,7 @@ impl MachOLinker.build_shared_object -> bytes {
             rebase_data.append(
                 (REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB & 0xF0) | data_seg_idx
             );
-            rebase_data.extend(_encode_uleb128(off));
+            rebase_data.extend(encode_uleb128(off));
             rebase_data.append(REBASE_OPCODE_DO_REBASE);
         }
         rebase_data.append(REBASE_OPCODE_DONE);
@@ -2775,7 +2799,7 @@ def _write_section_header(
 
 
 impl MachOLinker.link(
-    obj_bytes: bytes,
+    objects: list[bytes],
     output_path: str,
     needed_libs: list[str] = ["/usr/lib/libSystem.B.dylib"],
     symbol_lib_map: dict[str, str] = {},
@@ -2785,8 +2809,11 @@ impl MachOLinker.link(
     soname: str = "",
     archive_members: list[bytes] = []
 ) -> bool {
+    if not objects {
+        return False;
+    }
     linker = MachOLinker(
-        obj_data=obj_bytes,
+        obj_data=objects[0],
         sections=[],
         symbols=[],
         relocations=[],
@@ -2801,12 +2828,14 @@ impl MachOLinker.link(
         return False;
     }
 
-    for member in archive_members {
-        if not linker._merge_member(member) {
+    merged = 0;
+    for extra in list(objects[1:]) + list(archive_members) {
+        if not linker._merge_member(extra) {
             return False;
         }
+        merged += 1;
     }
-    if archive_members {
+    if merged {
         linker._allocate_commons();
         linker._resolve_crossrefs();
     }
@@ -2814,9 +2843,6 @@ impl MachOLinker.link(
     if not exe_bytes {
         return False;
     }
-    with open(output_path, "wb") as f {
-        f.write(exe_bytes);
-    }
-    os.chmod(output_path, 0o755);
+    atomic_write(output_path, exe_bytes, mode=0o755);
     return True;
 }

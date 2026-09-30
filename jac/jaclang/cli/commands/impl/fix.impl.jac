@@ -2,7 +2,7 @@ import os;
 import from jaclang.cli.console { console }
 import from jaclang.compiler.frontend.parser.tokens { LexToken }
 
-glob _ELEMENT_KEYWORDS: tuple = (
+glob _ELEMENT_KEYWORDS: tuple[str, ...] = (
          'import',
          'include',
          'def',
@@ -21,7 +21,7 @@ glob _ELEMENT_KEYWORDS: tuple = (
          'async',
          'let'
      ),
-     _NAMED_ELEMENT_KEYWORDS: tuple = (
+     _NAMED_ELEMENT_KEYWORDS: tuple[str, ...] = (
          'def',
          'obj',
          'class',
@@ -36,7 +36,7 @@ glob _ELEMENT_KEYWORDS: tuple = (
          'let'
      ),
      _MARKER_SPACES: dict[str, str] = {'sv': 'server', 'cl': 'client', 'na': 'native'},
-     _PRUNE_DIRS: tuple = (
+     _PRUNE_DIRS: tuple[str, ...] = (
          'node_modules',
          '__pycache__',
          'dist',
@@ -274,7 +274,7 @@ def _strip_markers(src: str, file_path: str) -> StripResult {
 }
 
 
-def _iter_migration_files(paths: list) -> list[str] {
+def _iter_migration_files(paths: list[str]) -> list[str] {
     files: list[str] = [];
     for p in paths {
         if os.path.isfile(p) {
@@ -326,7 +326,7 @@ def _append_toml_entries(
     } except Exception {
         doc = {};
     }
-    section: dict = doc;
+    section: dict[str, any] = doc;
     for part in header.strip('[]').split('.') {
         nxt_section = section.get(part, {}) if isinstance(section, dict) else {};
         section = nxt_section;
@@ -370,6 +370,102 @@ def _append_toml_entries(
 }
 
 
+def _append_app_table(
+    toml_path: str, name: str, table: dict[str, str], dry_run: bool
+) -> list[str] {
+    import tomllib;
+    import from jaclang.project.config { _toml_append_section }
+    text = _read_text_if_exists(toml_path);
+    try {
+        doc = tomllib.loads(text);
+    } except Exception {
+        doc = {};
+    }
+    apps = doc.get('apps', {}) if isinstance(doc, dict) else {};
+    if isinstance(apps, dict) and name in apps {
+        return [];
+    }
+    lines: list[str] = text.split("\n");
+    before = len(lines);
+    _toml_append_section(lines, ('apps', name), table);
+    added = [
+        ln
+        for ln in lines[before:]
+        if ln and not ln.startswith('[')
+    ];
+    if dry_run {
+        return added;
+    }
+    with open(toml_path, 'w') as f {
+        f.write("\n".join(lines));
+    }
+    return added;
+}
+
+
+def _ensure_workspace(toml_path: str, dry_run: bool) -> str {
+    import tomllib;
+    import from pathlib { Path }
+    import from jaclang.project.config { JacConfig }
+    import from jaclang.project.template_loader { migrate_implicit_app }
+    text = _read_text_if_exists(toml_path);
+    doc = tomllib.loads(text);
+    apps = doc.get('apps') if isinstance(doc, dict) else None;
+    if isinstance(apps, dict) and apps {
+        return '';
+    }
+    base = JacConfig.load(Path(toml_path));
+    lines: list[str] = text.split("\n");
+    base_name = migrate_implicit_app(lines, base);
+    if not dry_run {
+        with open(toml_path, 'w') as f {
+            f.write("\n".join(lines));
+        }
+    }
+    return base_name;
+}
+
+
+def _service_file_for(
+    target: str, importer: str, root_dir: str, scanned: list[str]
+) -> str {
+    dots = len(target) - len(target.lstrip('.'));
+    parts = [
+        p
+        for p in target.strip('.').split('.')
+        if p
+    ];
+    if not parts {
+        return '';
+    }
+    importer_dir = os.path.dirname(os.path.abspath(importer));
+    bases: list[str] = [];
+    if dots {
+        base = importer_dir;
+        for _ in range(dots - 1) {
+            base = os.path.dirname(base);
+        }
+        bases.append(base);
+    } else {
+        bases.append(root_dir);
+        bases.append(importer_dir);
+    }
+    for base in bases {
+        candidate = os.path.join(base, os.sep.join(parts)) + '.jac';
+        if os.path.isfile(candidate) {
+            return os.path.abspath(candidate);
+        }
+    }
+    want = parts[-1] + '.jac';
+    for p in scanned {
+        if os.path.basename(p) == want {
+            return os.path.abspath(p);
+        }
+    }
+    return '';
+}
+
+
 def _project_entry_stem(toml_path: str) -> str {
     try {
         import tomllib;
@@ -380,7 +476,7 @@ def _project_entry_stem(toml_path: str) -> str {
         if entry_point.endswith('.jac') {
             entry_point = entry_point[:-4];
         }
-        return os.path.basename(entry_point);
+        return entry_point.rsplit('.', 1)[-1];
     } except Exception {
         return '';
     }
@@ -422,8 +518,8 @@ def _verify_claims(
     unverified: list[str]
 ) {
     import from jaclang.compiler.placement.placement { element_display_name }
-    import from jaclang.compiler.placement.placement_pins { _module_dot_path }
-    import from jaclang.compiler.driver.modresolver { find_jac_project_root }
+    import from jaclang.project.placement { module_dot_path }
+    import from jaclang.project.modresolver { find_jac_project_root }
     import from jaclang.compiler.driver.program { JacProgram }
     proj_root = find_jac_project_root(file_path);
     if not proj_root {
@@ -445,7 +541,7 @@ def _verify_claims(
         unverified.append(f"{file_path} (compile errors)");
         return;
     }
-    stamped: dict[str, tuple] = {};
+    stamped: dict[str, tuple[str, bool]] = {};
     for stmt in mod.body {
         try {
             nm = element_display_name(stmt);
@@ -455,7 +551,7 @@ def _verify_claims(
         space = getattr(stmt?.code_context, 'value', '');
         stamped[nm] = (space, bool(getattr(stmt, 'codespace_dual', False)));
     }
-    mod_dot = _module_dot_path(file_path, proj_root);
+    mod_dot = module_dot_path(file_path, proj_root);
     for claim in claims {
         got = stamped.get(claim.name);
         if got is None {
@@ -472,11 +568,411 @@ def _verify_claims(
 }
 
 
+obj AccessRewrite {
+    has path: str,
+        line: int,
+        kind: str,
+        name: str,
+        reason: str;
+}
+
+def _module_has_jsx(decl: any) -> bool {
+    import jaclang.compiler.frontend.unitree as uni;
+    for sub in decl.get_all_sub_nodes(uni.UniNode) {
+        if type(sub).__name__.startswith('Jsx') {
+            return True;
+        }
+    }
+    return False;
+}
+
+def _returns_jsx(decl: any) -> bool {
+    sig = decl?.signature;
+    ret = sig?.return_type if sig is not None else None;
+    text = '';
+    try {
+        text = ret.unparse() if ret is not None else '';
+    } except Exception {
+        text = '';
+    }
+    return 'Jsx' in text;
+}
+
+def _parse_module(path: str) -> any {
+    import from jaclang.compiler.frontend.parser { parse as rd_parse }
+    try {
+        with open(path, 'r') as f {
+            src = f.read();
+        }
+        (mod, had_error) = rd_parse(src, path);
+        return None if had_error else mod;
+    } except Exception {
+        return None;
+    }
+}
+
+def _plain_top_decls(mod: any) -> dict[str, any] {
+    import jaclang.compiler.frontend.unitree as uni;
+    out: dict[str, any] = {};
+    for item in (mod.body or []) {
+        if (
+            isinstance(item, (uni.Ability, uni.Archetype))
+            and item.surface_kind
+            and item.access is None
+        ) {
+            out[item.sym_name] = item;
+        }
+    }
+    return out;
+}
+
+def _priv_top_decls(mod: any) -> dict[str, any] {
+    import jaclang.compiler.frontend.unitree as uni;
+    import from jaclang.compiler.frontend.constant { SymbolAccess }
+    out: dict[str, any] = {};
+    for item in (mod.body or []) {
+        if (
+            isinstance(item, (uni.Ability, uni.Archetype))
+            and item.surface_kind
+            and item.access is not None
+            and item.exposure == SymbolAccess.PRIVATE
+        ) {
+            out[item.sym_name] = item;
+        }
+    }
+    return out;
+}
+
+def _resolve_project_import(module_path: any, importer: str, proj_root: str) -> str {
+    try {
+        resolved = module_path.resolve_relative_path();
+        if isinstance(resolved, str)
+            and resolved.endswith('.jac')
+            and os.path.isfile(resolved) {
+            return os.path.realpath(resolved);
+        }
+    } except Exception {}
+    try {
+        dotted = module_path.dot_path_str;
+        level = module_path.level;
+    } except Exception {
+        return '';
+    }
+    parts = [
+        p
+        for p in dotted.split('.')
+        if p
+    ];
+    if level > 0 {
+        base_dir = os.path.dirname(importer);
+        for _ in range(level - 1) {
+            base_dir = os.path.dirname(base_dir);
+        }
+        candidate = os.path.join(base_dir, *parts) + '.jac';
+    } else {
+        candidate = os.path.join(proj_root, *parts) + '.jac';
+    }
+    return os.path.realpath(candidate) if os.path.isfile(candidate) else '';
+}
+
+def _imported_names(imp: any) -> list[str] {
+    import jaclang.compiler.frontend.unitree as uni;
+    names: list[str] = [];
+    for item in (imp.items or []) {
+        if isinstance(item, uni.ModuleItem) and isinstance(item.name, uni.Name) {
+            names.append(item.name.value);
+        }
+    }
+    return names;
+}
+
+def _access_plan(proj_root: str) -> tuple[list[AccessRewrite], list[str]] {
+    import jaclang.compiler.frontend.unitree as uni;
+    import from jaclang.project.workspace { workspace_for_path }
+    ws = workspace_for_path(proj_root);
+    notes: list[str] = [];
+    plan: list[AccessRewrite] = [];
+    if ws is None {
+        notes.append(f"{proj_root}: no jac.toml found, nothing to migrate");
+        return (plan, notes);
+    }
+    serving = [
+        a
+        for a in ws.apps.values()
+        if a.has_server
+    ];
+    if not serving {
+        notes.append(f"{ws.toml_path}: no serving app declared, nothing to migrate");
+        return (plan, notes);
+    }
+    seen: set[tuple[str, str]] = set();
+    priv_seen: set[tuple[str, str]] = set();
+
+    def add(path: str, decl: any, kind: str, reason: str) {
+        key = (path, decl.sym_name);
+        if key in seen {
+            return;
+        }
+        if str(decl.sym_name).startswith('_') {
+            return;
+        }
+        if kind == 'function' and (_returns_jsx(decl) or _module_has_jsx(decl)) {
+            return;
+        }
+        seen.add(key);
+        plan.append(
+            AccessRewrite(
+                path=path,
+                line=decl.name_spec.loc.first_line,
+                kind=kind,
+                name=decl.sym_name,
+                reason=reason
+            )
+        );
+    }
+
+    for app in serving {
+        entry_rel = str(app.`entry or '').replace('.', os.sep);
+        entry_path = os.path.join(ws.project_root, entry_rel + '.jac');
+        if not os.path.isfile(entry_path) {
+            entry_path = os.path.join(ws.project_root, str(app.`entry or ''));
+        }
+        if not os.path.isfile(entry_path) {
+            notes.append(f"app '{app.name}': entry '{app.`entry}' not found, skipped");
+            continue;
+        }
+        entry_path = os.path.realpath(entry_path);
+        visited: set[tuple[str, bool]] = set();
+        queue: list[tuple[str, bool]] = [(entry_path, True)];
+        while queue {
+            (path, is_entry) = queue.pop(0);
+            if (path, is_entry) in visited {
+                continue;
+            }
+            visited.add((path, is_entry));
+            mod = _parse_module(path);
+            if mod is None {
+                notes.append(f"{path}: does not parse, skipped");
+                continue;
+            }
+            plain = _plain_top_decls(mod);
+            for (pname, pdecl) in _priv_top_decls(mod).items() {
+                pkey = (path, pname);
+                if pkey in priv_seen {
+                    continue;
+                }
+                priv_seen.add(pkey);
+                notes.append(
+                    f"{os.path.relpath(path)}:{pdecl.name_spec.loc.first_line}: "
+                    f":priv {pname} was served (authenticated) before; it is now private. "
+                    "Change it to :protect if it was meant to be an endpoint (left unchanged)."
+                );
+            }
+            for (name, decl) in plain.items() {
+                if isinstance(decl, uni.Ability) {
+                    if is_entry {
+                        add(
+                            path,
+                            decl,
+                            'function',
+                            f"plain def in entry of app '{app.name}'"
+                        );
+                    }
+                } else {
+                    add(
+                        path,
+                        decl,
+                        'walker',
+                        f"plain walker reachable from app '{app.name}'"
+                    );
+                }
+            }
+            for imp in mod.get_all_sub_nodes(uni.Import) {
+                if not imp.is_jac {
+                    continue;
+                }
+                module_path = imp.from_loc;
+                if imp.is_absorb and imp.items {
+                    module_path = imp.items[0];
+                }
+                if module_path is None {
+                    continue;
+                }
+                target = _resolve_project_import(module_path, path, ws.project_root);
+                if not target
+                    or not target.startswith(
+                        os.path.realpath(ws.project_root) + os.sep
+                    ) {
+                    continue;
+                }
+                if is_entry and imp.items {
+                    wanted = _imported_names(imp);
+                    tmod = _parse_module(target);
+                    if tmod is not None {
+                        tplain = _plain_top_decls(tmod);
+                        for nm in wanted {
+                            decl = tplain.get(nm);
+                            if decl is not None and isinstance(decl, uni.Ability) {
+                                add(
+                                    target,
+                                    decl,
+                                    'function',
+                                    f"plain def imported by entry of app '{app.name}'"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                queue.append((target, is_entry and imp.is_absorb));
+            }
+        }
+    }
+    return (plan, notes);
+}
+
+def _apply_access_rewrites(
+    path: str, rewrites: list[AccessRewrite]
+) -> tuple[str, int] {
+    import re;
+    with open(path, 'r') as f {
+        lines = f.read().split('\n');
+    }
+    changed = 0;
+    for rw in rewrites {
+        idx = rw.line - 1;
+        if idx < 0 or idx >= len(lines) {
+            continue;
+        }
+        keyword = 'walker' if rw.kind == 'walker' else 'def';
+        pattern = re.compile(r'\b' + keyword + r'\s+' + re.escape(rw.name) + r'\b');
+        new_line = pattern.sub(keyword + ':protect ' + rw.name, lines[idx], count=1);
+        if new_line != lines[idx] {
+            lines[idx] = new_line;
+            changed += 1;
+        }
+    }
+    return ('\n'.join(lines), changed);
+}
+
+def _fix_access(paths: list[str], dry_run: bool) -> int {
+    proj_roots: list[str] = [];
+    for p in paths {
+        cand = os.path.realpath(p if os.path.isdir(p) else os.path.dirname(p));
+        if cand not in proj_roots {
+            proj_roots.append(cand);
+        }
+    }
+    total: list[AccessRewrite] = [];
+    all_notes: list[str] = [];
+    for proj_root in proj_roots {
+        (plan, notes) = _access_plan(proj_root);
+        total.extend(plan);
+        all_notes.extend(notes);
+    }
+    for note in all_notes {
+        console.print(f"  note: {note}");
+    }
+    if not total {
+        console.print(
+            "Nothing to migrate: every served declaration already declares its exposure."
+        );
+        return 0;
+    }
+    by_file: dict[str, list[AccessRewrite]] = {};
+    for rw in total {
+        by_file.setdefault(rw.path, []).append(rw);
+    }
+    console.print(
+        f"{'Would mark' if dry_run else 'Marking'} {len(
+            total
+        )} declaration(s) :protect:"
+    );
+    for (path, rws) in sorted(by_file.items()) {
+        for rw in sorted(rws, key=lambda (r: AccessRewrite) { r.line; }) {
+            console.print(
+                f"  {os.path.relpath(path)}:{rw.line}  {rw.kind} {rw.name}  ({rw.reason})"
+            );
+        }
+    }
+    if dry_run {
+        return 0;
+    }
+    written = 0;
+    for (path, rws) in by_file.items() {
+        (text, changed) = _apply_access_rewrites(path, rws);
+        if changed == 0 {
+            continue;
+        }
+        if not _parses_clean(text, path) {
+            console.error(f"{path}: rewritten source does not parse; left untouched");
+            continue;
+        }
+        with open(path, 'w') as f {
+            f.write(text);
+        }
+        written += changed;
+    }
+    console.print(f"Rewrote {written} declaration(s). Run `jac check` to confirm.");
+    return 0;
+}
+
+def _fix_dependencies(paths: list[str], dry_run: bool) -> int {
+    import from jaclang.packages.migrate { find_manifests, migrate_manifest }
+    manifests = find_manifests(paths);
+    if not manifests {
+        console.error("No jac.toml found to migrate.");
+        return 1;
+    }
+    changed = 0;
+    for manifest in manifests {
+        result = migrate_manifest(manifest);
+        if not result.moved {
+            continue;
+        }
+        changed += 1;
+        verb = "Would move" if dry_run else "Moved";
+        console.print(
+            f"{verb} {len(result.moved)} Python dependenc(ies) to [*.pypi] in {manifest}",
+            style="bold"
+        );
+        for moved_key in result.moved {
+            console.print(f"  {moved_key}", style="muted");
+        }
+        if not result.lossless {
+            console.warning(
+                f"{manifest}: the file could not be edited in place, so it was "
+                "rewritten; comments inside the dependency tables were dropped"
+            );
+        }
+        if not dry_run {
+            manifest.write_text(result.text, encoding="utf-8");
+        }
+    }
+    if not changed {
+        console.success(
+            "Every jac.toml already keeps Python packages in [dependencies.pypi]."
+        );
+    }
+    return 0;
+}
+
 impl fix(
-    target: str, paths: list, dry_run: bool = False, strip_only: bool = False
+    target: str, paths: list[str], dry_run: bool = False, strip_only: bool = False
 ) -> int {
+    if isinstance(paths, str) {
+        paths = [paths];
+    }
+    if target == 'access' {
+        return _fix_access(paths, dry_run);
+    }
+    if target == 'dependencies' {
+        return _fix_dependencies(paths, dry_run);
+    }
     if target != 'placement' {
-        console.error(f"Unknown fix target '{target}'. Available: placement");
+        console.error(
+            f"Unknown fix target '{target}'. Available: placement, access, dependencies"
+        );
         return 1;
     }
     if isinstance(paths, str) {
@@ -488,9 +984,10 @@ impl fix(
         return 1;
     }
     changed_files: list[str] = [];
-    renamed: list[tuple] = [];
+    renamed: list[tuple[str, str]] = [];
     claims_by_file: dict[str, list[MarkerClaim]] = {};
     sv_imports_by_file: dict[str, list[str]] = {};
+    scanned: list[str] = [];
     skipped: list[str] = [];
     for path in files {
         try {
@@ -527,6 +1024,7 @@ impl fix(
                 renamed.append((path, candidate));
             }
         }
+        scanned.append(final_path);
         if not res.changed and final_path == path {
             continue;
         }
@@ -563,7 +1061,7 @@ impl fix(
         }
     }
 
-    import from jaclang.compiler.driver.modresolver { find_jac_project_root }
+    import from jaclang.project.modresolver { find_jac_project_root }
     pins_by_root: dict[str, dict[str, str]] = {};
     unverified: list[str] = [];
     if strip_only {
@@ -581,27 +1079,46 @@ impl fix(
             _verify_claims(path, claims, pins, unverified);
         }
     }
-    routes_by_root: dict[str, dict[str, str]] = {};
+    apps_by_root: dict[str, dict[str, dict[str, str]]] = {};
     orphaned: list[str] = [];
     for (path, targets) in sv_imports_by_file.items() {
-        route_root = find_jac_project_root(path);
-        if not route_root {
+        app_root = find_jac_project_root(path);
+        if not app_root {
             orphaned.append(path);
             continue;
         }
-        entry_stem = _project_entry_stem(os.path.join(route_root, 'jac.toml'));
-        routes = routes_by_root.setdefault(route_root, {});
+        entry_stem = _project_entry_stem(os.path.join(app_root, 'jac.toml'));
+        tables = apps_by_root.setdefault(app_root, {});
         for tgt in targets {
             stem = tgt.strip('.').rsplit('.', 1)[-1];
-            if stem and stem != entry_stem {
-                slug = stem[:-4] if stem.endswith('_app') else stem;
-                routes[stem] = f"/{slug}";
+            if not stem or stem == entry_stem or stem in tables {
+                continue;
             }
+            service_file = _service_file_for(tgt, path, app_root, scanned);
+            if not service_file {
+                skipped.append(
+                    f"[apps.{stem}] (service module '{tgt}' imported by {path} "
+                    "was not found; declare the app by hand)"
+                );
+                continue;
+            }
+            table: dict[str, str] = {
+                'kind': 'service',
+                'entry-point': os.path.relpath(service_file, app_root)[:-4].replace(
+                    os.sep, '.'
+                )
+            };
+            slug = stem[:-4] if stem.endswith('_app') else stem;
+            old_route = f"/{slug}";
+            if old_route != f"/api/{stem}" {
+                table['route'] = old_route;
+            }
+            tables[stem] = table;
         }
     }
 
     pins_added: list[str] = [];
-    routes_added: list[str] = [];
+    apps_added: list[str] = [];
     for (pin_root, pins) in sorted(pins_by_root.items()) {
         if pins {
             added = _append_toml_entries(
@@ -610,20 +1127,40 @@ impl fix(
             pins_added.extend([f"{pin_root}: {a}" for a in added]);
         }
     }
-    for (route_root, routes) in sorted(routes_by_root.items()) {
-        if routes {
-            added = _append_toml_entries(
-                os.path.join(route_root, 'jac.toml'),
-                '[scale.microservices.routes]',
-                routes,
-                dry_run
+    for (app_root, tables) in sorted(apps_by_root.items()) {
+        toml_path = os.path.join(app_root, 'jac.toml');
+        try {
+            base_name = _ensure_workspace(toml_path, dry_run);
+        } except Exception as e {
+            skipped.append(
+                f"{toml_path} ([project] could not be migrated into [apps]: {e}; "
+                "declare the service apps by hand)"
             );
-            routes_added.extend([f"{route_root}: {a}" for a in added]);
+            continue;
+        }
+        if base_name {
+            apps_added.append(
+                f"{app_root}: [apps.{base_name}] migrated from [project] "
+                f"kind/entry-point (default-app = \"{base_name}\")"
+            );
+        }
+        for (name, table) in sorted(tables.items()) {
+            if name == base_name {
+                skipped.append(
+                    f"[apps.{name}] (service module shares the project app's name; "
+                    "declare it by hand)"
+                );
+                continue;
+            }
+            added = _append_app_table(toml_path, name, table, dry_run);
+            if added {
+                apps_added.append(f"{app_root}: [apps.{name}] " + " ".join(added));
+            }
         }
     }
     if orphaned {
         console.warning(
-            "No jac.toml found for service routes from: " + ", ".join(orphaned)
+            "No jac.toml found for the service apps imported by: " + ", ".join(orphaned)
         );
     }
 
@@ -635,8 +1172,8 @@ impl fix(
     for `entry in pins_added {
         console.print(f"  [placement.pins] {`entry}");
     }
-    for `entry in routes_added {
-        console.print(f"  [scale.microservices.routes] {`entry}");
+    for `entry in apps_added {
+        console.print(f"  {`entry}");
     }
     for msg in skipped {
         console.warning(f"  skipped: {msg}");

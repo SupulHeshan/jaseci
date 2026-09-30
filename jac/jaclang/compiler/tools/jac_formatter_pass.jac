@@ -1,10 +1,11 @@
+import from jaclang.compiler.passes.context { CompileContext, CompilerPass }
 import from collections { deque }
 import jaclang.compiler.tools.doc_ir as doc;
 import jaclang.compiler.frontend.unitree as uni;
+import from jaclang.compiler.frontend.roles { BodyRole, Kid }
 import from jaclang.compiler.frontend.diagnostics { W5050, E5051 }
-import from jaclang.compiler.passes { Transform }
 
-walker JacFormatPass(Transform) {
+walker JacFormatPass(CompilerPass) {
     has indent_size: int = 4,
         MAX_LINE_LENGTH: int = 88,
         _probe_cache: dict[tuple[int, int, int], bool] = {},
@@ -12,7 +13,7 @@ walker JacFormatPass(Transform) {
         _line_has_content: bool = False,
         _rendering_suffix: bool = False;
 
-    def pre_transform -> None;
+    can prepare with entry;
     def _flush_suffixes -> str;
     def _probe_fits(
         nd: doc.DocType,
@@ -26,7 +27,6 @@ walker JacFormatPass(Transform) {
         nd: doc.DocType, base: int = 0, is_broken: bool = False
     ) -> int;
 
-    def transform(ir_in: uni.Module) -> uni.Module;
     def _run_impl(ir_in: uni.Module) -> uni.Module;
     can run_walk with uni.Module entry;
     def format_doc_ir(
@@ -41,9 +41,56 @@ walker JacFormatPass(Transform) {
 
 def format_module(mod: uni.Module) -> str {
     import from jaclang.compiler.tools.doc_ir_gen_pass { DocIRGenPass }
-    import from jaclang.compiler.driver.pass_driver { run_pass }
+    import from jaclang.compiler.driver.pipeline_runner { run_utility }
+    import from jaclang.compiler.driver.pipeline_types { UtilityProduct }
     import from jaclang.compiler.driver.program { JacProgram }
-    return run_pass(
-        JacFormatPass, run_pass(DocIRGenPass, mod, JacProgram()).ir_out, JacProgram()
-    ).ir_out.gen.jac;
+    return run_utility(
+        UtilityProduct.FORMAT,
+        run_utility(UtilityProduct.DOC, mod, JacProgram()).module,
+        JacProgram()
+    ).module.gen.jac;
+}
+
+def unparse_module(mod: uni.Module, requires_format: bool = True) -> str {
+    import from jaclang.compiler.tools.normalize_pass { NormalizePass }
+    import from jaclang.compiler.driver.program { JacProgram }
+
+    own_path = mod.loc.mod_path;
+    saved_body = mod.body;
+    saved_kid = [mod->:Kid:->];
+    head_kid = [
+        k
+        for k in saved_kid
+        if (not k.loc.mod_path) or (k.loc.mod_path == own_path)
+    ];
+    filtered = len(head_kid) != len(saved_kid);
+
+    with mod.structure_thawed() {
+        if filtered {
+            mod._role_set(
+                BodyRole,
+                [
+                    st
+                    for st in saved_body
+                    if (not st.loc.mod_path) or (st.loc.mod_path == own_path)
+                ]
+            );
+            mod.set_kids(nodes=head_kid or [uni.EmptyToken()]);
+        }
+        try {
+            import from jaclang.compiler.driver.pipeline_runner { run_utility }
+            import from jaclang.compiler.driver.pipeline_types { UtilityProduct }
+            run_utility(UtilityProduct.NORMALIZE, mod, JacProgram());
+            if requires_format {
+                return format_module(mod);
+            }
+            run_utility(UtilityProduct.UNPARSE, mod, JacProgram());
+            return mod.gen.jac;
+        } finally {
+            if filtered {
+                mod._role_set(BodyRole, saved_body);
+                mod.set_kids(nodes=saved_kid);
+            }
+        }
+    }
 }

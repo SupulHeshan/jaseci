@@ -1,22 +1,21 @@
 import os;
 import jaclang.compiler.frontend.unitree as uni;
-import from jaclang.compiler.frontend.constant { CodeContext, Tokens as Tok }
+import from jaclang.compiler.frontend.constant {
+    CodeContext,
+    Tokens as Tok,
+    SymbolAccess
+}
 import from jaclang.compiler.driver.program { JacProgram }
+import from jaclang.compiler.placement.placement_pins {
+    BareImportVerdict,
+    classify_bare_import
+}
+import from jaclang.compiler.frontend.host { active_host }
+import type from jaclang.compiler.frontend.codeinfo { InteropManifest }
+import from jaclang.project.workspace_model { AppSpec }
 
 def _coerce_module(module: uni.Module, context: CodeContext) {
-    module.decided_codespace = context.value;
-    for elem in module.body {
-        if isinstance(elem, uni.ContextAwareNode) {
-            elem.code_context = context;
-            if (isinstance(elem, uni.ModuleCode) and elem.body) {
-                for inner in elem.body {
-                    if isinstance(inner, uni.ContextAwareNode) {
-                        inner.code_context = context;
-                    }
-                }
-            }
-        }
-    }
+    module.set_code_context(context);
 }
 
 def _coerce_client_module(module: uni.Module) {
@@ -41,9 +40,9 @@ def _stamp_context_element(elem: uni.UniNode, context: CodeContext) {
     }
 }
 
-def hub_module_for_path(path: str, prog: object) -> (uni.Module | None) {
-    hub: (dict[str, uni.Module] | None) = prog?.mod?.hub;
-    if hub is None or not hub {
+def hub_module_for_path(path: str, prog: JacProgram) -> (uni.Module | None) {
+    hub = prog.mod.hub;
+    if not hub {
         return None;
     }
     if path in hub {
@@ -78,20 +77,30 @@ def module_has_client_top(module: (uni.Module | None)) -> bool {
     return False;
 }
 
+def ability_delegates_to_model(ab: uni.Ability) -> bool {
+    if isinstance(ab.body, uni.Expr) {
+        return True;
+    }
+    if isinstance(ab.body, uni.ImplDef) and isinstance(ab.body.body, uni.Expr) {
+        return True;
+    }
+    sig = ab.signature;
+    return (
+        isinstance(sig, uni.FuncSignature)
+        and sig.return_type is not None
+        and isinstance(sig.return_type, uni.BinaryExpr)
+        and isinstance(sig.return_type.op, uni.Token)
+        and sig.return_type.op.name == Tok.KW_BY
+    );
+}
+
 def is_server_anchored_module(module: (uni.Module | None)) -> bool {
     if module is None {
         return True;
     }
     anchor_path = module.loc.mod_path or '';
-    if anchor_path {
-        import from jaclang.compiler.placement.service_cut { is_service_module_stem }
-        anchor_stem = os.path.basename(anchor_path);
-        if anchor_stem.endswith('.jac') {
-            anchor_stem = anchor_stem[:-4];
-        }
-        if is_service_module_stem(anchor_path, anchor_stem) {
-            return True;
-        }
+    if anchor_path and is_service_app_entry(anchor_path) {
+        return True;
     }
     for arch in module.get_all_sub_nodes(uni.Archetype) {
         if arch.arch_kind is not None {
@@ -106,25 +115,32 @@ def is_server_anchored_module(module: (uni.Module | None)) -> bool {
             return True;
         }
     }
+    for ab in module.get_all_sub_nodes(uni.Ability) {
+        if ability_delegates_to_model(ab) {
+            return True;
+        }
+    }
     for imp in module.get_all_sub_nodes(uni.Import) {
         if imp.has_clib_decls or imp.is_virtual_jac or imp.has_string_path {
             continue;
         }
-        if imp.from_loc is None {
-            return True;
-        }
-        resolved = imp.from_loc.resolve_relative_path();
-        if not isinstance(resolved, str) or not resolved.endswith('.jac') {
-            import from jaclang.compiler.driver.modresolver { is_client_npm_import }
-            if is_client_npm_import(
-                imp.from_loc.dot_path_str, module.loc.mod_path or ''
-            ) {
-                continue;
-            }
+        if classify_import(imp).world == 'py' {
             return True;
         }
     }
     return False;
+}
+
+def classify_import(imp: uni.Import) -> BareImportVerdict {
+    if imp.from_loc is None {
+        return BareImportVerdict();
+    }
+    if imp.is_jac {
+        return BareImportVerdict(
+            world='jac', rule='jac module', path=imp.from_loc.resolve_relative_path()
+        );
+    }
+    return classify_bare_import(imp.from_loc.dot_path_str, imp.loc.mod_path or '');
 }
 
 def module_own_native_anchor(module: (uni.Module | None)) -> bool {
@@ -145,15 +161,15 @@ def module_own_native_anchor(module: (uni.Module | None)) -> bool {
     return False;
 }
 
-def module_demoted_native(path: str) -> bool {
-    import from jaclang.compiler.placement.placement_pins { _is_demoted_native }
-    return _is_demoted_native(os.path.realpath(path));
+def module_demoted_native(path: str, prog: (JacProgram | None) = None) -> bool {
+    import from jaclang.compiler.placement.placement_pins { module_native_demoted }
+    return module_native_demoted(os.path.realpath(path), prog);
 }
 
 
-def plain_native_import_target(nd: uni.Import, prog: object) -> (str | None) {
+def plain_native_import_target(nd: uni.Import, prog: JacProgram) -> (str | None) {
     import from jaclang.compiler.placement.placement_pins {
-        _is_demoted_native,
+        module_native_demoted,
         effective_module_pin
     }
     if (
@@ -170,18 +186,18 @@ def plain_native_import_target(nd: uni.Import, prog: object) -> (str | None) {
         return None;
     }
     real_resolved = os.path.realpath(resolved);
-    import jaclang;
-    jaclang_root = os.path.realpath(os.path.dirname(str(jaclang.__file__)));
+    import from jaclang.compiler.frontend.codeinfo { jaclang_pkg_root }
+    jaclang_root = os.path.realpath(jaclang_pkg_root());
     if (
         real_resolved.startswith(jaclang_root + os.sep)
         and (os.sep + 'na_stdlib' + os.sep) not in real_resolved
     ) {
         return None;
     }
-    if _is_demoted_native(real_resolved) {
+    if module_native_demoted(real_resolved, prog) {
         return None;
     }
-    if effective_module_pin(resolved) == 'native' {
+    if effective_module_pin(resolved, prog) == 'native' {
         return resolved;
     }
     target = hub_module_for_path(resolved, prog);
@@ -202,7 +218,9 @@ def plain_native_import_target(nd: uni.Import, prog: object) -> (str | None) {
     return None;
 }
 
-def import_declares_native_target(nd: uni.Import) -> bool {
+def import_declares_native_target(
+    nd: uni.Import, prog: (JacProgram | None) = None
+) -> bool {
     import from jaclang.compiler.placement.placement_pins { effective_module_pin }
     if nd.from_loc is None {
         return False;
@@ -215,16 +233,16 @@ def import_declares_native_target(nd: uni.Import) -> bool {
     if not isinstance(resolved, str) or not resolved.endswith('.jac') {
         return False;
     }
-    return effective_module_pin(resolved) == 'native';
+    return effective_module_pin(resolved, prog) == 'native';
 }
 
-def native_only_import_target(nd: uni.Import, prog: object) -> (str | None) {
+def native_only_import_target(nd: uni.Import, prog: JacProgram) -> (str | None) {
     import from jaclang.compiler.placement.placement_pins { effective_module_pin }
     resolved = plain_native_import_target(nd, prog);
     if resolved is None {
         return None;
     }
-    if effective_module_pin(resolved) == 'native' {
+    if effective_module_pin(resolved, prog) == 'native' {
         return resolved;
     }
     target = hub_module_for_path(resolved, prog);
@@ -234,7 +252,69 @@ def native_only_import_target(nd: uni.Import, prog: object) -> (str | None) {
     return None;
 }
 
-def is_client_native_edge_import(nd: uni.Import, prog: object) -> bool {
+def _python_side_emits(stmt: uni.UniNode, native_module: bool) -> bool {
+    owner = stmt;
+    if isinstance(stmt, uni.ImplDef) and stmt.decl_link is not None {
+        owner = stmt.decl_link;
+        while owner.parent is not None and not isinstance(owner.parent, uni.Module) {
+            owner = owner.parent;
+        }
+    }
+    if not isinstance(owner, uni.ContextAwareNode) {
+        return True;
+    }
+    if owner.code_context == CodeContext.CLIENT and not owner.codespace_dual {
+        return False;
+    }
+    if owner.code_context != CodeContext.NATIVE {
+        return True;
+    }
+    if isinstance(owner, uni.Test) {
+        return False;
+    }
+    return native_module;
+}
+
+def python_side_name_refs(mod: uni.Module) -> set[str] {
+    import from jaclang.compiler.frontend.module_facts { ModuleFacts }
+    native_module = mod.decided_codespace == 'native';
+    emitted: list[uni.UniNode] = [];
+    for (body, _strip) in ModuleFacts.iter_woven_segments(mod) {
+        for stmt in body {
+            if not isinstance(stmt, uni.Import)
+                and _python_side_emits(stmt, native_module) {
+                emitted.append(stmt);
+            }
+        }
+    }
+    names: set[str] = set();
+    for stmt in emitted {
+        in_imports: set[int] = set();
+        for imp in stmt.get_all_sub_nodes(uni.Import) {
+            in_imports.update(id(nm) for nm in imp.get_all_sub_nodes(uni.Name));
+        }
+        for nm in stmt.get_all_sub_nodes(uni.Name) {
+            if id(nm) not in in_imports {
+                names.add(nm.value);
+            }
+        }
+    }
+    return names;
+}
+
+def import_bound_names(nd: uni.Import) -> list[str] {
+    bound: list[str] = [];
+    for item in nd.items {
+        if isinstance(item, uni.ModuleItem) {
+            bound.append(
+                item.alias.sym_name if item.alias is not None else item.name.value
+            );
+        }
+    }
+    return bound;
+}
+
+def is_client_native_edge_import(nd: uni.Import, prog: JacProgram) -> bool {
     if nd.code_context == CodeContext.CLIENT {} elif nd.code_context
         == CodeContext.SERVER
         and module_has_client_top(nd.find_parent_of_type(uni.Module)) {} else {
@@ -250,19 +330,141 @@ enum ClientImportVerdict {
     UNKNOWN = "unknown"
 }
 
+enum CrossAppKind {
+    LOCAL = "local",
+    CLIENT_BRIDGE = "client_bridge",
+    SERVICE_BRIDGE = "service_bridge",
+    NATIVE_BIND = "native_bind"
+}
+
+def bridgeable_import_target(nd: uni.Import) -> (str | None) {
+    if (
+        nd.from_loc is None
+        or not nd.items
+        or nd.is_typed
+        or nd.is_virtual_jac
+        or nd.has_clib_decls
+    ) {
+        return None;
+    }
+    try {
+        resolved = nd.from_loc.resolve_relative_path();
+    } except Exception {
+        return None;
+    }
+    if not isinstance(resolved, str) or not resolved.endswith('.jac') {
+        return None;
+    }
+    import from jaclang.compiler.frontend.codeinfo { is_shared_runtime_module }
+    if is_shared_runtime_module(resolved) {
+        return None;
+    }
+    return resolved;
+}
+
+def is_service_app_entry(path: str) -> bool {
+    if not path {
+        return False;
+    }
+    app = active_host().app_for_path(path);
+    return app is not None and app.has_server;
+}
+
+def module_app(module: (uni.Module | None)) -> (str | None) {
+    if module is None {
+        return None;
+    }
+    return module.app;
+}
+
+def import_consumer_app(nd: uni.Import) -> (str | None) {
+    return module_app(nd.find_parent_of_type(uni.Module));
+}
+
+def same_workspace(consumer_path: str, provider_path: str) -> bool {
+    host = active_host();
+    cws = host.workspace(consumer_path);
+    pws = host.workspace(provider_path);
+    if cws is None or pws is None {
+        return False;
+    }
+    return os.path.realpath(cws.toml_path) == os.path.realpath(pws.toml_path);
+}
+
+def import_provider_spec(nd: uni.Import) -> (AppSpec | None) {
+    resolved = bridgeable_import_target(nd);
+    if resolved is None {
+        return None;
+    }
+    consumer_path = nd.loc.mod_path if nd.loc else '';
+    if not consumer_path or not same_workspace(consumer_path, resolved) {
+        return None;
+    }
+    provider_app = active_host().app_for_path(resolved);
+    if provider_app is None or not provider_app.has_server {
+        return None;
+    }
+    consumer_mod = nd.find_parent_of_type(uni.Module);
+    if module_app(consumer_mod) == provider_app.name {
+        return None;
+    }
+    return provider_app;
+}
+
+def import_provider_app(nd: uni.Import) -> (str | None) {
+    spec = import_provider_spec(nd);
+    return spec.name if spec is not None else None;
+}
+
+def import_provider_route(nd: uni.Import) -> str {
+    spec = import_provider_spec(nd);
+    return spec.effective_route() if spec is not None else '';
+}
+
+def import_crosses_apps(nd: uni.Import) -> bool {
+    provider = import_provider_app(nd);
+    return provider is not None and provider != import_consumer_app(nd);
+}
+
+def is_service_bridge_import(nd: uni.Import) -> bool {
+    if bridgeable_import_target(nd) is None {
+        return False;
+    }
+    if nd.codespace() == CodeContext.CLIENT {
+        return False;
+    }
+    return import_crosses_apps(nd);
+}
+
+def classify_cross_app_import(
+    nd: uni.Import, manifest: (InteropManifest | None)
+) -> CrossAppKind {
+    kind = CrossAppKind.LOCAL;
+    if bridgeable_import_target(nd) is not None {
+        if is_service_bridge_import(nd) {
+            kind = CrossAppKind.SERVICE_BRIDGE;
+        } elif manifest is not None and import_binds_client_native(nd, manifest) {
+            kind = CrossAppKind.NATIVE_BIND;
+        } elif nd.code_context == CodeContext.CLIENT {
+            kind = CrossAppKind.CLIENT_BRIDGE;
+        }
+    }
+    facts = nd.boundary_facts;
+    if facts is not None
+        and (
+            manifest is not None or facts.cross_app_kind == CrossAppKind.LOCAL.value
+        ) {
+        facts.cross_app_kind = kind.value;
+    }
+    return kind;
+}
+
 def is_client_boundary_import(nd: uni.Import) -> bool {
-    return (
-        nd.code_context == CodeContext.CLIENT
-        and not nd.is_service_import
-        and not nd.is_typed
-        and not nd.is_virtual_jac
-        and nd.from_loc is not None
-        and bool(nd.items)
-        and nd.from_loc.resolve_relative_path().endswith('.jac')
-    );
+    return classify_cross_app_import(nd, None) == CrossAppKind.CLIENT_BRIDGE;
 }
 
 def symbol_linked_source_module(nd: uni.Import) -> (uni.Module | None) {
+    importer = nd.find_parent_of_type(uni.Module);
     for item in nd.items {
         if not (isinstance(item, uni.ModuleItem) and isinstance(item.name, uni.Name)) {
             continue;
@@ -271,21 +473,43 @@ def symbol_linked_source_module(nd: uni.Import) -> (uni.Module | None) {
         if sym is None or sym.decl is None {
             continue;
         }
+        if sym.decl.find_parent_of_type(uni.ModuleItem) is not None {
+            continue;
+        }
         linked = sym.decl.find_parent_of_type(uni.Module);
-        if linked is not None {
+        if linked is not None and linked is not importer {
             return linked;
         }
     }
     return None;
 }
 
-def _import_item_owner_decl(
+def _declared_name(stmt: uni.ContextAwareNode) -> (str | None) {
+    if isinstance(stmt, uni.Ability) {
+        return stmt.name_ref.sym_name if stmt.name_ref is not None else None;
+    }
+    if isinstance(stmt, (uni.Archetype, uni.Enum, uni.TypeAlias, uni.Test)) {
+        return stmt.name.value;
+    }
+    if isinstance(stmt, uni.ModuleCode) and stmt.name is not None {
+        return stmt.name.value;
+    }
+    return None;
+}
+
+def _import_item_declaration(
     source_mod: uni.Module, item: uni.ModuleItem
 ) -> (uni.ContextAwareNode | None) {
     if not isinstance(item.name, uni.Name) {
         return None;
     }
-    sym = source_mod.lookup(item.name.sym_name);
+    wanted = item.name.sym_name;
+    for stmt in source_mod.body {
+        if isinstance(stmt, uni.ContextAwareNode) and _declared_name(stmt) == wanted {
+            return stmt;
+        }
+    }
+    sym = source_mod.lookup(wanted);
     if sym is None or sym.decl is None {
         return None;
     }
@@ -300,26 +524,24 @@ def _import_item_owner_decl(
 }
 
 def classify_client_import_item(
-    source_mod: uni.Module, item: object
+    source_mod: uni.Module, item: uni.UniNode
 ) -> ClientImportVerdict {
     if not isinstance(item, uni.ModuleItem) {
         return ClientImportVerdict.UNKNOWN;
     }
-    owner = _import_item_owner_decl(source_mod, item);
+    owner = _import_item_declaration(source_mod, item);
     if owner is None or isinstance(owner, uni.Import) {
         return ClientImportVerdict.UNKNOWN;
     }
     if owner.code_context == CodeContext.CLIENT {
         return ClientImportVerdict.CLIENT;
     }
+    if isinstance(owner, (uni.Ability, uni.Archetype)) and owner.surface_kind {
+        return ClientImportVerdict.BRIDGED
+            if owner.exposure != SymbolAccess.PRIVATE
+            else ClientImportVerdict.DEAD;
+    }
     if isinstance(owner, uni.Ability) {
-        if (
-            not owner.is_method
-            and owner.access is not None
-            and owner.access.tag.name == Tok.KW_PUB
-        ) {
-            return ClientImportVerdict.BRIDGED;
-        }
         return ClientImportVerdict.DEAD;
     }
     if isinstance(owner, (uni.Archetype, uni.Enum, uni.TypeAlias)) {
@@ -328,15 +550,17 @@ def classify_client_import_item(
     return ClientImportVerdict.DEAD;
 }
 
-def import_binds_client_native(nd: uni.Import, manifest: object) -> bool {
-    import from jaclang.compiler.frontend.codeinfo { InteropContext, InteropManifest }
+def import_binds_client_native(
+    nd: uni.Import, manifest: (InteropManifest | None)
+) -> bool {
+    import from jaclang.compiler.frontend.codeinfo { InteropContext }
     if nd.from_loc is None or not nd.items {
         return False;
     }
     if nd.is_service_import or nd.is_typed or nd.is_virtual_jac {
         return False;
     }
-    if not isinstance(manifest, InteropManifest) or not manifest.bindings {
+    if manifest is None or not manifest.bindings {
         return False;
     }
     try {
@@ -348,9 +572,7 @@ def import_binds_client_native(nd: uni.Import, manifest: object) -> bool {
         if not isinstance(item, uni.ModuleItem) {
             continue;
         }
-        local_name = item.alias.sym_name
-            if item.alias is not None
-            else getattr(item.name, 'value', str(item.name));
+        local_name = item.alias.sym_name if item.alias is not None else item.name.value;
         binding = manifest.bindings.get(local_name);
         if (
             binding is not None

@@ -8,6 +8,10 @@ browser LinkError. These tests skip when the vendored bitcode is absent
 """
 
 import os;
+import from jaclang.compiler.driver.compile_options {
+    push_native_target,
+    pop_native_target
+}
 import subprocess;
 import shutil;
 import tempfile;
@@ -17,9 +21,9 @@ import from jaclang.compiler.driver.program { JacProgram }
 import from jaclang.compiler.driver.compile_options { CompileOptions }
 import from jaclang.compiler.backends.native.wasm_build {
     emit_wasm_from_ir,
-    wasm_import_map,
     _wasm_libc_dir
 }
+import from jaclang.compiler.backends.native.wasm_artifact { wasm_import_map }
 import from jaclang.compiler.backends.native.wasm_host_abi {
     WASM_HOST_ABI,
     WASM_HOST_MODULE
@@ -37,10 +41,15 @@ def _require_libc {
     }
 }
 
-"""Compile the shared fixture to LLVM IR text (the emit_wasm_from_ir input)."""
+"""The fixture's whole program for wasm: its unit merged with the runtime
+units it links and the glue that defines `jac_entry` and `__jac_glob_init`,
+the text `compile_to_wasm` hands the emitter."""
 def fixture_ir -> str {
-    prev = os.environ.get("JAC_NATIVE_TARGET", None);
-    os.environ["JAC_NATIVE_TARGET"] = "wasm32-unknown-unknown";
+    import from jaclang.compiler.backends.native.link_plan {
+        build_link_plan,
+        wasm_program_ir
+    }
+    prev = push_native_target("wasm32-unknown-unknown");
     try {
         prog = JacProgram();
         ir = prog.compile(
@@ -48,17 +57,28 @@ def fixture_ir -> str {
             options=CompileOptions(aot_mode=True)
         );
         assert not prog.errors_had;
-        return str(ir.gen.llvm_ir);
+        plan = build_link_plan(prog, [ir.loc.mod_path], prog.options);
+        return wasm_program_ir(plan);
     } finally {
-        if prev is None {
-            os.environ.pop("JAC_NATIVE_TARGET", None);
-        } else {
-            os.environ["JAC_NATIVE_TARGET"] = prev;
-        }
+        pop_native_target(prev);
     }
 }
 
 # ─── tests ───────────────────────────────────────────────────────────────────
+test "wasm links retain their target in a host application context" {
+    import from jaclang.compiler.driver.pipeline_runner { wasm_ir }
+    import from jaclang.compiler.driver.compilation_context { context_program }
+    prog = JacProgram();
+    prog.options = CompileOptions(native_target="");
+    context_program(prog, prog.options);
+    for attempt in range(2) {
+        (llvm_ir, _) = wasm_ir(prog, os.path.join(FIXTURES, FIXTURE));
+        assert 'target triple = "wasm32-unknown-unknown"' in llvm_ir;
+        assert "pthread_key_create" not in llvm_ir;
+        assert "pthread_getspecific" not in llvm_ir;
+    }
+}
+
 test "libc folds in-module; the host surface is jac_host1 only" {
     _require_libc();
     mod = emit_wasm_from_ir(fixture_ir(), [], app_imports=set());
@@ -187,7 +207,7 @@ console.log(`out=${JSON.stringify(out)} compute=${c}`);
     last = proc.stdout.strip().splitlines()[-1];
     # float repr, alloc-churning concat, and str.lower all format in-module and
     # arrive through jac_host1.write — the exact #7048 breakage surface.
-    assert last == 'out="3.14\\n11\\nup\\n" compute=21' , f"unexpected: {last}";
+    assert last == 'out="3.14\\n11\\nup\\nfinished\\n7\\n" compute=21' , f"unexpected: {last}";
 }
 
 # ─── stale-floor detection ───────────────────────────────────────────────────
@@ -366,7 +386,7 @@ test "a floor without a manifest still links" {
     }
 }
 
-"""[gc] default = "none" promises an RC-free artifact; the audit is what makes
+"""[memory] profile = "nogc" promises an RC-free artifact; the audit is what makes
 compile_to_wasm fail loudly instead of shipping RC machinery the shim then has
 to service. Pure-IR checks -- no vendored libc needed."""
 test "rc audit passes clean IR and rejects rc machinery" {
@@ -385,7 +405,7 @@ test "rc audit passes clean IR and rejects rc machinery" {
 
 test "rc audit rejects entry-point gc env probes" {
     import from jaclang.compiler.backends.native.wasm_build { _assert_ir_rc_free }
-    probing = '@.s = constant [10 x i8] c"JAC_NO_GC\\00"';
+    probing = '@.s = constant [7 x i8] c"JAC_GC\\00"';
     raised = False;
     try {
         _assert_ir_rc_free(probing, "probe.jac");

@@ -7,7 +7,7 @@ impl TypeEvaluator.get_type_of_module_item(node_: ModuleItem) -> TypeBase {
         return binding.type;
     }
     item_name = node_.name.value;
-    import from jaclang.compiler.driver.modresolver { is_untyped_third_party_module }
+    import from jaclang.compiler.frontend.host { active_host }
     import_node = node_.parent_of_type(Import);
     assert import_node.from_loc is not None;
 
@@ -37,17 +37,15 @@ impl TypeEvaluator.get_type_of_module_item(node_: ModuleItem) -> TypeBase {
                     path_str = str(path);
 
                     if (not path_str.endswith((".jac", ".py", ".pyi")))
-                        or is_untyped_third_party_module(path_str) {
+                        or active_host().is_untyped_third_party(path_str) {
                         mod_type = ModuleType(
                             mod_name=binding.sym_name,
                             file_uri=path,
                             symbol_table=None,
                             is_external=True,
                         );
-                        import from jaclang.compiler.driver.modresolver {
-                            sibling_declaration_file
-                        }
-                        sibling_dts = sibling_declaration_file(path_str);
+                        import from jaclang.compiler.frontend.host { active_host }
+                        sibling_dts = active_host().sibling_declaration(path_str);
                         if sibling_dts {
                             if declared
                                 := self._ts_declared_type_from_file(
@@ -92,8 +90,11 @@ impl TypeEvaluator.get_type_of_module_item(node_: ModuleItem) -> TypeBase {
                             return self._set_module_item_symbol_and_type(node_, sym);
                         }
 
-                        if sym := self._resolve_star_import_symbol(mod, item_name) {
-                            return self._set_module_item_symbol_and_type(node_, sym);
+                        star_symbol = self._resolve_star_import_symbol(mod, item_name);
+                        if star_symbol is not None {
+                            return self._set_module_item_symbol_and_type(
+                                node_, star_symbol
+                            );
                         }
                         continue;
                     }
@@ -141,6 +142,24 @@ impl TypeEvaluator.get_type_of_module_item(node_: ModuleItem) -> TypeBase {
                 binding._sym_category = SymbolType.VAR;
                 self._emit_untyped_external(binding, item_name, from_mod_name);
                 return binding.type;
+            }
+            if virtual_dts
+                := self._jac_virtual_sibling_dts(import_node, from_mod_type) {
+                if declared
+                    := self._ts_declared_type_from_file(virtual_dts, item_name) {
+                    binding.type = declared;
+                    declared_kind = self._ts_declared_kind_from_file(
+                        virtual_dts, item_name
+                    )
+                        or BindingKind.VALUE;
+                    binding._sym_category = SymbolType.TYPE
+                        if declared_kind.is_type_only()
+                        else SymbolType.VAR;
+                    self._apply_import_binding_kind(
+                        node_, binding, declared_kind, from_mod_name
+                    );
+                    return binding.type;
+                }
             }
             if from_mod_type.symbol_table is not None
                 and (
@@ -267,9 +286,10 @@ impl TypeEvaluator._resolve_star_import_symbol(
 }
 
 impl TypeEvaluator.get_type_of_module(node_: ModulePath) -> TypeBase {
-    import from jaclang.compiler.driver.modresolver { is_untyped_third_party_module }
-    if node_.path {
-        last_type = node_.path[-1].type;
+    import from jaclang.compiler.frontend.host { active_host }
+    path_parts = node_.path;
+    if path_parts {
+        last_type = path_parts[-1].type;
 
         if last_type
             and not (
@@ -280,25 +300,34 @@ impl TypeEvaluator.get_type_of_module(node_: ModulePath) -> TypeBase {
         path_list = node_.resolve_relative_path_list();
 
         offset = 0;
-        if node_.path and len(path_list) > len(node_.path) and node_.level > 0 {
-            offset = len(path_list) - len(node_.path);
+        if len(path_list) > len(path_parts) and node_.level > 0 {
+            offset = len(path_list) - len(path_parts);
         }
-        for (idx, npath) in enumerate(node_.path) {
+        for (idx, npath) in enumerate(path_parts) {
+            part: Expr = npath;
             mod_path = path_list[idx + offset];
+            if idx == len(path_parts) - 1
+                and self._imports_own_module(node_, mod_path) {
+                self.emit_diag(E1139, npath, module=node_.dot_path_str);
+            }
 
             if mod_path in self._module_type_cache {
                 resolved_for_cache = str(Path(mod_path).resolve());
                 if self.program.is_hub_entry_fresh(resolved_for_cache) {
-                    npath.type = self._module_type_cache[mod_path];
-                    npath._sym_category = SymbolType.MODULE;
+                    part.type = self._module_type_cache[mod_path];
+                    if isinstance(npath, Name) {
+                        npath._sym_category = SymbolType.MODULE;
+                    }
                     continue;
                 }
                 self.program.invalidate_module(resolved_for_cache);
             }
 
             if not Path(mod_path).exists() {
-                npath._sym_category = SymbolType.MODULE;
-                if idx < len(node_.path) - 1 {
+                if isinstance(npath, Name) {
+                    npath._sym_category = SymbolType.MODULE;
+                }
+                if idx < len(path_parts) - 1 {
                     continue;
                 }
                 if npm_entry := self._resolve_client_npm_module(node_) {
@@ -308,17 +337,34 @@ impl TypeEvaluator.get_type_of_module(node_: ModulePath) -> TypeBase {
                         symbol_table=None,
                         is_external=True,
                     );
-                    npath.type = mod_type;
-                    npath._sym_category = SymbolType.MODULE;
-                    return npath.type;
+                    part.type = mod_type;
+                    if isinstance(npath, Name) {
+                        npath._sym_category = SymbolType.MODULE;
+                    }
+                    return part.type;
                 }
-                npath.type = UnknownType(is_diagnosed=True);
-                self.emit_diag(W1100, npath);
-                return npath.type;
+                part.type = UnknownType(is_diagnosed=True);
+                declared = self._declared_missing_dependency(node_)
+                    if self.program is not None
+                        and self.program.options is not None
+                        and self.program.options.strict_dependencies
+                    else None;
+                if self._relative_import_must_resolve(node_) {
+                    self.emit_diag(E1134, npath, module=node_.dot_path_str);
+                } elif declared is not None {
+                    self.emit_diag(
+                        E1138, npath, module=node_.dot_path_str, package=declared
+                    );
+                } else {
+                    self.emit_diag(W1100, npath);
+                }
+                return part.type;
             }
 
             if Path(mod_path).is_dir() {
-                npath._sym_category = SymbolType.MODULE;
+                if isinstance(npath, Name) {
+                    npath._sym_category = SymbolType.MODULE;
+                }
                 pkg_dir = Path(mod_path);
                 pkg_sym_tab: (Module | None) = None;
                 for ext in (".jac", ".py", ".pyi") {
@@ -336,21 +382,23 @@ impl TypeEvaluator.get_type_of_module(node_: ModulePath) -> TypeBase {
                     file_uri=pkg_dir.resolve(),
                     symbol_table=pkg_sym_tab,
                 );
-                npath.type = pkg_type;
+                part.type = pkg_type;
                 self._module_type_cache[mod_path] = pkg_type;
                 continue;
             }
 
             if (not mod_path.endswith((".jac", ".py", ".pyi")))
-                or is_untyped_third_party_module(mod_path) {
+                or active_host().is_untyped_third_party(mod_path) {
                 mod_type = ModuleType(
                     mod_name=npath.value,
                     file_uri=Path(mod_path).resolve(),
                     symbol_table=None,
                     is_external=True,
                 );
-                npath.type = mod_type;
-                npath._sym_category = SymbolType.MODULE;
+                part.type = mod_type;
+                if isinstance(npath, Name) {
+                    npath._sym_category = SymbolType.MODULE;
+                }
                 self._module_type_cache[mod_path] = mod_type;
                 continue;
             }
@@ -365,16 +413,18 @@ impl TypeEvaluator.get_type_of_module(node_: ModulePath) -> TypeBase {
                 file_uri=Path(mod_path).resolve(),
                 symbol_table=mod,
             );
-            npath.type = mod_type;
-            npath._sym_category = SymbolType.MODULE;
+            part.type = mod_type;
+            if isinstance(npath, Name) {
+                npath._sym_category = SymbolType.MODULE;
+            }
 
             self._module_type_cache[mod_path] = mod_type;
         }
         if node_.alias {
-            node_.alias.type = node_.path[-1].type;
+            node_.alias.type = path_parts[-1].type;
             node_.alias._sym_category = SymbolType.MODULE;
         }
-        return node_.path[-1].type;
+        return path_parts[-1].type or UnknownType();
     }
     return UnknownType();
 }
@@ -382,7 +432,7 @@ impl TypeEvaluator.get_type_of_module(node_: ModulePath) -> TypeBase {
 impl TypeEvaluator._resolve_submodule_attr(
     base_type: ModuleType, attr_name: str
 ) -> (ModuleType | None) {
-    import from jaclang.compiler.driver.modresolver { is_untyped_third_party_module }
+    import from jaclang.compiler.frontend.host { active_host }
     if base_type.file_uri is None {
         return None;
     }
@@ -413,7 +463,7 @@ impl TypeEvaluator._resolve_submodule_attr(
                     return cached;
                 }
             }
-            if is_untyped_third_party_module(path_str) {
+            if active_host().is_untyped_third_party(path_str) {
                 return ModuleType(
                     mod_name=attr_name,
                     file_uri=path,
@@ -481,7 +531,7 @@ impl TypeEvaluator._resolve_importer_path(ast_node: UniNode) -> (str | None) {
 impl TypeEvaluator.get_type_of_symbol(symbol: Symbol) -> TypeBase {
     provider = symbol.provider;
     if provider is not None {
-        return provider.resolve_type(self, symbol);
+        return provider.resolve_type(symbol);
     }
     if self.push_symbol_resolution(symbol) {
         try {
@@ -491,7 +541,25 @@ impl TypeEvaluator.get_type_of_symbol(symbol: Symbol) -> TypeBase {
             self.pop_symbol_resolution(symbol);
         }
     }
+    published = self._published_class_type(symbol);
+    if published is not None {
+        return published;
+    }
     return UnknownType(is_incomplete=True);
+}
+
+impl TypeEvaluator._published_class_type(symbol: Symbol) -> (TypeBase | None) {
+    import from jaclang.compiler.frontend.unitree { Archetype }
+    decl = symbol.decl;
+    if decl is None {
+        return None;
+    }
+    owner = decl.name_of;
+    if not isinstance(owner, Archetype) {
+        return None;
+    }
+    published = owner.name_spec.type;
+    return published if isinstance(published, ClassType) else None;
 }
 
 impl TypeEvaluator.resolve_to_definition_symbol(symbol: Symbol) -> Symbol {
@@ -499,6 +567,11 @@ impl TypeEvaluator.resolve_to_definition_symbol(symbol: Symbol) -> Symbol {
     cur = symbol;
     while id(cur) not in visited {
         visited.add(id(cur));
+        origin = cur.imported_from;
+        if origin is not None {
+            cur = origin;
+            continue;
+        }
         provider = cur.provider;
         if provider is not None {
             target = provider.definition();
@@ -518,4 +591,94 @@ impl TypeEvaluator.resolve_to_definition_symbol(symbol: Symbol) -> Symbol {
         cur = node_.sym;
     }
     return cur;
+}
+
+
+impl TypeEvaluator._imports_own_module(node_: ModulePath, mod_path: str) -> bool {
+    importer = node_.loc.mod_path if node_.loc else "";
+    if not importer or not importer.endswith(".test.jac") {
+        return False;
+    }
+    base = Path(importer[:-len(".test.jac")] + ".jac");
+    return base.exists() and Path(mod_path).resolve() == base.resolve();
+}
+
+impl TypeEvaluator._relative_import_must_resolve(node_: ModulePath) -> bool {
+    if node_.level <= 0 or node_.string_path_value is not None {
+        return False;
+    }
+    imp = node_.find_parent_of_type(Import);
+    if imp is None or imp.is_typed or imp.is_comptime {
+        return False;
+    }
+    return not self._import_error_is_handled(imp);
+}
+
+
+impl TypeEvaluator._declared_missing_dependency(node_: ModulePath) -> (str | None) {
+    if node_.level > 0 or node_.string_path_value is not None or not node_.path {
+        return None;
+    }
+    imp = node_.find_parent_of_type(Import);
+    if imp is None
+        or imp.is_typed
+        or imp.is_comptime
+        or self._import_error_is_handled(imp) {
+        return None;
+    }
+    mod = node_.find_parent_of_type(Module);
+    if mod is None or not mod.loc or not mod.loc.mod_path {
+        return None;
+    }
+    import from jaclang.compiler.frontend.host { active_host }
+    fallback_app = (
+        self.program.options.target_app or ""
+            if self.program is not None and self.program.options is not None
+            else ""
+    );
+    names = active_host().declared_dependencies(mod.loc.mod_path, fallback_app);
+    if names is None {
+        return None;
+    }
+    def norm(name: str) -> str {
+        return name.strip().lower().replace("-", "_").replace(".", "_");
+    }
+    wanted = norm(str(node_.path[0].value));
+    dotted = node_.dot_path_str;
+    for declared in names {
+        name = str(declared);
+        if "/" in name {
+            prefix = name.replace("/", ".");
+            if dotted == prefix or dotted.startswith(prefix + ".") {
+                return name;
+            }
+        } elif norm(name) == wanted {
+            return name;
+        }
+    }
+    return None;
+}
+
+impl TypeEvaluator._import_error_is_handled(imp: Import) -> bool {
+    caught = {'ImportError', 'ModuleNotFoundError', 'Exception', 'BaseException'};
+    prev: UniNode = imp;
+    cur: (UniNode | None) = imp.parent;
+    while cur is not None {
+        if isinstance(cur, TryStmt) and (prev in cur.body) {
+            for handler in cur.excepts {
+                for nm in handler.ex_type.get_all_sub_nodes(typ=Name) {
+                    if nm.value in caught {
+                        return True;
+                    }
+                }
+                if isinstance(handler.ex_type, Name)
+                    and handler.ex_type.value in caught {
+                    return True;
+                }
+            }
+        }
+        prev = cur;
+        cur = cur.parent;
+    }
+    return False;
 }

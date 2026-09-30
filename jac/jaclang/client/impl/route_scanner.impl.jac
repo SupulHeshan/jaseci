@@ -18,6 +18,7 @@ impl RouteScanner.scan -> list[RouteEntry] {
     self._routes = [];
     self._layouts = {};
     self._page_files = [];
+    self._unrouted_files = [];
     self._routes = self._scan_directory(self.pages_dir);
     self._detect_collisions(self._routes);
     return self._routes;
@@ -29,6 +30,10 @@ impl RouteScanner.get_layouts -> dict[(str, RouteEntry)] {
 
 impl RouteScanner.get_page_files -> list[Path] {
     return self._page_files;
+}
+
+impl RouteScanner.get_unrouted_files -> list[Path] {
+    return self._unrouted_files;
 }
 
 impl RouteScanner._scan_directory(
@@ -83,6 +88,7 @@ impl RouteScanner._scan_directory(
                 continue;
             }
             if page_export is None {
+                self._unrouted_files.append(`entry);
                 continue;
             }
             route_segment = self._file_to_route_path(stem);
@@ -179,50 +185,18 @@ impl RouteScanner._detect_collisions(routes: list[RouteEntry]) -> None {
 }
 
 impl resolve_route_exports(module_path: Path) -> tuple[((str | None), (str | None))] {
-    import from jaclang { JacRuntime as Jac }
-    program = Jac.program;
-    if program is None {
-        return (None, None);
-    }
-    try {
-        mod = program.compile(str(module_path.resolve()));
-    } except Exception {
-        return (None, None);
-    }
-    if mod is None {
-        return (None, None);
-    }
-    manifest = mod.gen.client_manifest;
-    page_name = manifest.page_export if manifest else None;
-    layout_name = manifest.layout_export if manifest else None;
-    if page_name is None and layout_name is None {
-        (page_name, layout_name) = _route_exports_from_ast(mod);
-    }
-    return (page_name, layout_name);
+    import from jaclang.runtime.runtime { JacRuntime as Jac }
+    import from jaclang.compiler.driver.pipeline_runner { route_exports }
+    return route_exports(Jac.get_program(), str(module_path));
 }
 
-impl _route_exports_from_ast(mod: any) -> tuple[((str | None), (str | None))] {
-    import jaclang.compiler.frontend.unitree as uni;
-    page_name: (str | None) = None;
-    layout_name: (str | None) = None;
-    try {
-        abilities = mod.get_all_sub_nodes(uni.Ability);
-    } except Exception {
-        return (None, None);
+impl entry_drops_route_children(manifest: any) -> bool {
+    if manifest is None or "app" not in manifest.exports {
+        return False;
     }
-    for nd in abilities {
-        if nd.is_method or not isinstance(nd.signature, uni.FuncSignature) {
-            continue;
-        }
-        rt = nd.signature.return_type;
-        if not isinstance(rt, uni.Name) or nd.name_ref is None {
-            continue;
-        }
-        if rt.value == 'JsxPage' and page_name is None {
-            page_name = nd.name_ref.sym_name;
-        } elif rt.value == 'JsxLayout' and layout_name is None {
-            layout_name = nd.name_ref.sym_name;
-        }
+    names = manifest.params.get("app");
+    if names is None {
+        return False;
     }
-    return (page_name, layout_name);
+    return "children" not in names and names != ["props"];
 }

@@ -1,5 +1,8 @@
-import from dataclasses { field }
+import from jaclang.compiler.frontend.roles { Kid }
 import from jaclang.compiler.frontend.unitree {
+    Module,
+    TreeWalker,
+    UniNode,
     Ability,
     Archetype,
     Assignment,
@@ -11,29 +14,67 @@ import from jaclang.compiler.frontend.unitree {
     DeleteStmt,
     DisconnectOp,
     EventSignature,
+    Expr,
     FuncCall,
+    KWPair,
+    ListVal,
+    MultiString,
+    ability_of_symbol,
     ImplDef,
     Name,
     SpecialVarRef,
+    String,
     Symbol,
-    Token,
-    UniNode
+    Token
 }
+import from jaclang.compiler.passes.context { CompileContext, TreePass }
 import from jaclang.compiler.frontend.constant { SymbolType, Tokens as Tok }
-import from jaclang.compiler.passes.uni_pass { UniPass }
 
-walker EndpointEffectPass(UniPass) {
+def _literal_names(value: (Expr | None)) -> (list[str] | None) {
+    if not isinstance(value, ListVal) {
+        return None;
+    }
+    names: list[str] = [];
+    for item in value.values {
+        text: (str | bytes) = b"";
+        if isinstance(item, String) {
+            text = item.lit_value;
+        } elif isinstance(item, MultiString)
+            and all(isinstance(part, String) for part in item.strings) {
+            text = item.lit_value;
+        }
+        if not isinstance(text, str) or not text {
+            return None;
+        }
+        names.append(text);
+    }
+    return names;
+}
+
+walker EndpointEffectPass(TreePass) {
     has _is_writer: bool = False,
-        _touches: set[str] = field(default_factory=`set),
-        _visited: set[int] = field(default_factory=set);
+        _unknown: bool = False,
+        _declared_reads: set[str] = set(),
+        _declared_writes: set[str] = set(),
+        _assumptions: set[str] = set(),
+        _touches: set[str] = set(),
+        _visited: set[int] = set();
 
-    def before_pass {
+    can prepare with entry {
+        if self.ctx.nested_depth {
+            return;
+        }
         self._is_writer = False;
+        self._unknown = False;
+        self._declared_reads.clear();
+        self._declared_writes.clear();
+        self._assumptions.clear();
         self._touches.clear();
         self._visited.clear();
     }
 
     can enter_ability with Ability entry {
+        import from jaclang.compiler.frontend.codeinfo { endpoint_key }
         if (
             not here.is_method
             and not here.in_client_context()
@@ -41,33 +82,64 @@ walker EndpointEffectPass(UniPass) {
             and here.access.tag.name == Tok.KW_PUB
             and isinstance(here.name_ref, Name)
         ) {
-            self.ir_in.gen.interop_manifest.endpoint_effects[
-                f"func:{here.name_ref.sym_name}"
-            ] = self._classify(self._resolved_body(here));
+            self.module.gen.interop_manifest.endpoint_effects[
+                endpoint_key(self.module, "func", here.name_ref.sym_name)
+            ] = self._classify(
+                self._resolved_body(here), "func", here.name_ref.sym_name, here
+            );
         }
     }
 
     can enter_archetype with Archetype entry {
+        import from jaclang.compiler.frontend.codeinfo { endpoint_key }
         if here.arch_kind != "walker" {
             return;
         }
         if not isinstance(here.name, Name) {
             return;
         }
-        self.ir_in.gen.interop_manifest.endpoint_effects[
-            f"walker:{here.name.sym_name}"
-        ] = self._classify(self._resolved_body(here));
+        self.module.gen.interop_manifest.endpoint_effects[
+            endpoint_key(self.module, "walker", here.name.sym_name)
+        ] = self._classify(self._resolved_body(here), "walker", here.name.sym_name);
     }
 
-    def _classify(body_nodes: list) -> dict {
+    def _classify(
+        body_nodes: list[UniNode],
+        kind: str,
+        name: str,
+        declaration: Ability | None = None
+    ) -> dict[str, any] {
+        import from jaclang.compiler.frontend.codeinfo { endpoint_descriptor }
         self._is_writer = False;
+        self._unknown = False;
+        self._declared_reads.clear();
+        self._declared_writes.clear();
+        self._assumptions.clear();
         self._touches.clear();
         self._visited.clear();
-        for nd in body_nodes {
-            self._scan(nd);
+        declared = self._declaration_effects(declaration)
+            if declaration is not None
+            else None;
+        if declared is not None {
+            self._declared_reads.update(declared["reads"]);
+            self._declared_writes.update(declared["writes"]);
+            self._assumptions.add("Declared effects of " + name);
+        } else {
+            for nd in body_nodes {
+                self._scan(nd);
+            }
         }
-        touches_list = sorted(list(self._touches)) if self._touches else ["*"];
-        return {"is_writer": self._is_writer, "touches": touches_list};
+        result: dict[str, any] = endpoint_descriptor(self.module, kind, name);
+        result["reads"] = sorted(list(self._declared_reads))
+            if declared is not None
+            else ["*"];
+        result["writes"] = ["*"]
+            if self._is_writer or self._unknown
+            else sorted(list(self._declared_writes));
+        result["assumptions"] = sorted(list(self._assumptions));
+        result["unknown"] = self._unknown;
+        result["observed_tags"] = sorted(list(self._touches));
+        return result;
     }
 
     def _scan(nd: (UniNode | None)) -> None {
@@ -96,17 +168,7 @@ walker EndpointEffectPass(UniPass) {
         if isinstance(nd, Assignment) and nd.target {
             for tgt in nd.target {
                 if isinstance(tgt, AtomTrailer) and tgt.is_attr {
-                    root_expr = tgt.target;
-                    while isinstance(root_expr, AtomTrailer) {
-                        root_expr = root_expr.target;
-                    }
-                    is_self = (
-                        isinstance(root_expr, SpecialVarRef)
-                        and root_expr.sym_name == 'self'
-                    );
-                    if not is_self {
-                        self._is_writer = True;
-                    }
+                    self._is_writer = True;
                 }
             }
         }
@@ -121,8 +183,22 @@ walker EndpointEffectPass(UniPass) {
 
             if id(nd) not in self._visited {
                 self._visited.add(id(nd));
-                for stmt in self._callee_body(nd) {
-                    self._scan(stmt);
+                declared = self._declared_effects(nd);
+                if declared is not None {
+                    import from jaclang.compiler.frontend.unparse { unparse_node }
+                    self._declared_reads.update(declared["reads"]);
+                    self._declared_writes.update(declared["writes"]);
+                    self._assumptions.add(
+                        "Declared effects of " + unparse_node(nd.target)
+                    );
+                } else {
+                    body = self._callee_body(nd);
+                    if not body {
+                        self._unknown = True;
+                    }
+                    for stmt in body {
+                        self._scan(stmt);
+                    }
                 }
             }
         }
@@ -139,7 +215,7 @@ walker EndpointEffectPass(UniPass) {
             }
         }
 
-        for child in nd.kid {
+        for child in [nd->:Kid:->] {
             if child {
                 self._scan(child);
             }
@@ -149,8 +225,12 @@ walker EndpointEffectPass(UniPass) {
     def _call_target_symbol(call: FuncCall) -> (Symbol | None) {
         if isinstance(call.target, Name) {
             sym = call.target.sym;
-            if not sym and call.target.sym_tab {
-                sym = call.target.sym_tab.lookup(call.target.sym_name, deep=True);
+            if not sym {
+                try {
+                    sym = call.target.sym_tab.lookup(call.target.sym_name, deep=True);
+                } except ValueError {
+                    return None;
+                }
             }
             return sym;
         }
@@ -167,7 +247,46 @@ walker EndpointEffectPass(UniPass) {
         return None;
     }
 
-    def _callee_body(call: FuncCall) -> list {
+    def _declared_effects(call: FuncCall) -> dict[str, list[str]] | None {
+        decl = ability_of_symbol(self._call_target_symbol(call));
+        return self._declaration_effects(decl) if decl is not None else None;
+    }
+
+    def _declaration_effects(decl: Ability) -> dict[str, list[str]] | None {
+        for decorator in decl.decorators or [] {
+            if not isinstance(decorator, FuncCall) {
+                continue;
+            }
+            target = ability_of_symbol(self._call_target_symbol(decorator));
+            if target is None
+                or not target.loc.mod_path.replace("\\", "/").endswith(
+                    "/jaclang/lib/effects.jac"
+                ) {
+                continue;
+            }
+            result: dict[str, list[str]] = {"reads": [], "writes": []};
+            for pair in decorator.params or [] {
+                if not isinstance(pair, KWPair)
+                    or pair.key is None
+                    or pair.key.sym_name not in result {
+                    raise ValueError(
+                        "Effect declarations require reads= and writes= literal lists"
+                    );
+                }
+                values = _literal_names(pair.value);
+                if values is None {
+                    raise ValueError(
+                        "Effect dependencies must be literal nonempty strings"
+                    );
+                }
+                result[pair.key.sym_name] = values;
+            }
+            return result;
+        }
+        return None;
+    }
+
+    def _callee_body(call: FuncCall) -> list[UniNode] {
         sym = self._call_target_symbol(call);
         if not sym or not sym.defn {
             return [];
@@ -185,7 +304,7 @@ walker EndpointEffectPass(UniPass) {
         return [];
     }
 
-    def _resolved_body(owner: UniNode) -> list {
+    def _resolved_body(owner: UniNode) -> list[UniNode] {
         if isinstance(owner, Archetype) {
             return owner._get_impl_resolved_body();
         }

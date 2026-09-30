@@ -7,6 +7,8 @@ def _wrapname(x: any) -> object {
 }
 
 class Type(_StrCaching) {
+    has __pointer_types: dict[(any, PointerType)];
+
     with entry {
         is_pointer = False;
         null = 'zeroinitializer';
@@ -21,7 +23,16 @@ class Type(_StrCaching) {
     }
 
     def as_pointer(self: Type, addrspace: any = 0) -> PointerType {
-        return PointerType(self, addrspace);
+        try {
+            pointers = self.__pointer_types;
+        } except AttributeError {
+            pointers = self.__pointer_types={};
+        }
+        pointer = pointers.get(addrspace);
+        if pointer is None {
+            pointer = pointers[addrspace]=PointerType(self, addrspace);
+        }
+        return pointer;
     }
 
     def __ne__(self: Type, other: any) -> object {
@@ -106,12 +117,12 @@ class PointerType(Type) {
     }
 
     def __hash__(self: PointerType) -> object {
-        return hash(PointerType);
+        return hash((PointerType, self.addrspace));
     }
 }
 
 class _TypedPointerType(PointerType) {
-    def init(self: _TypedPointerType, pointee: any, addrspace: any = 0) -> object {
+    def init(self: _TypedPointerType, pointee: Type, addrspace: any = 0) -> object {
         super.init(None, addrspace);
         assert ((pointee is not None) and (`type(pointee) is not PointerType));
         assert not isinstance(pointee, VoidType);
@@ -136,7 +147,7 @@ class _TypedPointerType(PointerType) {
     }
 
     def __hash__(self: _TypedPointerType) -> object {
-        return hash(_TypedPointerType);
+        return hash((PointerType, self.addrspace));
     }
 
     def gep(self: _TypedPointerType, i: any) -> Type {
@@ -371,7 +382,7 @@ class _Repeat(object) {
         return self.size;
     }
 
-    def __iter__(self: _Repeat) -> object {
+    def __iter__(self: _Repeat) -> Iterator[any] {
         return repeat(self.value, self.size);
     }
 
@@ -453,7 +464,7 @@ class VectorType(Type) {
 
 class Aggregate(Type) {
     with entry {
-        elements: (_Repeat | tuple | None);
+        elements: (_Repeat | tuple[Type, ...] | None);
     }
 
     def __len__(self: Aggregate) -> object {
@@ -543,7 +554,7 @@ class BaseStructType(Aggregate) {
         return len(self.elements);
     }
 
-    def __iter__(self: BaseStructType) -> object {
+    def __iter__(self: BaseStructType) -> Iterator[any] {
         assert (self.elements is not None);
         return iter(self.elements);
     }
@@ -615,14 +626,14 @@ class LiteralStructType(BaseStructType) {
     }
 
     def __hash__(self: LiteralStructType) -> object {
-        return hash(LiteralStructType);
+        return hash((LiteralStructType, self.elements, self.packed));
     }
 }
 
 class IdentifiedStructType(BaseStructType) {
     with entry {
         null = 'zeroinitializer';
-        elements: (tuple | None);
+        elements: (tuple[Type, ...] | None);
     }
 
     def init(
@@ -639,7 +650,7 @@ class IdentifiedStructType(BaseStructType) {
         return "%{name}".format(name=_wrapname(self.name));
     }
 
-    def get_declaration(self: IdentifiedStructType) -> object {
+    def get_declaration(self: IdentifiedStructType) -> str {
         if self.is_opaque {
             out = "{strrep} = type opaque".format(strrep=str(self));
         } else {
@@ -658,7 +669,7 @@ class IdentifiedStructType(BaseStructType) {
     }
 
     def __hash__(self: IdentifiedStructType) -> object {
-        return hash(IdentifiedStructType);
+        return hash((IdentifiedStructType, self.name, self.packed));
     }
 
     def set_body(self: IdentifiedStructType, *elems: any) -> object {

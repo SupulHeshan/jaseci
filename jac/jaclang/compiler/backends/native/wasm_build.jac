@@ -1,5 +1,9 @@
 import os;
-import type from jaclang.compiler.backends.native.llvm.binding { ModuleRef, ValueRef }
+import type from jaclang.compiler.backends.native.llvm.binding {
+    ModuleRef,
+    ValueRef,
+    TargetMachine
+}
 import type from jaclang.compiler.frontend.unitree { Module as UniModule }
 
 def _wasm_rt_src_dir -> str {
@@ -222,22 +226,24 @@ def _assert_abi64_adapters(
 def _link_wasm_libc(mod: ModuleRef) -> bool {
     libc_dir = _wasm_libc_dir();
     if libc_dir is None {
-        import from jaclang.cli.console { console }
-        console.warning(
+        import from jaclang.compiler.frontend.host { active_host }
+        active_host().note(
             "vendored wasm libc not found (run `zig build vendor-wasm-libc`); "
                 + "libc symbols stay as raw env imports and the jac_host1 import "
-                + "contract is NOT enforced"
+                + "contract is NOT enforced",
+            style="warning"
         );
         return False;
     }
     drift = _floor_source_drift(libc_dir);
     if drift is None {
         if _is_dev_libc_dir(libc_dir) {
-            import from jaclang.cli.console { console }
-            console.warning(
+            import from jaclang.compiler.frontend.host { active_host }
+            active_host().note(
                 f"vendored wasm libc at {libc_dir} carries no {FLOOR_MANIFEST}, "
                     + "so it cannot be checked against wasm_rt/; it predates the "
-                    + f"manifest -- {_rebuild_hint(libc_dir)}."
+                    + f"manifest -- {_rebuild_hint(libc_dir)}.",
+                style="warning"
             );
         }
     } elif drift {
@@ -321,15 +327,8 @@ def _internalize_late_bound(mod: ModuleRef) {
     }
 }
 
-def emit_wasm_from_ir(
-    llvm_ir_str: str, export_funcs: list = [], app_imports: (set | None) = None
-) -> bytes {
+def prepare_wasm_module(llvm_ir_str: str) -> tuple[ModuleRef, TargetMachine, bool] {
     import jaclang.compiler.backends.native.llvm.binding as llvm;
-    import from jaclang.compiler.backends.native.wasm_linker { WasmLinker }
-    import from jaclang.compiler.backends.native.wasm_host_abi {
-        WASM_HOST_ABI,
-        WASM_HOST_MODULE
-    }
     llvm.initialize_all_targets();
     llvm.initialize_all_asmprinters();
     mod = llvm.parse_assembly(llvm_ir_str);
@@ -339,27 +338,31 @@ def emit_wasm_from_ir(
     assert isinstance(target, llvm.Target);
     tm = target.create_target_machine(opt=2);
     assert isinstance(tm, llvm.TargetMachine);
-    pto = llvm.create_pipeline_tuning_options(speed_level=2);
-    pb = llvm.create_pass_builder(tm, pto);
-    assert isinstance(pb, llvm.PassBuilder);
-    mpm = pb.getModulePassManager();
-    assert isinstance(mpm, llvm.ModulePassManager);
-    mpm.run(mod, pb);
+    import from jaclang.compiler.backends.native.na_compile_pass { optimize_unit }
+    optimize_unit(mod, tm, 2);
     if libc_linked {
         _internalize_late_bound(mod);
-        pb2 = llvm.create_pass_builder(tm, pto);
-        assert isinstance(pb2, llvm.PassBuilder);
-        mpm2 = pb2.getModulePassManager();
-        assert isinstance(mpm2, llvm.ModulePassManager);
-        mpm2.run(mod, pb2);
+        optimize_unit(mod, tm, 2);
     }
+    return (mod, tm, libc_linked);
+}
+
+def emit_wasm_from_ir(
+    llvm_ir_str: str, export_funcs: list[str] = [], app_imports: (set | None) = None
+) -> bytes {
+    import from jaclang.compiler.backends.native.wasm_linker { WasmLinker }
+    import from jaclang.compiler.backends.native.wasm_host_abi {
+        WASM_HOST_ABI,
+        WASM_HOST_MODULE
+    }
+    (mod, tm, libc_linked) = prepare_wasm_module(llvm_ir_str);
     obj_bytes = tm.emit_object(mod);
     assert isinstance(obj_bytes, bytes);
     if not libc_linked {
-        return WasmLinker.link(obj_bytes, export_funcs, 256);
+        return WasmLinker.link([obj_bytes], export_funcs, 256);
     }
     return WasmLinker.link(
-        obj_bytes,
+        [obj_bytes],
         export_funcs,
         256,
         host_abi=WASM_HOST_ABI,
@@ -368,25 +371,28 @@ def emit_wasm_from_ir(
     );
 }
 
-def wasm_import_map(wasm_bytes: bytes) -> dict {
-    import from jaclang.compiler.backends.native.wasm_linker { _rd_uleb, _rd_name }
+def wasm_import_map(wasm_bytes: bytes) -> dict[str, any] {
+    import from jaclang.compiler.backends.native.linker_common {
+        read_leb_name,
+        read_uleb128
+    }
     out = {};
     o = 8;
     while o < len(wasm_bytes) {
         sid = wasm_bytes[o];
         o += 1;
-        (size, o) = _rd_uleb(wasm_bytes, o);
+        (size, o) = read_uleb128(wasm_bytes, o);
         end = o + size;
         if sid == 2 {
-            (cnt, o) = _rd_uleb(wasm_bytes, o);
+            (cnt, o) = read_uleb128(wasm_bytes, o);
             ci = 0;
             while ci < cnt and o < end {
-                (mod_nm, o) = _rd_name(wasm_bytes, o);
-                (fld, o) = _rd_name(wasm_bytes, o);
+                (mod_nm, o) = read_leb_name(wasm_bytes, o);
+                (fld, o) = read_leb_name(wasm_bytes, o);
                 kind = wasm_bytes[o];
                 o += 1;
                 if kind == 0 {
-                    (_t, o) = _rd_uleb(wasm_bytes, o);
+                    (_t, o) = read_uleb128(wasm_bytes, o);
                     out.setdefault(mod_nm, []).append(fld);
                 } else {
                     break;
@@ -403,12 +409,18 @@ def wasm_import_map(wasm_bytes: bytes) -> dict {
     return out;
 }
 
-def app_declared_imports(ir_module: UniModule) -> set[str] {
+def app_declared_imports(ir_module: UniModule, plan: any = None) -> set[str] {
     names: set[str] = set();
     gen = ir_module.gen;
     sym_lib = gen._clib_symbol_lib;
     if sym_lib {
         names.update(sym_lib.keys());
+    }
+    if plan is not None {
+        """A C declaration in any unit of the program is the application's
+        import: the platform layer of a game declares the host calls its
+        entry module never names.""";
+        names.update(plan.clib_symbol_lib().keys());
     }
     manifest = gen.interop_manifest;
     bindings = manifest.bindings if manifest else None;
@@ -426,9 +438,9 @@ def _project_gc_settings -> tuple[str, list[str], list[str]] {
         import from jaclang.project { get_config }
         cfg = get_config();
         if cfg {
-            gc_mode = cfg.gc.`default;
-            enf_mods = list(cfg.gc.enforce.modules);
-            enf_grand = list(cfg.gc.enforce.grandfathered);
+            gc_mode = cfg.memory.gc_mode();
+            enf_mods = list(cfg.memory.enforce);
+            enf_grand = list(cfg.memory.exempt);
         }
     } except Exception {
         return ("cycles", [], []);
@@ -443,81 +455,24 @@ def _assert_ir_rc_free(llvm_ir_str: str, file_path: str) {
         syms.add(m.group(0));
     }
     probes: list[str] = [];
-    for probe in ("JAC_NO_GC", "JAC_GC_CYCLES") {
+    for probe in ("JAC_GC", ) {
         if probe in llvm_ir_str {
             probes.append(probe);
         }
     }
     if syms or probes {
         raise RuntimeError(
-            f"'{os.path.basename(file_path)}' compiled under [gc] default ="
-                + " \"none\" but its IR still carries RC machinery ("
+            f"'{os.path.basename(file_path)}' compiled under [memory] profile ="
+                + " \"nogc\" but its IR still carries RC machinery ("
                 + ", ".join(sorted(syms) + probes)
-                + "); add the module to [gc.enforce] modules so the ownership"
-                + " checker reports what re-enters the reference-counted world"
+                + "); this is a compiler bug: the ownership checker admitted code"
+                + " that re-enters the reference-counted world"
         );
     }
 }
 
-def compile_to_wasm(file_path: str, export_funcs: list = []) -> bytes {
+def compile_to_wasm(file_path: str, export_funcs: list[str] = []) -> bytes {
     import from jaclang.compiler.driver.program { JacProgram }
-    import from jaclang.compiler.driver.compile_options {
-        CompileOptions,
-        push_native_target_env,
-        pop_native_target_env
-    }
-    import from jaclang.compiler.driver.na_coverage {
-        na_coverage_begin,
-        na_coverage_end
-    }
-    (gc_mode, enf_mods, enf_grand) = _project_gc_settings();
-    prev = push_native_target_env("wasm32-unknown-unknown");
-    auto_promote = True;
-    try {
-        prog = JacProgram();
-        na_coverage_begin();
-        try {
-            ir = prog.compile(
-                file_path=os.path.abspath(file_path),
-                options=CompileOptions(
-                    aot_mode=True,
-                    default_codespace=('native' if auto_promote else ''),
-                    na_gc_mode=gc_mode,
-                    nogc_enforce_modules=enf_mods,
-                    nogc_grandfathered=enf_grand,
-                    native_target="wasm32-unknown-unknown"
-                )
-            );
-        } finally {
-            coverage = na_coverage_end();
-        }
-        if prog.errors_had {
-            first = prog.errors_had[0].pretty_print();
-            more = len(prog.errors_had) - 1;
-            suffix = f" (+{more} more)" if more > 0 else "";
-            raise RuntimeError(f"{first}{suffix}");
-        }
-        if (ir is None) or (ir.gen.llvm_ir is None) {
-            rec = coverage.get(os.path.realpath(os.path.abspath(file_path)));
-            reason = "the module did not lower to native IR"
-                + " (no demotion recorded; it likely compiled as a"
-                + " non-native codespace)";
-            if rec {
-                code = f" [{rec['code']}]" if rec['code'] else '';
-                detail = f": {rec['detail']}" if rec['detail'] else '';
-                reason = f"{rec['outcome']}{code}{detail}";
-            }
-            raise RuntimeError(
-                f"native lowering produced no IR for '{file_path}': {reason}"
-            );
-        }
-        llvm_ir_str = str(ir.gen.llvm_ir);
-        app_imports = app_declared_imports(ir);
-    } finally {
-        pop_native_target_env(prev);
-    }
-    if gc_mode == "none" {
-        _assert_ir_rc_free(llvm_ir_str, file_path);
-    }
-    return emit_wasm_from_ir(llvm_ir_str, export_funcs, app_imports=app_imports);
+    import from jaclang.compiler.driver.pipeline_runner { build_wasm }
+    return build_wasm(JacProgram(), file_path, export_funcs);
 }

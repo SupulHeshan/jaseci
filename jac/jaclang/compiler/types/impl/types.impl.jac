@@ -54,12 +54,12 @@ impl TypeVarType.bound.setter(bound: (TypeBase | None)) -> None {
     c["bound"] = bound;
 }
 
-impl TypeVarType.constraints.getter -> (list[TypeBase] | None) {
+impl TypeVarType.constraints.getter -> list[TypeBase] {
     c = self._acc_cache;
     if (c is not None) and ("constraints" in c) {
         return c["constraints"];
     }
-    val = [self->:ConstraintOf:->];
+    val = [self->:ConstraintOf:->][?:TypeBase];
     if c is None {
         c = {};
         self._acc_cache = c;
@@ -124,12 +124,12 @@ impl ClassDetailsShared.mro.setter(mro: list[ClassType]) -> None {
     self._mro_cache = `list(mro or []);
 }
 
-impl ClassDetailsShared.type_params.getter -> (list[TypeVarType] | None) {
+impl ClassDetailsShared.type_params.getter -> list[TypeVarType] {
     c = self._acc_cache;
     if (c is not None) and ("type_params" in c) {
         return c["type_params"];
     }
-    val = [self->:TypeParamOf:->];
+    val = [self->:TypeParamOf:->][?:TypeVarType];
     if c is None {
         c = {};
         self._acc_cache = c;
@@ -153,12 +153,12 @@ impl ClassDetailsShared.type_params.setter(
     c["type_params"] = `list(type_params or []);
 }
 
-impl ClassDetailsShared.base_classes.getter -> (list[TypeBase] | None) {
+impl ClassDetailsShared.base_classes.getter -> list[TypeBase] {
     c = self._acc_cache;
     if (c is not None) and ("base_classes" in c) {
         return c["base_classes"];
     }
-    val = [self->:BaseOf:->];
+    val = [self->:BaseOf:->][?:TypeBase];
     if c is None {
         c = {};
         self._acc_cache = c;
@@ -212,10 +212,12 @@ impl ClassDetailsShared.enum_value_type.setter(
     c["enum_value_type"] = enum_value_type;
 }
 
-impl ClassDetailsShared.typeddict_fields.getter -> (dict[str, TypeBase] | None) {
+impl ClassDetailsShared.typeddict_fields.getter -> dict[str, TypeBase] {
     d: dict[str, TypeBase] = {};
-    for ea in [edge self->:TypeMemberOf:->] {
-        d[ea.name] = getattr(ea, "__jac__").target.archetype;
+    members = [edge self->:TypeMemberOf:->];
+    targets = [self->:TypeMemberOf:->];
+    for (member, target) in zip(members, targets) {
+        d[member.name] = target;
     }
     return d;
 }
@@ -229,10 +231,12 @@ impl ClassDetailsShared.typeddict_fields.setter(
     }
 }
 
-impl ClassDetailsShared.enum_members.getter -> (dict[str, EnumMemberInfo] | None) {
+impl ClassDetailsShared.enum_members.getter -> dict[str, EnumMemberInfo] {
     d: dict[str, EnumMemberInfo] = {};
-    for ea in [edge self->:EnumMemberOf:->] {
-        d[ea.name] = getattr(ea, "__jac__").target.archetype;
+    members = [edge self->:EnumMemberOf:->];
+    targets = [self->:EnumMemberOf:->];
+    for (member, target) in zip(members, targets) {
+        d[member.name] = target;
     }
     return d;
 }
@@ -290,7 +294,7 @@ impl ClassDetailsShared.init(
 impl ClassDetailsPrivate.init(
     *,
     type_args: (list[TypeBase] | None) = None,
-    ct_args: (dict[str, any] | None) = None,
+    ct_args: (dict[str, CtValue] | None) = None,
     alias_name: (str | None) = None,
     literal_value: (str | int | bool | None) = None,
     distinct_key: (str | None) = None
@@ -302,9 +306,9 @@ impl ClassDetailsPrivate.init(
     self.type_args = type_args;
 }
 
-impl ClassDetailsPrivate.type_args.getter -> (list[TypeBase] | None) {
+impl ClassDetailsPrivate.type_args.getter -> list[TypeBase] {
     if self._targs_cache is None {
-        self._targs_cache = [self->:TypeArgOf:->];
+        self._targs_cache = [self->:TypeArgOf:->][?:TypeBase];
     }
     return self._targs_cache;
 }
@@ -564,12 +568,12 @@ impl FunctionType.parameters.setter(parameters: (list[Parameter] | None)) -> Non
     self._params_cache = `list(parameters or []);
 }
 
-impl FunctionType.type_params.getter -> (list[TypeVarType] | None) {
+impl FunctionType.type_params.getter -> list[TypeVarType] {
     c = self._acc_cache;
     if (c is not None) and ("type_params" in c) {
         return c["type_params"];
     }
-    val = [self->:TypeParamOf:->];
+    val = [self->:TypeParamOf:->][?:TypeVarType];
     if c is None {
         c = {};
         self._acc_cache = c;
@@ -619,12 +623,12 @@ impl FunctionType.type_guard.setter(type_guard: (TypeBase | None)) -> None {
     c["type_guard"] = type_guard;
 }
 
-impl OverloadedType.overloads.getter -> (list[FunctionType] | None) {
+impl OverloadedType.overloads.getter -> list[FunctionType] {
     c = self._acc_cache;
     if (c is not None) and ("overloads" in c) {
         return c["overloads"];
     }
-    val = [self->:OverloadOf:->];
+    val = [self->:OverloadOf:->][?:FunctionType];
     if c is None {
         c = {};
         self._acc_cache = c;
@@ -653,12 +657,12 @@ impl OverloadedType.init(
     self.overloads = overloads;
 }
 
-impl UnionType.types.getter -> (list[TypeBase] | None) {
+impl UnionType.types.getter -> list[TypeBase] {
     c = self._acc_cache;
     if (c is not None) and ("types" in c) {
         return c["types"];
     }
-    val = [self->:UnionMemberOf:->];
+    val = [self->:UnionMemberOf:->][?:TypeBase];
     if c is None {
         c = {};
         self._acc_cache = c;
@@ -855,6 +859,20 @@ impl Parameter.is_optional.getter -> bool {
     return self.default_value is not None or self.has_default;
 }
 
+impl FunctionType.clone -> FunctionType {
+    return FunctionType(
+        func_name=self.func_name,
+        return_type=self.return_type,
+        parameters=[param.clone() for param in self.parameters],
+        function_flags=self.function_flags,
+        type_params=self.type_params,
+        is_async=self.is_async,
+        type_guard=self.type_guard,
+        type_guard_is_strict=self.type_guard_is_strict,
+        flags=self.flags,
+    );
+}
+
 impl FunctionType.specialize(class_type: ClassType) -> FunctionType {
     import from jaclang.compiler.types.type_utils {
         apply_solved_type_vars,
@@ -863,15 +881,7 @@ impl FunctionType.specialize(class_type: ClassType) -> FunctionType {
 
     solution = build_type_var_solution(class_type);
 
-    clone = FunctionType(
-        func_name=self.func_name,
-        return_type=self.return_type,
-        parameters=[param.clone() for param in self.parameters],
-        type_params=self.type_params,
-        is_async=self.is_async,
-        type_guard=self.type_guard,
-        type_guard_is_strict=self.type_guard_is_strict,
-    );
+    clone = self.clone();
 
     for param in clone.parameters {
         if param.param_type {
@@ -895,16 +905,7 @@ impl FunctionType.specialize_func_type_vars(
 ) -> FunctionType {
     import from jaclang.compiler.types.type_utils { apply_solved_type_vars }
 
-    clone = FunctionType(
-        func_name=self.func_name,
-        return_type=self.return_type,
-        parameters=[param.clone() for param in self.parameters],
-        function_flags=self.function_flags,
-        type_params=self.type_params,
-        is_async=self.is_async,
-        type_guard=self.type_guard,
-        type_guard_is_strict=self.type_guard_is_strict,
-    );
+    clone = self.clone();
 
     for param in clone.parameters {
         if param.param_type {
@@ -975,7 +976,7 @@ def _class_scope_category(scope: any) -> any {
 
 impl ClassType.is_node_type -> bool {
     import from jaclang.compiler.frontend.constant { SymbolType }
-    if self.shared.is_root_class {
+    if self.shared.is_root_class or self.is_builtin("Node") {
         return True;
     }
     return _class_scope_category(self.shared.symbol_table) == SymbolType.NODE_ARCH;
@@ -983,11 +984,17 @@ impl ClassType.is_node_type -> bool {
 
 impl ClassType.is_edge_type -> bool {
     import from jaclang.compiler.frontend.constant { SymbolType }
+    if self.is_builtin("Edge") {
+        return True;
+    }
     return _class_scope_category(self.shared.symbol_table) == SymbolType.EDGE_ARCH;
 }
 
 impl ClassType.is_walker_type -> bool {
     import from jaclang.compiler.frontend.constant { SymbolType }
+    if self.is_builtin("Walker") {
+        return True;
+    }
     return _class_scope_category(self.shared.symbol_table) == SymbolType.WALKER_ARCH;
 }
 
@@ -1021,7 +1028,7 @@ impl ClassType.is_builtin(class_name: (str | list[str] | None) = None) -> bool {
 }
 
 impl ClassType.lookup_member_symbol(
-    member: str, r_overloaded: list | None = None
+    member: str, r_overloaded: list[Symbol] | None = None
 ) -> (Symbol | None) {
     import from jaclang.compiler.frontend.unitree {
         Ability,
@@ -1031,7 +1038,11 @@ impl ClassType.lookup_member_symbol(
         FuncSignature,
         ParamVar
     }
-    import from jaclang.compiler.types.type_utils { collect_member_syms }
+    import from jaclang.compiler.types.type_utils {
+        collect_member_syms,
+        ensure_mro_fresh
+    }
+    ensure_mro_fresh(self);
     for cls in self.shared.mro {
         all_syms = collect_member_syms(cls.shared.symbol_table, member);
         if all_syms {
@@ -1254,6 +1265,14 @@ impl TypeBase.is_class_instance -> bool {
     return ((self.category == TypeCategory.Class) and self.is_instance());
 }
 
+impl TypeBase.as_class -> (ClassType | None) {
+    return None;
+}
+
+impl ClassType.as_class -> (ClassType | None) {
+    return self if self._shared is not None else None;
+}
+
 impl TypeBase.is_instantiable_class -> bool {
     return ((self.category == TypeCategory.Class) and self.is_instantiable());
 }
@@ -1283,7 +1302,7 @@ impl TypeBase.mangle -> str {
         return base;
     }
     if isinstance(self, UnionType) {
-        members = sorted(ty.mangle() for ty in (self.types or []));
+        members = sorted(set(ty.mangle() for ty in (self.types or [])));
         return "|".join(members) if members else "<union>";
     }
     if isinstance(self, FunctionType) {

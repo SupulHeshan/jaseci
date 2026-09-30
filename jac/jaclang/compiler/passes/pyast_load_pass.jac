@@ -1,9 +1,6 @@
-import ast as py_ast;
-import os;
-import re;
-import from threading { Event }
-import from typing { TypeAlias, cast }
+import from jaclang.compiler.frontend.roles { Kid }
 import from jaclang.compiler.frontend.unitree {
+    UniNode,
     Ability,
     ArchBlockStmt,
     Archetype,
@@ -91,14 +88,18 @@ import from jaclang.compiler.frontend.unitree {
     TryStmt,
     TupleVal,
     UnaryExpr,
-    UniNode,
     WhileStmt,
     WithStmt,
     YieldExpr
 }
+import from jaclang.compiler.passes.context { CompileContext, CompilerPass }
+import ast as py_ast;
+import os;
+import re;
+import from typing { TypeAlias, cast }
 import from jaclang.compiler.frontend.constant { Tokens as Tok, RESERVED_IDENT_NAMES }
 import from jaclang.compiler.frontend.diagnostics { E5041, E5042 }
-import from jaclang.compiler.passes.transform { Transform }
+
 import from jaclang.compiler.frontend.roles {
     NameRefRole,
     ReturnTypeRole,
@@ -107,6 +108,7 @@ import from jaclang.compiler.frontend.roles {
 }
 
 glob T = TypeVar('T', bound=UniNode),
+     ComprT = TypeVar('ComprT', bound=ListCompr),
      _reserved_keywords = RESERVED_IDENT_NAMES;
 
 glob PyPositioned: TypeAlias = py_ast.stmt
@@ -120,9 +122,8 @@ glob PyPositioned: TypeAlias = py_ast.stmt
          | py_ast.SetComp
          | py_ast.GeneratorExp;
 
-walker PyastBuildPass(Transform) {
-    has ir_in: PythonModuleAst,
-        cancel_token: Event | None = None,
+walker PyastBuildPass(CompilerPass) {
+    has module: UniNode,
         mod_path: str postinit,
         orig_src: Source postinit,
         _source_lines: list[str] postinit,
@@ -146,7 +147,6 @@ walker PyastBuildPass(Transform) {
 
     def is_canceled -> bool;
     def convert(nd: py_ast.AST) -> UniNode;
-    def transform(ir_in: PythonModuleAst) -> Module;
     def _run_impl(ir_in: PythonModuleAst) -> Module;
     can run_walk with PythonModuleAst entry;
     def extract_with_entry(
@@ -216,7 +216,7 @@ walker PyastBuildPass(Transform) {
     def proc_nonlocal(nd: py_ast.Nonlocal) -> Semi;
     def proc_pass(nd: py_ast.Pass) -> Semi;
     def proc_set(nd: py_ast.Set) -> SetVal;
-    def _proc_compr(nd: PyComprehensionNode, compr_cls: type[T]) -> T;
+    def _proc_compr(nd: PyComprehensionNode, compr_cls: type[ComprT]) -> ComprT;
     def proc_set_comp(nd: py_ast.SetComp) -> ListCompr;
     def proc_slice(nd: py_ast.Slice) -> IndexSlice;
     def proc_starred(nd: py_ast.Starred) -> UnaryExpr;
@@ -268,5 +268,14 @@ walker PyastBuildPass(Transform) {
     def proc_type_var(nd: py_ast.TypeVar) {}
     def proc_type_var_tuple(nd: py_ast.TypeVarTuple) {}
     def convert_to_doc(string: String) -> None;
-    def aug_op_map(tok_dict: dict, op: Token) -> str;
+    def aug_op_map(tok_dict: dict[str, str], op: Token) -> str;
+}
+
+def build_python_module(py_mod: PythonModuleAst) -> Module {
+    import from jaclang.compiler.passes.execution { new_context, walk_pass }
+    walk = PyastBuildPass(module=py_mod, ctx=new_context(PyastBuildPass, py_mod));
+    walk_pass(walk);
+    built = walk.module;
+    assert isinstance(built, Module);
+    return built;
 }

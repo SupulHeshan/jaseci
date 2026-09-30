@@ -1,21 +1,7 @@
-impl TypeEvaluator._pass.getter -> (Transform | None) {
-    ref = self._pass_ref;
-    if ref is None {
-        return None;
-    }
-    held = ref();
-    return held if isinstance(held, Transform) else None;
-}
-
-impl TypeEvaluator._pass.setter(_pass: (Transform | None)) {
-    import weakref;
-    self._pass_ref = weakref.ref(_pass) if _pass is not None else None;
-}
-
 impl TypeEvaluator._walk_compr_clauses(comprs: list[InnerCompr]) -> None {
     for compr in comprs {
         self.get_type_of_expression(compr.collection);
-        if isinstance(compr.target, Name) {
+        if isinstance(compr.target, (Name, TupleVal, ListVal)) {
             self.get_type_of_expression(compr.target);
         }
         if compr.conditional {
@@ -185,7 +171,9 @@ impl TypeEvaluator._get_type_of_expression_core(
                     if expected_elem is not None {
                         list_inst.private.type_args = [expected_elem];
                     } else {
-                        flow_elem = self._infer_list_elem_from_mutations(expr);
+                        flow_elem = self._infer_elem_from_mutations(
+                            expr, self.prefetch.list_class
+                        );
                         if flow_elem is not None {
                             list_inst.private.type_args = [flow_elem];
                         }
@@ -201,19 +189,8 @@ impl TypeEvaluator._get_type_of_expression_core(
                             _val, expected_type=expected_elem
                         );
 
-                        if expected_elem is None
-                            and isinstance(elem_type, ClassType)
-                            and elem_type.is_instantiable_class()
-                            and not elem_type.is_class_instance()
-                            and not elem_type.is_any_instance()
-                            and not self.is_any_type(elem_type)
-                            and self.prefetch is not None
-                            and self.prefetch.type_class is not None {
-                            _tc_wrap = self.prefetch.type_class.clone_as_instance();
-                            _tc_wrap.private.type_args = [
-                                self._convert_to_instance(elem_type)
-                            ];
-                            elem_type = _tc_wrap;
+                        if expected_elem is None {
+                            elem_type = self._container_value_type(elem_type, expr);
                         }
                         if not isinstance(elem_type, UnknownType)
                             and not self._type_in_list(elem_type, elem_types) {
@@ -266,12 +243,16 @@ impl TypeEvaluator._get_type_of_expression_core(
                     val_types: list[TypeBase] = [];
                     for _kv in expr.kv_pairs {
                         if _kv.key {
-                            kt = self.get_type_of_expression(_kv.key);
+                            kt = self._container_value_type(
+                                self.get_type_of_expression(_kv.key), expr
+                            );
                             if not isinstance(kt, UnknownType)
                                 and not self._type_in_list(kt, key_types) {
                                 key_types.append(kt);
                             }
-                            vt = self.get_type_of_expression(_kv.value);
+                            vt = self._container_value_type(
+                                self.get_type_of_expression(_kv.value), expr
+                            );
                             if not isinstance(vt, UnknownType)
                                 and not self._type_in_list(vt, val_types) {
                                 val_types.append(vt);
@@ -355,8 +336,11 @@ impl TypeEvaluator._get_type_of_expression_core(
                 if isinstance(tuple_inst, ClassType) and expr.values {
                     elem_types_t: list[TypeBase] = [];
                     for _val in expr.values {
-                        et = self.get_type_of_expression(
-                            _val.value if isinstance(_val, KWPair) else _val
+                        et = self._container_value_type(
+                            self.get_type_of_expression(
+                                _val.value if isinstance(_val, KWPair) else _val
+                            ),
+                            expr
                         );
                         if not isinstance(et, UnknownType) {
                             elem_types_t.append(et);
@@ -366,7 +350,9 @@ impl TypeEvaluator._get_type_of_expression_core(
                     if (
                         isinstance(expected_type, ClassType)
                         and self.prefetch.tuple_class
-                        and expected_type.shared == self.prefetch.tuple_class.shared
+                        and expected_type.shared.same_class(
+                            self.prefetch.tuple_class.shared
+                        )
                         and expected_type.private.type_args
                         and elem_types_t
                     ) {
@@ -409,7 +395,9 @@ impl TypeEvaluator._get_type_of_expression_core(
                 if isinstance(set_inst, ClassType) and expr.values {
                     set_elem_types: list[TypeBase] = [];
                     for _val in expr.values {
-                        et = self.get_type_of_expression(_val);
+                        et = self._container_value_type(
+                            self.get_type_of_expression(_val), expr
+                        );
                         if not isinstance(et, UnknownType)
                             and not self._type_in_list(et, set_elem_types) {
                             set_elem_types.append(et);
@@ -455,7 +443,9 @@ impl TypeEvaluator._get_type_of_expression_core(
             if self.prefetch and self.prefetch.set_class {
                 set_inst = self._convert_to_instance(self.prefetch.set_class);
                 self._walk_compr_clauses(expr.compr);
-                elem_type = self.get_type_of_expression(expr.out_expr);
+                elem_type = self._container_value_type(
+                    self.get_type_of_expression(expr.out_expr), expr
+                );
                 if isinstance(set_inst, ClassType)
                     and not isinstance(elem_type, UnknownType) {
                     set_inst.private.type_args = [
@@ -469,7 +459,9 @@ impl TypeEvaluator._get_type_of_expression_core(
             if self.prefetch and self.prefetch.generator_class {
                 gen_inst = self._convert_to_instance(self.prefetch.generator_class);
                 self._walk_compr_clauses(expr.compr);
-                elem_type = self.get_type_of_expression(expr.out_expr);
+                elem_type = self._container_value_type(
+                    self.get_type_of_expression(expr.out_expr), expr
+                );
                 none_inst = self._convert_to_instance(self.prefetch.none_type_class)
                     if self.prefetch.none_type_class
                     else UnknownType();
@@ -492,8 +484,8 @@ impl TypeEvaluator._get_type_of_expression_core(
                 expected_elem_lc = self._get_expected_element_type(
                     expected_type, self.prefetch.list_class
                 );
-                elem_type = self.get_type_of_expression(
-                    expr.out_expr, expected_elem_lc
+                elem_type = self._container_value_type(
+                    self.get_type_of_expression(expr.out_expr, expected_elem_lc), expr
                 );
                 if isinstance(list_inst, ClassType) {
                     if expected_elem_lc is not None
@@ -514,26 +506,14 @@ impl TypeEvaluator._get_type_of_expression_core(
         case DictCompr():
             if self.prefetch and self.prefetch.dict_class {
                 dict_inst = self._convert_to_instance(self.prefetch.dict_class);
-                for compr in expr.compr {
-                    self.get_type_of_expression(compr.collection);
-                    if isinstance(compr.target, Name) {
-                        self.get_type_of_expression(compr.target);
-                    } elif isinstance(compr.target, (TupleVal, ListVal)) {
-                        for v in compr.target.values {
-                            if isinstance(v, Name) {
-                                self.get_type_of_expression(v);
-                            }
-                        }
-                    }
-                    if compr.conditional {
-                        for cond in compr.conditional {
-                            self.get_type_of_expression(cond);
-                        }
-                    }
-                }
-                if isinstance(expr.kv_pair, KVPair) {
-                    key_type = self.get_type_of_expression(expr.kv_pair.key);
-                    val_type = self.get_type_of_expression(expr.kv_pair.value);
+                self._walk_compr_clauses(expr.compr);
+                if isinstance(expr.kv_pair, KVPair) and expr.kv_pair.key is not None {
+                    key_type = self._container_value_type(
+                        self.get_type_of_expression(expr.kv_pair.key), expr
+                    );
+                    val_type = self._container_value_type(
+                        self.get_type_of_expression(expr.kv_pair.value), expr
+                    );
                     if isinstance(dict_inst, ClassType)
                         and not isinstance(key_type, UnknownType)
                         and not isinstance(val_type, UnknownType) {
@@ -592,14 +572,16 @@ impl TypeEvaluator._get_type_of_expression_core(
                 }
 
                 if seeded_param {
-                    seed_body_expr: Expr | None = None;
+                    seed_body_node: UniNode | None = None;
                     if isinstance(expr.body, Expr) {
-                        seed_body_expr = expr.body;
+                        seed_body_node = expr.body;
+                    } elif isinstance(expr.body, list) and len(expr.body) == 1 {
+                        seed_body_node = expr.body[0];
                     } else {
-                        seed_body_expr = expr.tail_return_expr();
+                        seed_body_node = expr.tail_return_expr();
                     }
-                    if seed_body_expr is not None {
-                        self._invalidate_expr_type_cache(seed_body_expr);
+                    if seed_body_node is not None {
+                        self._invalidate_expr_type_cache(seed_body_node);
                     }
                 }
             }
@@ -618,6 +600,21 @@ impl TypeEvaluator._get_type_of_expression_core(
                 }
             } elif isinstance(return_type, UnknownType) {
                 return_type = self._infer_lambda_block_return_type(expr.body);
+            } elif (tail_expr := expr.tail_return_expr()) is not None {
+                tail_type = self.get_type_of_expression(
+                    tail_expr, expected_type=return_type
+                );
+                verdict = self.assign_expr(
+                    tail_expr, tail_type, return_type, strict=self._is_strict_site(expr)
+                );
+                if not verdict.ok and not verdict.diagnosed {
+                    self.emit_diag(
+                        E1002,
+                        tail_expr,
+                        actual=str(tail_type),
+                        expected=str(return_type)
+                    );
+                }
             }
             return FunctionType(
                 func_name="<lambda>", return_type=return_type, parameters=parameters,
@@ -639,6 +636,11 @@ impl TypeEvaluator._get_type_of_expression_core(
                     }
                 }
                 self._validate_jsx_props(expr, expected_type);
+                for child in (expr.children or []) {
+                    if isinstance(child, JsxExpression) {
+                        self.get_type_of_expression(child.expr);
+                    }
+                }
                 return self._convert_to_instance(self.prefetch.jsx_element_class);
             }
 
@@ -675,7 +677,7 @@ impl TypeEvaluator._get_type_of_expression_core(
             }
 
             if isinstance(base_type, TypeVarType) and base_type.is_self {
-                _sf_arch = expr.find_parent_of_type(Archetype);
+                _sf_arch: Archetype | Enum | None = expr.find_parent_of_type(Archetype);
                 if _sf_arch is None {
                     _sf_impl = expr.find_parent_of_type(ImplDef);
                     if _sf_impl is not None
@@ -726,6 +728,15 @@ impl TypeEvaluator._get_type_of_expression_core(
                 }
                 if isinstance(base_type, ModuleType) {
                     if base_type.is_external or base_type.symbol_table is None {
+                        if not base_type.is_external {
+                            submodule = self._resolve_submodule_attr(
+                                base_type, expr.right.value
+                            );
+                            if submodule is not None {
+                                expr.right.type = submodule;
+                                return submodule;
+                            }
+                        }
                         expr.right.type = AnyType(is_foreign=True);
                         return expr.right.type;
                     }
@@ -764,18 +775,16 @@ impl TypeEvaluator._get_type_of_expression_core(
                                 overload_scope, def_sym.sym_name
                             );
                             for overload_symbol in all_syms {
-                                if overload_symbol == def_sym {
-                                    continue;
-                                }
                                 overload_type = self.get_type_of_symbol(
                                     overload_symbol
                                 );
-                                if isinstance(overload_type, FunctionType) {
+                                if isinstance(overload_type, FunctionType)
+                                    and overload_type is not sym_type {
                                     overloaded_fns.append(overload_type);
                                 }
                             }
                             if len(overloaded_fns) > 1 {
-                                overloaded_ty = OverloadedType(
+                                overloaded_ty: OverloadedType | None = OverloadedType(
                                     overloads=overloaded_fns
                                 );
                                 sym.add_use(expr.right);
@@ -850,28 +859,13 @@ impl TypeEvaluator._get_type_of_expression_core(
                             }
                         }
 
-                        overloaded_ty: OverloadedType | None = None;
-                        member_ty = self.get_type_of_member(member, lookup_type);
-                        if isinstance(member_ty, FunctionType) {
-                            overloaded_fns: list[FunctionType] = [member_ty];
-                            for overload in member.overloads {
-                                overload_ty = self.specialize_member_type(
-                                    self.get_type_of_symbol(overload),
-                                    lookup_type,
-                                    self.declaring_class_of(overload, lookup_type)
-                                );
-                                if isinstance(overload_ty, FunctionType) {
-                                    overloaded_fns.append(overload_ty);
-                                }
-                            }
-                            if len(overloaded_fns) > 1 {
-                                overloaded_ty = OverloadedType(
-                                    overloads=overloaded_fns
-                                );
-                            }
-                        }
+                        member_ty = self._as_unbound_method(
+                            self._get_method_with_overloads(member, lookup_type),
+                            member,
+                            lookup_type
+                        );
                         member.symbol.add_use(expr.right);
-                        expr.right.type = overloaded_ty or member_ty;
+                        expr.right.type = member_ty;
                         return expr.right.type;
                     }
                     if lookup_type.is_enum_class() {
@@ -953,28 +947,23 @@ impl TypeEvaluator._get_type_of_expression_core(
                         );
                         return expr.right.type;
                     }
-                    if (
-                        self.prefetch.final_class
-                        and base_type.shared == self.prefetch.final_class.shared
-                        and base_type.private.type_args
-                    ) {
-                        inner = base_type.private.type_args[0];
-                        if isinstance(inner, ClassType) {
-                            base_type = inner;
-                        }
-                    }
                     if base_type.is_enum_class() {
                         attr_name = expr.right.value;
                         if attr_name in ('name', '_name_') {
+                            if self.prefetch.str_class is None {
+                                return UnknownType();
+                            }
                             expr.right.type = self._convert_to_instance(
                                 self.prefetch.str_class
                             );
                             return expr.right.type;
                         }
                         if attr_name in ('value', '_value_') {
-                            val_type = self._resolve_enum_value_type(base_type);
-                            if val_type is not None {
-                                expr.right.type = self._convert_to_instance(val_type);
+                            enum_value_type = self._resolve_enum_value_type(base_type);
+                            if enum_value_type is not None {
+                                expr.right.type = self._convert_to_instance(
+                                    enum_value_type
+                                );
                             } else {
                                 expr.right.type = AnyType();
                             }
@@ -1004,41 +993,20 @@ impl TypeEvaluator._get_type_of_expression_core(
                             );
 
                             has_any_has_vars = any(
-                                len(cls.shared.symbol_table.get_has_vars()) > 0
+                                self._scope_has_fields(cls.shared.symbol_table)
                                 for cls in base_type.shared.mro
                                 if cls.shared.class_name != "object"
                             );
 
                             if not has_explicit_init and has_any_has_vars {
-                                implicit_init_type = self._create_dataclass_init_method(
+                                implicit_init_type = self._create_object_init_method(
                                     base_type
                                 );
                                 expr.right.type = implicit_init_type;
                                 return implicit_init_type;
                             }
                         }
-                        overloaded_ty: OverloadedType | None = None;
-
-                        member_ty = self.get_type_of_member(member, base_type);
-
-                        if isinstance(member_ty, FunctionType) {
-                            overloaded_fns: list[FunctionType] = [member_ty];
-                            for overload in member.overloads {
-                                overload_ty = self.specialize_member_type(
-                                    self.get_type_of_symbol(overload),
-                                    base_type,
-                                    self.declaring_class_of(overload, base_type)
-                                );
-                                if isinstance(overload_ty, FunctionType) {
-                                    overloaded_fns.append(overload_ty);
-                                }
-                            }
-                            if len(overloaded_fns) > 1 {
-                                overloaded_ty = OverloadedType(
-                                    overloads=overloaded_fns
-                                );
-                            }
-                        }
+                        member_ty = self._get_method_with_overloads(member, base_type);
 
                         if prop_return_type
                             := self.get_getter_type_from_property(member.symbol) {
@@ -1058,7 +1026,8 @@ impl TypeEvaluator._get_type_of_expression_core(
 
                         member.symbol.add_use(expr.right);
 
-                        if full_narrowed is None and overloaded_ty is None {
+                        if full_narrowed is None
+                            and not isinstance(member_ty, OverloadedType) {
                             cfg_narrowed = self.get_narrowed_type_for_expr(
                                 expr, member_ty, expr
                             );
@@ -1067,16 +1036,14 @@ impl TypeEvaluator._get_type_of_expression_core(
                             }
                         }
 
-                        expr.right.type = full_narrowed or overloaded_ty or member_ty;
+                        expr.right.type = full_narrowed or member_ty;
                         return expr.right.type;
                     }
                     if (
                         expr.right.value in ('init', '__init__')
                         and base_type.is_data_class()
                     ) {
-                        implicit_init_type = self._create_dataclass_init_method(
-                            base_type
-                        );
+                        implicit_init_type = self._create_object_init_method(base_type);
                         expr.right.type = implicit_init_type;
                         return implicit_init_type;
                     }
@@ -1146,27 +1113,11 @@ impl TypeEvaluator._get_type_of_expression_core(
                     }
                     return UnknownType();
                 } elif isinstance(base_type, EnumMemberType) {
-                    member_name = expr.right.value;
-                    enum_cls = base_type.enum_class;
-                    if member_name in ('name', '_name_') {
-                        return self._convert_to_instance(self.prefetch.str_class);
-                    }
-                    if member_name in ('value', '_value_') {
-                        return self._convert_to_instance(base_type.get_value_type());
-                    }
-                    if (
-                        enum_cls.shared.enum_members
-                        and member_name in enum_cls.shared.enum_members
-                    ) {
-                        return EnumMemberType(
-                            enum_class=enum_cls,
-                            member_info=enum_cls.shared.enum_members[member_name],
-                            flags=TypeFlags.Instance
-                        );
-                    }
-                    return UnknownType();
+                    return self._enum_member_attr_type(base_type, expr.right.value)
+                        or UnknownType();
                 } elif isinstance(base_type, UnionType) and base_type.types {
                     member_types: list[TypeBase] = [];
+                    missing_types: list[str] = [];
                     decl_for_ide: NameAtom | None = None;
                     for union_member in base_type.types {
                         if self.is_explicit_any(union_member)
@@ -1180,30 +1131,60 @@ impl TypeEvaluator._get_type_of_expression_core(
                             );
                             if enum_member_type is not None {
                                 member_types.append(enum_member_type);
+                            } else {
+                                missing_types.append(str(union_member));
                             }
                             continue;
                         }
-                        if isinstance(union_member, ClassType)
-                            and union_member.is_class_instance() {
-                            if member
-                                := self._lookup_object_member(
-                                    union_member, expr.right.value
-                                ) {
-                                if prop_ret
-                                    := self.get_getter_type_from_property(
-                                        member.symbol
-                                    ) {
-                                    member_types.append(prop_ret);
+                        if isinstance(union_member, ClassType) {
+                            lookup_type = self._get_type_for_member_lookup(
+                                union_member
+                            );
+                            member = self._lookup_class_member(
+                                lookup_type, expr.right.value
+                            );
+                            if member is None
+                                and lookup_type.is_instantiable_class()
+                                and self.prefetch is not None {
+                                union_meta_cls = self._metaclass_of(lookup_type)
+                                    or self.prefetch.type_class;
+                                if union_meta_cls is not None {
+                                    lookup_type = union_meta_cls.clone_as_instance();
+                                    member = self._lookup_object_member(
+                                        lookup_type, expr.right.value
+                                    );
+                                }
+                            }
+                            if member is not None {
+                                prop_ret = self.get_getter_type_from_property(
+                                    member.symbol
+                                )
+                                    if not lookup_type.is_instantiable_class()
+                                    else None;
+                                if prop_ret is not None {
+                                    member_types.append(
+                                        self.specialize_member_type(
+                                            prop_ret,
+                                            lookup_type,
+                                            self.declaring_class_of(
+                                                member.symbol, lookup_type
+                                            )
+                                        )
+                                    );
                                 } else {
                                     member_types.append(
-                                        self.get_type_of_symbol(member.symbol)
+                                        self._get_method_with_overloads(
+                                            member, lookup_type
+                                        )
                                     );
                                 }
                                 if decl_for_ide is None {
                                     decl_for_ide = member.symbol.decl;
                                 }
+                                continue;
                             }
                         }
+                        missing_types.append(str(union_member));
                     }
                     all_union_members_have_field = len(member_types)
                         == len(base_type.types);
@@ -1232,20 +1213,6 @@ impl TypeEvaluator._get_type_of_expression_core(
                             return expr.right.type;
                         }
                         return self._null_ok_attr_type(expr, base_type);
-                    }
-                    missing_types: list[str] = [];
-                    for union_member in base_type.types {
-                        if self.is_explicit_any(union_member) {
-                            continue;
-                        }
-                        if isinstance(union_member, ClassType)
-                            and union_member.is_class_instance() {
-                            if not self._lookup_object_member(
-                                union_member, expr.right.value
-                            ) {
-                                missing_types.append(str(union_member));
-                            }
-                        }
                     }
                     self.emit_diag(
                         E1099,
@@ -1468,15 +1435,9 @@ impl TypeEvaluator._get_type_of_expression_core(
                         union_args: list[TypeBase] = [];
                         if isinstance(expr.right, IndexSlice) and expr.right.slices {
                             ua_vals = expr.right.slices[0].start;
-                            if isinstance(ua_vals, TupleVal) {
-                                for val in ua_vals.values {
-                                    union_args.append(
-                                        self._type_from_union_annotation_arg(val)
-                                    );
-                                }
-                            } else {
+                            for val in self._annotation_args(ua_vals) {
                                 union_args.append(
-                                    self._type_from_union_annotation_arg(ua_vals)
+                                    self._type_from_union_annotation_arg(val)
                                 );
                             }
                         }
@@ -1497,15 +1458,18 @@ impl TypeEvaluator._get_type_of_expression_core(
                     if target_name == "ClassVar" {
                         if isinstance(expr.right, IndexSlice) and expr.right.slices {
                             inner_type_expr = expr.right.slices[0].start;
-                            return self._convert_to_instance(
-                                self.get_type_of_expression(inner_type_expr)
-                            );
+                            if inner_type_expr is not None {
+                                return self._convert_to_instance(
+                                    self.get_type_of_expression(inner_type_expr)
+                                );
+                            }
                         }
 
                         return UnknownType();
                     }
 
-                    if target_name == "TypeIs" or target_name == "TypeGuard" {
+                    if target_name is not None
+                        and (target_name == "TypeIs" or target_name == "TypeGuard") {
                         guarded: TypeBase | None = None;
                         if isinstance(expr.right, IndexSlice) and expr.right.slices {
                             guard_expr = expr.right.slices[0].start;
@@ -1522,9 +1486,7 @@ impl TypeEvaluator._get_type_of_expression_core(
                         lit_types: list[TypeBase] = [];
                         if isinstance(expr.right, IndexSlice) and expr.right.slices {
                             lit_vals = expr.right.slices[0].start;
-                            val_exprs = lit_vals.values
-                                if isinstance(lit_vals, TupleVal)
-                                else [lit_vals];
+                            val_exprs = self._annotation_args(lit_vals);
                             for val in val_exprs {
                                 if lt := self._literal_type_from_expr(val) {
                                     lit_types.append(lt);
@@ -1546,15 +1508,29 @@ impl TypeEvaluator._get_type_of_expression_core(
                 }
                 if isinstance(base_type, ClassType)
                     and base_type.is_instantiable_class() {
+                    import from jaclang.compiler.frontend.unitree { in_type_position }
+                    if not in_type_position(expr, include_subscripts=False)
+                        and (
+                            meta_getitem
+                            := self._declared_metaclass_member(base_type, "__getitem__")
+                        ) {
+                        index = self._subscript_index_expr(expr.right);
+                        item_ty = self.get_type_of_magic_method_call(
+                            base_type, "__getitem__", [index], expr
+                        );
+                        if item_ty is not None {
+                            return item_ty;
+                        }
+                        self._report_rejected_method_call(
+                            base_type, meta_getitem, [index], expr
+                        );
+                        return UnknownType(is_diagnosed=True);
+                    }
                     type_args: list[TypeBase] = [];
                     slot_vals: list[Expr] = [];
                     if isinstance(expr.right, IndexSlice) and expr.right.slices {
                         type_args_vals = expr.right.slices[0].start;
-                        if isinstance(type_args_vals, TupleVal) {
-                            slot_vals = `list(type_args_vals.values);
-                        } elif type_args_vals is not None {
-                            slot_vals = [type_args_vals];
-                        }
+                        slot_vals = self._annotation_args(type_args_vals);
                     }
                     ct_args = self._ct_args_for_class(base_type, slot_vals);
                     for (si, val) in enumerate(slot_vals) {
@@ -1609,14 +1585,7 @@ impl TypeEvaluator._get_type_of_expression_core(
                     self.emit_diag(E1040, expr, type=base_type.name);
                     return UnknownType();
                 }
-                subscript_arg: Expr = expr.right;
-                if (
-                    isinstance(expr.right, IndexSlice)
-                    and not expr.right.is_range
-                    and expr.right.slices
-                ) {
-                    subscript_arg = expr.right.slices[0].start;
-                }
+                subscript_arg: Expr = self._subscript_index_expr(expr.right);
                 if isinstance(base_type, AnyType) {
                     return AnyType(is_foreign=base_type.is_foreign);
                 }
@@ -1662,10 +1631,38 @@ impl TypeEvaluator._get_type_of_expression_core(
             }
 
         case AtomUnit():
+            if isinstance(expr.value, Ability) {
+                return self.get_type_of_ability(expr.value);
+            }
             return self.get_type_of_expression(expr.value);
 
         case FuncCall():
-            return self.validate_call_args(expr);
+            result = self.validate_call_args(expr);
+            if not expr.params {
+                constructor = self.get_type_of_expression(expr.target);
+                if isinstance(constructor, ClassType)
+                    and constructor.is_instantiable_class()
+                    and constructor.is_builtin(["list", "set", "frozenset", "dict"]) {
+                    expected = self._get_expected_container_type(
+                        expected_type, constructor
+                    )
+                        if expected_type is not None
+                        else None;
+                    if expected is not None and expected.private.type_args {
+                        return expected.clone_as_instance();
+                    }
+                    if constructor.is_builtin(["list", "set"])
+                        and isinstance(result, ClassType) {
+                        flow_elem = self._infer_elem_from_mutations(expr, constructor);
+                        if flow_elem is not None {
+                            inferred = result.clone_as_instance();
+                            inferred.private.type_args = [flow_elem];
+                            return inferred;
+                        }
+                    }
+                }
+            }
+            return result;
 
         case AwaitExpr():
             target_type = self.get_type_of_expression(expr.target);
@@ -1877,12 +1874,17 @@ impl TypeEvaluator._get_type_of_expression_core(
                     }
                 }
 
-                if is_or and i < num_values - 1 {
+                if is_or
+                    and i < num_values - 1
+                    and self.prefetch.none_type_class is not None {
                     none_type = self._convert_to_instance(
                         self.prefetch.none_type_class
                     );
                     if none_type is not None {
                         op_type = self.exclude_type_from_union(op_type, none_type);
+                    }
+                    if isinstance(op_type, NeverType) {
+                        continue;
                     }
                 }
                 self._collect_unique_types(op_type, operand_types);
@@ -1900,6 +1902,11 @@ impl TypeEvaluator._get_type_of_expression_core(
 
         case UnaryExpr():
             if isinstance(expr.op, Token) {
+                if expr.op.name == Tok.STAR_MUL {
+                    iterable = self.get_type_of_expression(expr.operand);
+                    element = self._get_iterable_element_type(iterable, expr.operand);
+                    return element if element is not None else UnknownType();
+                }
                 if expr.op.name == Tok.BW_AND {
                     _ref_t = self.get_type_of_expression(expr.operand);
                     if (
@@ -1978,7 +1985,7 @@ impl TypeEvaluator._get_type_of_expression_core(
                         self.emit_diag(E1129, expr, type=str(operand_type));
                         return UnknownType(is_diagnosed=True);
                     }
-                    return operand_type;
+                    return arithmetic_result_type(self, operand_type);
                 }
             }
 
@@ -1986,6 +1993,7 @@ impl TypeEvaluator._get_type_of_expression_core(
             if expr.f_type {
                 filter_type = self.get_type_of_expression(expr.f_type);
                 if isinstance(filter_type, ClassType) {
+                    filter_type = self._get_type_for_member_lookup(filter_type);
                     for cmp in expr.compares {
                         self._bind_filter_compare(cmp, filter_type);
                         self.get_type_of_expression(cmp);
@@ -2012,7 +2020,7 @@ impl TypeEvaluator._get_type_of_expression_core(
                             if arch := method.signature.arch_tag_info {
                                 if isinstance(arch, TupleVal) {
                                     member_insts: list[TypeBase] = [];
-                                    for member in (arch.values or []) {
+                                    for member in self._annotation_args(arch) {
                                         member_insts.append(
                                             self._convert_to_instance(
                                                 self.get_type_of_expression(member)
@@ -2031,9 +2039,10 @@ impl TypeEvaluator._get_type_of_expression_core(
                                     type_arch_cls
                                 );
                                 if isinstance(type_arch_cls, ClassType) {
-                                    self._set_symbol_to_expr(
-                                        expr, type_arch_inst.get_class_symbol()
-                                    );
+                                    class_symbol = type_arch_cls.get_class_symbol();
+                                    if class_symbol is not None {
+                                        self._set_symbol_to_expr(expr, class_symbol);
+                                    }
                                 }
                                 return type_arch_inst;
                             } else {
@@ -2041,16 +2050,17 @@ impl TypeEvaluator._get_type_of_expression_core(
                                     expr
                                 );
                                 if cls_ {
+                                    peer_class: ClassType | None = None;
                                     if cls_.sym_category == SymbolType.WALKER_ARCH {
-                                        self._set_symbol_to_expr(
-                                            expr,
-                                            self.prefetch.node_class.get_class_symbol(),
-                                        );
+                                        peer_class = self.prefetch.node_class;
                                     } elif cls_.sym_category == SymbolType.NODE_ARCH {
-                                        self._set_symbol_to_expr(
-                                            expr,
-                                            self.prefetch.walker_class.get_class_symbol(),
-                                        );
+                                        peer_class = self.prefetch.walker_class;
+                                    }
+                                    if peer_class is not None {
+                                        peer_symbol = peer_class.get_class_symbol();
+                                        if peer_symbol is not None {
+                                            self._set_symbol_to_expr(expr, peer_symbol);
+                                        }
                                     }
                                 }
                             }
@@ -2070,6 +2080,24 @@ impl TypeEvaluator._get_type_of_expression_core(
             if scope := self._resolution_scope_for(expr) {
                 symbol = lookup_symtab(scope, expr.value, self.builtins_module);
 
+                if symbol is not None
+                    and symbol.decl is not None
+                    and isinstance(symbol.decl.name_of, HasVar) {
+                    field = symbol.decl.name_of;
+                    if field.type_tag is not None
+                        and expr.find_parent_of_type(SubTag) is field.type_tag {
+                        owner = field.find_parent_of_type(Archetype);
+                        if owner is not None
+                            and owner.sym_tab.parent_scope is not None {
+                            symbol = lookup_symtab(
+                                owner.sym_tab.parent_scope,
+                                expr.value,
+                                self.builtins_module
+                            );
+                        }
+                    }
+                }
+
                 if (
                     symbol is not None
                     and symbol.decl is not None
@@ -2082,6 +2110,7 @@ impl TypeEvaluator._get_type_of_expression_core(
                     _use_fn = expr.find_parent_of_type(Ability);
                     if (
                         _ann_fn is not None
+                        and _use_fn is not None
                         and _ann_fn is _use_fn
                         and _use_fn.sym_tab is not None
                         and _use_fn.sym_tab.parent_scope is not None
@@ -2094,7 +2123,44 @@ impl TypeEvaluator._get_type_of_expression_core(
                     }
                 }
 
-                if self._in_native_context()
+                class_member = symbol;
+                while symbol is not None
+                    and isinstance(symbol.parent_tab, (Archetype, Enum))
+                    and not (
+                        symbol.decl is not None
+                        and isinstance(symbol.decl.name_of, (TypeParam, HasVar))
+                    )
+                    and expr.expr_ctx == ExprCtx.LOAD
+                    and expr.value
+                        not in (
+                            "self",
+                            "super",
+                            "root",
+                            "here",
+                            "visitor",
+                            "props",
+                            "init",
+                            "postinit"
+                        )
+                    and not (
+                        isinstance(expr.parent, AtomTrailer)
+                        and expr.parent.is_attr
+                        and expr.parent.target is not expr
+                    )
+                    and self._in_function_body(expr)
+                    and not self._stored_in_same_function(symbol, expr) {
+                    outer_scope = symbol.parent_tab.parent_scope;
+                    symbol = lookup_symtab(
+                        outer_scope, expr.value, self.builtins_module
+                    )
+                        if outer_scope is not None
+                        else None;
+                }
+                if symbol is not class_member and expr.sym is class_member {
+                    expr.sym = None;
+                }
+
+                if (self._in_native_context() or expr.in_native_context())
                     and (symbol is None or symbol.parent_tab is self.builtins_module) {
                     na_sym = self.na_builtins_module.names_in_scope.get(expr.value);
                     if na_sym is not None {
@@ -2151,15 +2217,7 @@ impl TypeEvaluator._get_type_of_expression_core(
                     }
 
                     if narrowed := self.get_narrowed_type(symbol, expr) {
-                        if isinstance(narrowed, UnionType) {
-                            symbol_type = UnionType(
-                                types=[
-                                    self._convert_to_instance(t) for t in narrowed.types
-                                ]
-                            );
-                        } else {
-                            symbol_type = self._convert_to_instance(narrowed);
-                        }
+                        symbol_type = narrowed;
                     }
                     if isinstance(symbol_type, FunctionType) {
                         overloaded_ty: OverloadedType | None = None;
@@ -2195,6 +2253,9 @@ impl TypeEvaluator._get_type_of_expression_core(
                     }
                     return symbol_type;
                 }
+                if intrinsic := self._intrinsic_function_type(expr.value) {
+                    return intrinsic;
+                }
             }
 
         case AwaitExpr():
@@ -2212,35 +2273,50 @@ impl TypeEvaluator._get_type_of_expression_core(
         case EdgeRefTrailer():
             if self.prefetch and self.prefetch.list_class {
                 element_type: TypeBase = AnyType();
+                origin_type: TypeBase | None = None;
                 for chain_item in expr.chain {
-                    if isinstance(chain_item, FilterCompr) and chain_item.f_type {
-                        ft = self.get_type_of_expression(chain_item.f_type);
-                        if isinstance(ft, ClassType) {
-                            element_type = self._convert_to_instance(ft);
-                        }
-                    } elif (
-                        isinstance(chain_item, EdgeOpRef)
-                        and expr.edges_only
-                        and chain_item.filter_cond is not None
-                        and chain_item.filter_cond.f_type is not None
-                    ) {
-                        ft = self.get_type_of_expression(chain_item.filter_cond.f_type);
-                        if isinstance(ft, ClassType) and ft.is_edge_type() {
-                            element_type = self._convert_to_instance(ft);
-                        }
-                    } elif (
-                        isinstance(chain_item, EdgeOpRef)
-                        and not expr.edges_only
-                        and chain_item.filter_cond is not None
-                        and chain_item.filter_cond.f_type is not None
-                    ) {
-                        ft = self.get_type_of_expression(chain_item.filter_cond.f_type);
-                        if isinstance(ft, ClassType) and ft.is_edge_type() {
-                            ep = self._edge_endpoint_type(ft, chain_item.edge_dir);
-                            if ep is not None {
-                                element_type = self._convert_to_instance(ep);
+                    if isinstance(chain_item, FilterCompr) {
+                        if chain_item.f_type {
+                            ft = self.get_type_of_expression(chain_item.f_type);
+                            if isinstance(ft, ClassType) {
+                                ft = self._get_type_for_member_lookup(ft);
+                                element_type = self._convert_to_instance(ft);
+                                origin_type = element_type;
                             }
                         }
+                    } elif isinstance(chain_item, EdgeOpRef) {
+                        element_type = AnyType();
+                        if (
+                            chain_item.filter_cond is not None
+                            and chain_item.filter_cond.f_type is not None
+                        ) {
+                            ft = self.get_type_of_expression(
+                                chain_item.filter_cond.f_type
+                            );
+                            if isinstance(ft, ClassType) {
+                                ft = self._get_type_for_member_lookup(ft);
+                            }
+                            if isinstance(ft, ClassType) and ft.is_edge_type() {
+                                self._check_traversal_origin(
+                                    ft, chain_item.edge_dir, origin_type, chain_item
+                                );
+                                ep = self._edge_endpoint_type(ft, chain_item.edge_dir);
+                                if expr.edges_only {
+                                    element_type = self._convert_to_instance(ft);
+                                } elif ep is not None {
+                                    element_type = self._convert_to_instance(ep);
+                                }
+                                origin_type = self._convert_to_instance(ep)
+                                    if ep is not None
+                                    else None;
+                            } else {
+                                origin_type = None;
+                            }
+                        } else {
+                            origin_type = None;
+                        }
+                    } else {
+                        origin_type = self.get_type_of_expression(chain_item);
                     }
                 }
                 list_type = self.prefetch.list_class.clone_as_instance();
@@ -2310,7 +2386,6 @@ impl TypeEvaluator._bind_filter_compare(cmp: Expr, filter_type: ClassType) -> No
     self._bind_filter_member(left, filter_type);
 }
 
-
 impl TypeEvaluator._filter_order_name(expr: Expr) -> (Name | None) {
     inner = expr;
     if isinstance(inner, UnaryExpr) {
@@ -2322,7 +2397,6 @@ impl TypeEvaluator._filter_order_name(expr: Expr) -> (Name | None) {
     return inner if isinstance(inner, Name) else None;
 }
 
-
 impl TypeEvaluator._bind_filter_member(target: Name, filter_type: ClassType) -> None {
     if sym := filter_type.lookup_member_symbol(target.value) {
         self._set_symbol_to_expr(target, sym);
@@ -2330,7 +2404,6 @@ impl TypeEvaluator._bind_filter_member(target: Name, filter_type: ClassType) -> 
     }
     self.emit_diag(E1033, target, member=target.value, type=str(filter_type));
 }
-
 
 impl TypeEvaluator._widen_literal_for_declaration(ty: TypeBase) -> TypeBase {
     if isinstance(ty, ClassType) {
@@ -2361,6 +2434,32 @@ impl TypeEvaluator._widen_literal_for_declaration(ty: TypeBase) -> TypeBase {
         return UnionType(types=widened);
     }
     return ty;
+}
+
+impl TypeEvaluator._as_final_form(ty: TypeBase) -> (ClassType | None) {
+    if self.prefetch is None
+        or self.prefetch.final_class is None
+        or not isinstance(ty, ClassType)
+        or not ty.shared.same_class(self.prefetch.final_class.shared) {
+        return None;
+    }
+    return ty;
+}
+
+impl TypeEvaluator._final_declared_type(
+    annotation_type: TypeBase, symbol: (Symbol | None), value: (Expr | None)
+) -> (TypeBase | None) {
+    final_form = self._as_final_form(annotation_type);
+    if final_form is None {
+        return None;
+    }
+    if symbol is not None {
+        symbol.immutability = ImmutabilityKind.FINAL;
+    }
+    if value is not None and not final_form.private.type_args {
+        return self.get_type_of_expression(value);
+    }
+    return self._convert_to_instance(final_form);
 }
 
 impl TypeEvaluator._get_type_of_symbol(symbol: Symbol) -> TypeBase {
@@ -2397,6 +2496,75 @@ impl TypeEvaluator._get_type_of_symbol(symbol: Symbol) -> TypeBase {
             }
         }
     }
+    first = symbol.decl.name_of if symbol.decl else None;
+    if len(symbol.defn) == 1
+        and isinstance(first, Name)
+        and isinstance(first.parent, Assignment)
+        and first.parent.type_tag is None
+        and isinstance(first.parent.value, Null) {
+        stores: list[NameAtom] = [];
+        for use in symbol.uses {
+            target: UniNode = use.name_of;
+            site = target.parent;
+            while isinstance(site, (TupleVal, ListVal)) {
+                target = site;
+                site = site.parent;
+            }
+            if isinstance(site, Assignment) and target in site.target {
+                if site.type_tag is not None or site.aug_op is not None {
+                    stores = [];
+                    break;
+                }
+                stores.append(use);
+            } elif isinstance(site, InForStmt) and site.target is target {
+                stores.append(use);
+            }
+        }
+        widened: list[TypeBase] = [];
+        if stores {
+            widened.append(self._get_type_of_symbol_decl(symbol, symbol.decl));
+        }
+        fresh: list[Expr] = [];
+        self._diagnostic_suppression_depth += 1;
+        try {
+            for store in stores {
+                source: Expr | None = None;
+                site = store.name_of.parent;
+                while isinstance(site, (TupleVal, ListVal)) {
+                    site = site.parent;
+                }
+                if isinstance(site, Assignment) {
+                    source = site.value;
+                } elif isinstance(site, InForStmt) {
+                    source = site.collection;
+                }
+                if source is not None and source.type is None {
+                    fresh.append(source);
+                }
+                store_type = self._get_type_of_symbol_decl(symbol, store);
+                parts = store_type.types
+                    if isinstance(store_type, UnionType)
+                    else [store_type];
+                for part in parts {
+                    if isinstance(part, (UnknownType, NeverType)) {
+                        continue;
+                    }
+                    part = self._widen_literal_for_declaration(part);
+                    if not self._type_in_list(part, widened) {
+                        widened.append(part);
+                    }
+                }
+            }
+        } finally {
+            self._diagnostic_suppression_depth -= 1;
+            for source in fresh {
+                self._invalidate_expr_type_cache(source);
+            }
+        }
+        if len(widened) > 1 {
+            return UnionType(types=widened);
+        }
+    }
     return self._get_type_of_symbol_decl(symbol, symbol.decl);
 }
 
@@ -2420,10 +2588,7 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                 }
                 return UnknownType();
             }
-            return TypeVarType(
-                name=node_.sym_name,
-                is_class_type_param=self._is_class_scoped_type_param(node_)
-            );
+            return self._type_var_from_param(node_);
 
         case TypeAlias():
             if node_.value is not None {
@@ -2442,10 +2607,17 @@ impl TypeEvaluator._get_type_of_symbol_decl(
             if node_.type_tag {
                 annotation_type = self.get_type_of_expression(node_.type_tag.tag);
                 if node_.is_vararg {
+                    if self.prefetch.list_class is None {
+                        return UnknownType();
+                    }
                     param_type = self.prefetch.list_class.clone_as_instance();
                     param_type.private.type_args = [annotation_type];
                     return param_type;
                 } elif node_.is_kwargs {
+                    if self.prefetch.dict_class is None
+                        or self.prefetch.str_class is None {
+                        return UnknownType();
+                    }
                     param_type = self.prefetch.dict_class.clone_as_instance();
                     param_type.private.type_args = [
                         self.prefetch.str_class,
@@ -2463,6 +2635,14 @@ impl TypeEvaluator._get_type_of_symbol_decl(
         case Name():
             if node_.type is not None {
                 return node_.type;
+            }
+
+            context_item = node_.parent;
+            if isinstance(context_item, ExprAsItem) and context_item.alias is node_ {
+                context_stmt = context_item.parent;
+                if isinstance(context_stmt, WithStmt) {
+                    return self.get_type_of_with_alias(context_item);
+                }
             }
 
             if enum_member_type := self._get_enum_member_type_for_decl(node_) {
@@ -2489,6 +2669,9 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                         := self._get_iterable_element_type(
                             rhs_type, star_assignment.value
                         ) {
+                        if self.prefetch.list_class is None {
+                            return UnknownType();
+                        }
                         star_type = self.prefetch.list_class.clone_as_instance();
                         star_type.private.type_args = [elem];
                         return star_type;
@@ -2538,7 +2721,9 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                         unpack_assignment.collection
                     );
                     elem_type = self._get_iterable_element_type(
-                        collection_type, unpack_assignment
+                        collection_type,
+                        unpack_assignment,
+                        is_async=unpack_assignment.is_async
                     );
                     if elem_type is not None {
                         unpack_path: list[int] = [];
@@ -2586,6 +2771,13 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                         node_.parent.type_tag.tag
                     );
 
+                    if final_type
+                        := self._final_declared_type(
+                            annotation_type, symbol, node_.parent.value
+                        ) {
+                        return final_type;
+                    }
+
                     if (
                         self._is_type_alias_annotation(
                             annotation_type, node_.parent.type_tag.tag
@@ -2596,33 +2788,31 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                     }
                     declared_inst = self._convert_to_instance(annotation_type);
 
+                    empty_value = node_.parent.value;
                     if (
                         isinstance(declared_inst, ClassType)
-                        and self.prefetch.final_class is not None
-                        and declared_inst.shared == self.prefetch.final_class.shared
-                    ) {
-                        final_args = declared_inst.private.type_args;
-                        if final_args {
-                            return self._convert_to_instance(final_args[0]);
-                        }
-                        if node_.parent.value is not None {
-                            return self.get_type_of_expression(node_.parent.value);
-                        }
-                    }
-
-                    if (
-                        isinstance(declared_inst, ClassType)
-                        and declared_inst.is_builtin("list")
+                        and declared_inst.is_builtin(["list", "set"])
                         and not declared_inst.private.type_args
-                        and isinstance(node_.parent.value, ListVal)
-                        and not node_.parent.value.values
+                        and isinstance(empty_value, (ListVal, FuncCall))
+                        and (
+                            (
+                                isinstance(empty_value, ListVal)
+                                and not empty_value.values
+                            )
+                            or (
+                                isinstance(empty_value, FuncCall)
+                                and not empty_value.params
+                                and isinstance(empty_value.target, Name)
+                                and empty_value.target.value in ("list", "set")
+                            )
+                        )
                     ) {
                         value_type = self.get_type_of_expression(
-                            node_.parent.value, expected_type=declared_inst
+                            empty_value, expected_type=declared_inst
                         );
                         if (
                             isinstance(value_type, ClassType)
-                            and value_type.is_builtin("list")
+                            and value_type.shared.same_class(declared_inst.shared)
                             and value_type.private.type_args
                         ) {
                             return value_type;
@@ -2647,6 +2837,12 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                     annotation_type = self.get_type_of_expression(
                         node_.parent.parent.type_tag.tag
                     );
+                    if final_type
+                        := self._final_declared_type(
+                            annotation_type, symbol, node_.parent.parent.value
+                        ) {
+                        return final_type;
+                    }
                     return self._convert_to_instance(annotation_type);
                 } else {
                     if node_.parent.parent.value is not None {
@@ -2664,6 +2860,10 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                 and node_.parent.left is node_
             ) {
                 return self.get_type_of_expression(node_.parent.right);
+            }
+
+            if isinstance(node_.parent, ExprAsItem) and node_.parent.alias is node_ {
+                return self.get_type_of_with_alias(node_.parent);
             }
 
             if isinstance(node_.parent, (InForStmt, InnerCompr)) {
@@ -2697,80 +2897,12 @@ impl TypeEvaluator._get_type_of_symbol_decl(
                     return instance_type;
                 }
 
-                if isinstance(collection_type, ClassType)
-                    and collection_type.is_namedtuple() {
-                    has_vars = collection_type.shared.symbol_table.get_has_vars();
-                    if has_vars {
-                        field_types: list[TypeBase] = [];
-                        for field in has_vars {
-                            if field.type_tag {
-                                field_type = self.get_type_of_expression(
-                                    field.type_tag.tag
-                                );
-                                field_types.append(
-                                    self._convert_to_instance(field_type)
-                                );
-                            }
-                        }
-
-                        if field_types {
-                            first_type = field_types[0];
-                            all_same = all(
-                                isinstance(ft, ClassType)
-                                    and isinstance(first_type, ClassType)
-                                    and ft.shared == first_type.shared
-                                for ft in field_types
-                            );
-                            if all_same {
-                                node_.type = first_type;
-                                return first_type;
-                            }
-
-                            node_.type = field_types[0];
-                            return field_types[0];
-                        }
-                    }
-                }
-
-                iter_type = self.get_type_of_magic_method_call(
-                    collection_type, "__iter__", [], node_.parent,
+                element_type = self._get_iterable_element_type(
+                    collection_type, node_.parent, is_async=node_.parent.is_async
                 );
-                if isinstance(iter_type, ClassType) {
-                    next_type = self.get_type_of_magic_method_call(
-                        iter_type, "__next__", [], node_.parent
-                    );
-                    if next_type and not isinstance(next_type, UnknownType) {
-                        result_type = self._convert_to_instance(next_type);
-                        node_.type = result_type;
-                        return result_type;
-                    }
-
-                    if iter_type.private
-                        and iter_type.private.type_args
-                        and len(iter_type.private.type_args) == 1 {
-                        elem_type = iter_type.private.type_args[0];
-
-                        if isinstance(elem_type, ClassType) {
-                            result_type = elem_type.clone_as_instance();
-                            node_.type = result_type;
-                            return result_type;
-                        }
-
-                        if isinstance(collection_type, ClassType)
-                            and collection_type.private.type_args {
-                            specialized = iter_type.specialize_generics(
-                                collection_type.private.type_args
-                            );
-                            if len(specialized.private.type_args) == 1 {
-                                iterable_type = specialized.private.type_args[0];
-                                if isinstance(iterable_type, ClassType) {
-                                    result_type = iterable_type.clone_as_instance();
-                                    node_.type = result_type;
-                                    return result_type;
-                                }
-                            }
-                        }
-                    }
+                if element_type is not None {
+                    node_.type = element_type;
+                    return element_type;
                 }
                 return UnknownType();
             }
@@ -2791,6 +2923,12 @@ impl TypeEvaluator._get_type_of_symbol_decl(
         case HasVar():
             if node_.type_tag is not None {
                 annotation_type = self.get_type_of_expression(node_.type_tag.tag);
+                if final_type
+                    := self._final_declared_type(
+                        annotation_type, symbol, node_.value
+                    ) {
+                    return final_type;
+                }
                 return self._convert_to_instance(annotation_type);
             } else {
                 if node_.value is not None {
@@ -2837,29 +2975,42 @@ impl TypeEvaluator._get_enum_member_type_for_decl(
 impl TypeEvaluator._assign_callable(
     src_func: FunctionType, dest_func: FunctionType, strict: bool = False
 ) -> bool {
+    return self._callable_mismatch(src_func, dest_func, strict) is None;
+}
+
+impl TypeEvaluator._callable_value_params(fn: FunctionType) -> list[Parameter] {
+    if self._carries_unbound_method(fn) {
+        return list(fn.parameters or []);
+    }
+    return [
+        p
+        for p in (fn.parameters or [])
+        if not p.is_self and not p.is_cls
+    ];
+}
+
+impl TypeEvaluator._callable_mismatch(
+    src_func: FunctionType, dest_func: FunctionType, strict: bool = False
+) -> CallableMismatch | None {
     if dest_func.is_gradual_callable_form() {
-        if dest_func.return_type and src_func.return_type {
-            return self.assign_type(
+        if dest_func.return_type
+            and src_func.return_type
+            and not self.assign_type(
                 src_func.return_type, dest_func.return_type, strict
+            ) {
+            return ReturnMismatch(
+                src_return=src_func.return_type, dest_return=dest_func.return_type
             );
         }
-        return True;
+        return None;
     }
 
     if src_func.is_gradual_callable_form() {
-        return False;
+        return GradualSourceMismatch();
     }
 
-    src_params = [
-        p
-        for p in (src_func.parameters or [])
-        if not p.is_self and not p.is_cls
-    ];
-    dest_params = [
-        p
-        for p in (dest_func.parameters or [])
-        if not p.is_self and not p.is_cls
-    ];
+    src_params = self._callable_value_params(src_func);
+    dest_params = self._callable_value_params(dest_func);
 
     overlap = min(len(src_params), len(dest_params));
     for i in range(overlap) {
@@ -2871,7 +3022,7 @@ impl TypeEvaluator._assign_callable(
         }
 
         if not self.assign_type(dest_param.param_type, src_param.param_type, strict) {
-            return False;
+            return ParameterMismatch(src_param=src_param, dest_param=dest_param);
         }
     }
 
@@ -2879,7 +3030,9 @@ impl TypeEvaluator._assign_callable(
         for i in range(len(dest_params), len(src_params)) {
             src_param = src_params[i];
             if not src_param.is_optional {
-                return False;
+                return ArityMismatch(
+                    src_count=len(src_params), dest_count=len(dest_params)
+                );
             }
         }
     }
@@ -2888,39 +3041,19 @@ impl TypeEvaluator._assign_callable(
         dest_ret = self._convert_to_instance(dest_func.return_type);
 
         if self.is_none_type(dest_ret) {
-            return True;
+            return None;
         }
         src_ret = self._convert_to_instance(src_func.return_type);
         if not self.assign_type(src_ret, dest_ret, strict) {
-            return False;
+            return ReturnMismatch(src_return=src_ret, dest_return=dest_ret);
         }
     }
-    return True;
+    return None;
 }
 
 impl TypeEvaluator._assign_class(
     src_type: ClassType, dest_type: ClassType, strict: bool = False
 ) -> bool {
-    unwrapped_dest: TypeBase = dest_type;
-    unwrapped_src: TypeBase = src_type;
-    if dest_type.shared == self.prefetch.final_class.shared {
-        if len(dest_type.private.type_args) > 0 {
-            unwrapped_dest = dest_type.private.type_args[0];
-        }
-    }
-    if src_type.shared == self.prefetch.final_class.shared {
-        if len(src_type.private.type_args) > 0 {
-            unwrapped_src = src_type.private.type_args[0];
-        }
-    }
-
-    if not isinstance(unwrapped_src, ClassType)
-        or not isinstance(unwrapped_dest, ClassType) {
-        return self.assign_type(unwrapped_src, unwrapped_dest, strict);
-    }
-    src_type = unwrapped_src;
-    dest_type = unwrapped_dest;
-
     if self._distinct_brand_mismatch(src_type, dest_type) {
         return False;
     }
@@ -2931,6 +3064,9 @@ impl TypeEvaluator._assign_class(
             }
 
             return src_type.get_literal_value() == dest_type.get_literal_value();
+        }
+        if src_type.is_builtin(["ptr", "PtrView", "Pinned"]) {
+            return self._assign_c_interop_args(src_type, dest_type, strict);
         }
 
         if src_type.private.type_args and dest_type.private.type_args {
@@ -3001,7 +3137,7 @@ impl TypeEvaluator._assign_class(
         }
 
         for mro_cls in src_type.shared.mro {
-            if mro_cls.shared != src_type.shared {
+            if not mro_cls.shared.same_class(src_type.shared) {
                 if class_implements_protocol(mro_cls, dest_type, self) {
                     return True;
                 }
@@ -3011,13 +3147,40 @@ impl TypeEvaluator._assign_class(
     return False;
 }
 
+impl TypeEvaluator._assign_c_interop_args(
+    src_type: ClassType, dest_type: ClassType, strict: bool = False
+) -> bool {
+    import from jaclang.compiler.c_interop { c_type_arg }
+    dest_arg = c_type_arg(dest_type);
+    src_arg = c_type_arg(src_type);
+    if isinstance(dest_arg, TypeVarType) or isinstance(src_arg, TypeVarType) {
+        return True;
+    }
+    if dest_arg is None {
+        return True;
+    }
+    if src_arg is None {
+        return not src_type.is_builtin("ptr");
+    }
+    if not isinstance(dest_arg, TypeBase) or not isinstance(src_arg, TypeBase) {
+        return True;
+    }
+    dest_inst = self._convert_to_instance(dest_arg);
+    src_inst = self._convert_to_instance(src_arg);
+    if isinstance(dest_inst, ClassType) and isinstance(src_inst, ClassType) {
+        return src_inst.shared.same_class(dest_inst.shared);
+    }
+    return self.assign_type(src_inst, dest_inst, strict);
+}
+
 impl TypeEvaluator._is_protocol_class(cls_type: ClassType) -> bool {
     for base_cls in cls_type.shared.base_classes {
         if not isinstance(base_cls, ClassType) or base_cls._shared is None {
             continue;
         }
 
-        if base_cls.shared == self.prefetch.protocol_class.shared {
+        if self.prefetch.protocol_class is not None
+            and base_cls.shared.same_class(self.prefetch.protocol_class.shared) {
             return True;
         }
 
@@ -3043,7 +3206,6 @@ impl TypeEvaluator._is_protocol_class(cls_type: ClassType) -> bool {
     }
     return False;
 }
-
 
 impl TypeEvaluator._solve_protocol_type_args(
     src_type: ClassType, proto_type: ClassType, bindings: dict[str, TypeBase]
@@ -3073,26 +3235,108 @@ impl TypeEvaluator._solve_protocol_type_args(
             continue;
         }
 
-        impl_func = self.get_type_of_symbol(member.symbol);
-        if isinstance(impl_func, FunctionType) {
-            impl_func = impl_func.specialize(src_type);
+        if not isinstance(proto_func, FunctionType) {
+            continue;
         }
-
-        if isinstance(proto_func, FunctionType)
-            and isinstance(impl_func, FunctionType) {
-            if self.assign_type_to_type_var(proto_func, impl_func, bindings) {
-                solved = True;
-            }
+        impl_func = self._protocol_member_impl(proto_func, member, src_type);
+        if impl_func is not None
+            and self.assign_type_to_type_var(proto_func, impl_func, bindings) {
+            solved = True;
         }
     }
     return solved;
 }
 
+impl TypeEvaluator._protocol_member_impl(
+    proto_func: FunctionType, member: ClassMember, src_type: ClassType
+) -> (FunctionType | None) {
+    """Pick the implementation a protocol member binds to.
+
+    An overloaded member (e.g. `float.__round__`, which returns `int` without
+    `ndigits` and `float` with it) binds to its first overload whose signature
+    fits the protocol method, so `_SupportsRound2[_T]` solves `_T` to `float`
+    rather than to the first overload's `int`. Falls back to the first
+    overload when none fits.
+    """;
+    first = self.get_type_of_symbol(member.symbol);
+    if not isinstance(first, FunctionType) {
+        return None;
+    }
+    first = first.specialize(src_type);
+    if not member.overloads {
+        return first;
+    }
+    candidates: list[FunctionType] = [first];
+    for overload in member.overloads {
+        overload_ty = self.get_type_of_symbol(overload);
+        if isinstance(overload_ty, FunctionType) {
+            candidates.append(overload_ty.specialize(src_type));
+        }
+    }
+    for candidate in candidates {
+        if self._protocol_signature_fits(proto_func, candidate) {
+            return candidate;
+        }
+    }
+    return first;
+}
+
+impl TypeEvaluator._protocol_signature_fits(
+    proto_func: FunctionType, impl_func: FunctionType
+) -> bool {
+    """Does `impl_func` accept every positional call `proto_func` describes?
+
+    The same count of explicit positional parameters (extra impl parameters
+    need defaults, `*args` absorbs the rest), each protocol parameter type
+    assignable to the impl's. Parameters typed by a type variable always fit,
+    since they are what is being solved.
+    """;
+    def positional(func: FunctionType) -> list[Parameter] {
+        return [
+            p
+            for p in (func.parameters or [])
+            if not (p.is_self or p.is_cls)
+                and p.param_kind
+                    in (ParamKind.POSONLY, ParamKind.NORMAL, ParamKind.VARARG)
+        ];
+    }
+    proto_params = positional(proto_func);
+    impl_params = positional(impl_func);
+    for (i, proto_param) in enumerate(proto_params) {
+        if proto_param.param_kind == ParamKind.VARARG {
+            break;
+        }
+        if i >= len(impl_params) {
+            return False;
+        }
+        impl_param = impl_params[i];
+        if impl_param.param_kind == ParamKind.VARARG {
+            break;
+        }
+        proto_ty = proto_param.param_type;
+        impl_ty = impl_param.param_type;
+        if proto_ty is None
+            or impl_ty is None
+            or isinstance(proto_ty, TypeVarType)
+            or isinstance(impl_ty, TypeVarType) {
+            continue;
+        }
+        if not self.assign_type(proto_ty, impl_ty) {
+            return False;
+        }
+    }
+    for impl_param in impl_params[len(proto_params):] {
+        if impl_param.param_kind != ParamKind.VARARG and not impl_param.has_default {
+            return False;
+        }
+    }
+    return True;
+}
 
 impl TypeEvaluator.is_sub_class(super_cls: ClassType, sub_cls: ClassType) -> bool {
-    if not sub_cls.shared.mro {
-        compute_mro_linearization(sub_cls);
-    }
+    import from jaclang.compiler.types.type_utils { ensure_mro_fresh }
+    self._heal_ancestry(sub_cls);
+    ensure_mro_fresh(sub_cls);
     for cls in sub_cls.shared.mro {
         if cls.shared.same_class(super_cls.shared) {
             return True;
@@ -3101,11 +3345,86 @@ impl TypeEvaluator.is_sub_class(super_cls: ClassType, sub_cls: ClassType) -> boo
     return False;
 }
 
+impl TypeEvaluator._heal_ancestry(cls: ClassType) -> None {
+    import from jaclang.compiler.types.type_utils { ensure_mro_fresh }
+    attempted: set[int] = set();
+    while True {
+        healed = False;
+        if cls.shared._provisional and id(cls.shared) not in attempted {
+            attempted.add(id(cls.shared));
+            self._heal_class_bases(cls);
+            healed = True;
+        }
+        ensure_mro_fresh(cls);
+        for ancestor in list(cls.shared.mro or []) {
+            if ancestor.shared._provisional and id(ancestor.shared) not in attempted {
+                attempted.add(id(ancestor.shared));
+                self._heal_class_bases(ancestor);
+                healed = True;
+            }
+        }
+        if not healed {
+            return;
+        }
+    }
+}
+
+impl TypeEvaluator._heal_class_bases(cls: ClassType) -> None {
+    import from jaclang.compiler.frontend.unitree { Archetype }
+    import from jaclang.compiler.types.type_utils { linearize_mro, mro_signature }
+    shared = cls.shared;
+    node_ = shared.symbol_table;
+    if not isinstance(node_, Archetype) {
+        shared._provisional = False;
+        return;
+    }
+    if shared._heal_stamp in (id(self), -id(self)) {
+        return;
+    }
+    shared._heal_stamp = -id(self);
+    shared._provisional = False;
+    bases: list[TypeBase] = [];
+    unresolved = False;
+    for base_expr in node_.base_classes or [] {
+        memo = base_expr.type;
+        if isinstance(memo, UnknownType) and not memo.is_diagnosed {
+            base_expr.type = None;
+        }
+        base_type = self.get_type_of_expression(base_expr);
+        if isinstance(base_type, UnknownType) and not base_type.is_diagnosed {
+            unresolved = True;
+        }
+        bases.append(base_type);
+    }
+    if unresolved {
+        shared._provisional = True;
+        shared._heal_stamp = 0;
+        return;
+    }
+    shared._heal_stamp = id(self);
+    if not [
+        b
+        for b in bases
+        if isinstance(b, ClassType)
+    ]
+        and self.prefetch
+        and self.prefetch.object_class
+        and not shared.same_class(self.prefetch.object_class.shared) {
+        bases.append(self.prefetch.object_class);
+    }
+    shared.base_classes = bases;
+    rebuilt = linearize_mro(cls);
+    if len(rebuilt) > len(shared.mro) {
+        shared.mro = rebuilt;
+    }
+    shared._mro_sig = mro_signature(cls);
+}
+
 impl TypeEvaluator.get_type_of_magic_method_call(
     obj_type: TypeBase,
     method_name: str,
     arg_nodes: (Sequence[Expr | KWPair] | None),
-    node_for_error: Expr | None = None,
+    node_for_error: UniNode | None = None,
 ) -> TypeBase | None {
     if isinstance(obj_type, UnionType) {
         result_types: list[TypeBase] = [];
@@ -3126,21 +3445,11 @@ impl TypeEvaluator.get_type_of_magic_method_call(
     }
     if obj_type.category == TypeCategory.Class {
         assert isinstance(obj_type, ClassType);
-        owner_type = obj_type;
-        if obj_type.is_instantiable_class() {
-            meta_owner = self._metaclass_of(obj_type);
-            if meta_owner is not None {
-                meta_member = self._lookup_class_member(meta_owner, method_name);
-                if (
-                    meta_member is not None
-                    and meta_member.class_type.shared.class_name
-                        not in ("type", "object")
-                ) {
-                    owner_type = meta_owner;
-                }
-            }
+        member = self._declared_metaclass_member(obj_type, method_name);
+        if member is None {
+            member = self._lookup_class_member(obj_type, method_name);
         }
-        if member := self._lookup_class_member(owner_type, method_name) {
+        if member is not None {
             member_ty = self.get_type_of_symbol(member.symbol);
 
             overloaded_fns: list[FunctionType] = [];
@@ -3157,11 +3466,14 @@ impl TypeEvaluator.get_type_of_magic_method_call(
 
                 _fallback_result: TypeBase | None = None;
                 for fn in overloaded_fns {
+                    if not self._overload_accepts_receiver(fn, obj_type) {
+                        continue;
+                    }
                     arg_param_match = self.match_args_to_params(
                         arg_nodes, node_for_error, fn, checking_overload=True
                     );
                     if not arg_param_match.argument_errors {
-                        solved: dict[str, TypeBase] = {};
+                        solved = self._receiver_type_var_bindings(fn, obj_type);
                         if self.validate_arg_types(
                             arg_param_match,
                             checking_overload=True,
@@ -3198,18 +3510,36 @@ impl TypeEvaluator.slice_assignment_is_valid(target: Expr, value_node: Expr) -> 
         isinstance(target, AtomTrailer)
         and not target.is_attr
         and isinstance(target.right, IndexSlice)
-        and target.right.is_range
     ) {
         return False;
     }
-    base_type = self.get_type_of_expression(target.target);
-    if isinstance(base_type, ClassType) and not base_type.is_class_instance() {
-        return False;
+    key: UniNode = target.right;
+    if not target.right.is_range {
+        slices = target.right.slices;
+        if len(slices) != 1 or slices[0].start is None {
+            return False;
+        }
+        key = slices[0].start;
     }
-    return self.get_type_of_magic_method_call(
-        base_type, "__setitem__", [target.right, value_node], None
-    )
-        is not None;
+    base_type = self.get_type_of_expression(target.target);
+    members = base_type.types
+        if isinstance(base_type, UnionType) and base_type.types
+        else [base_type];
+    for member in members {
+        if self.is_none_type(member) {
+            return False;
+        }
+        if isinstance(member, ClassType) and not member.is_class_instance() {
+            return False;
+        }
+        if self.get_type_of_magic_method_call(
+            member, "__setitem__", [key, value_node], None
+        )
+            is None {
+            return False;
+        }
+    }
+    return True;
 }
 
 impl TypeEvaluator.is_any_type(ty: TypeBase) -> bool {
@@ -3224,7 +3554,7 @@ impl TypeEvaluator.is_any_type(ty: TypeBase) -> bool {
     if isinstance(ty, ClassType) {
         if (
             self.prefetch.type_var_class
-            and ty.shared == self.prefetch.type_var_class.shared
+            and ty.shared.same_class(self.prefetch.type_var_class.shared)
         ) {
             return True;
         }
@@ -3241,7 +3571,8 @@ impl TypeEvaluator.is_none_type(ty: TypeBase) -> bool {
         return False;
     }
     return (
-        isinstance(ty, ClassType) and ty.shared == self.prefetch.none_type_class.shared
+        isinstance(ty, ClassType)
+        and ty.shared.same_class(self.prefetch.none_type_class.shared)
     );
 }
 
@@ -3286,7 +3617,7 @@ impl TypeEvaluator._in_native_context -> bool {
     if self._pass is None {
         return False;
     }
-    cur = self._pass?.cur_node;
+    cur = self._pass?.current_node;
     if cur is None or not isinstance(cur, UniNode) {
         return False;
     }
@@ -3312,7 +3643,7 @@ impl TypeEvaluator.is_typevar_class(ty: TypeBase) -> bool {
         self.prefetch
         and self.prefetch.type_var_class
         and isinstance(ty, ClassType)
-        and ty.shared == self.prefetch.type_var_class.shared
+        and ty.shared.same_class(self.prefetch.type_var_class.shared)
     ) {
         return True;
     }
@@ -3324,7 +3655,7 @@ impl TypeEvaluator.is_paramspec_class(ty: TypeBase) -> bool {
         self.prefetch
         and self.prefetch.param_spec_class
         and isinstance(ty, ClassType)
-        and ty.shared == self.prefetch.param_spec_class.shared
+        and ty.shared.same_class(self.prefetch.param_spec_class.shared)
     ) {
         return True;
     }
@@ -3336,7 +3667,7 @@ impl TypeEvaluator.is_type_var_tuple_class(ty: TypeBase) -> bool {
         self.prefetch
         and self.prefetch.type_var_tuple_class
         and isinstance(ty, ClassType)
-        and ty.shared == self.prefetch.type_var_tuple_class.shared
+        and ty.shared.same_class(self.prefetch.type_var_tuple_class.shared)
     ) {
         return True;
     }
@@ -3412,7 +3743,7 @@ impl TypeEvaluator.assign_type(
         }
     }
 
-    _rt_base_kinds = {
+    _rt_base_kinds: dict[str, tuple[str, ...]] = {
         'Archetype': ('node', 'edge', 'walker', 'object'),
         'NodeArchetype': ('node', ),
         'EdgeArchetype': ('edge', ),
@@ -3471,35 +3802,39 @@ impl TypeEvaluator.assign_type(
         if src_type.is_literal_type()
             and self.prefetch.str_class
             and self.prefetch.literal_string_class {
-            if src_type.shared == self.prefetch.str_class.shared {
-                if dest_type.shared == self.prefetch.literal_string_class.shared {
+            if src_type.shared.same_class(self.prefetch.str_class.shared) {
+                if dest_type.shared.same_class(
+                    self.prefetch.literal_string_class.shared
+                ) {
                     return True;
                 }
             }
         }
 
         if src_type.is_literal_type() and not dest_type.is_literal_type() {
-            if src_type.shared == dest_type.shared {
+            if src_type.shared.same_class(dest_type.shared) {
                 return True;
             }
         }
 
         if src_type.is_literal_type() and dest_type.is_literal_type() {
-            if src_type.shared == dest_type.shared {
+            if src_type.shared.same_class(dest_type.shared) {
                 return src_type.get_literal_value() == dest_type.get_literal_value();
             }
         }
 
         if not src_type.is_literal_type() and dest_type.is_literal_type() {
-            if src_type.shared == dest_type.shared {
+            if src_type.shared.same_class(dest_type.shared) {
                 return True;
             }
         }
 
         if self.prefetch.literal_string_class and self.prefetch.str_class {
             if (
-                src_type.shared == self.prefetch.literal_string_class.shared
-                and dest_type.shared != self.prefetch.literal_string_class.shared
+                src_type.shared.same_class(self.prefetch.literal_string_class.shared)
+                and not dest_type.shared.same_class(
+                    self.prefetch.literal_string_class.shared
+                )
             ) {
                 str_instance = self._convert_to_instance(self.prefetch.str_class);
                 if self.assign_type(str_instance, dest_type, strict) {
@@ -3511,8 +3846,10 @@ impl TypeEvaluator.assign_type(
 
     if self.prefetch and self.prefetch.jsx_element_class {
         if isinstance(dest_type, ClassType) and isinstance(src_type, ClassType) {
-            if dest_type.shared == self.prefetch.jsx_element_class.shared {
-                if src_type.shared != self.prefetch.jsx_element_class.shared {
+            if dest_type.shared.same_class(self.prefetch.jsx_element_class.shared) {
+                if not src_type.shared.same_class(
+                    self.prefetch.jsx_element_class.shared
+                ) {
                     return False;
                 }
             }
@@ -3614,14 +3951,14 @@ impl TypeEvaluator.assign_type(
         }
     }
 
-    if isinstance(src_type, EnumMemberType) {
+    if isinstance(src_type, EnumMemberType) and src_type.enum_class is not None {
         if isinstance(dest_type, ClassType) and dest_type.is_enum_class() {
             if src_type.enum_class.shared.same_class(dest_type.shared) {
                 return True;
             }
         }
 
-        if isinstance(dest_type, EnumMemberType) {
+        if isinstance(dest_type, EnumMemberType) and dest_type.enum_class is not None {
             if src_type.enum_class.shared.same_class(dest_type.enum_class.shared) {
                 return True;
             }
@@ -3638,7 +3975,7 @@ impl TypeEvaluator.assign_type(
 
     if self.prefetch and self.prefetch.type_class {
         if isinstance(dest_type, ClassType) and isinstance(src_type, ClassType) {
-            if dest_type.shared == self.prefetch.type_class.shared {
+            if dest_type.shared.same_class(self.prefetch.type_class.shared) {
                 if src_type.is_instantiable_class() {
                     if dest_type.private.type_args {
                         target_inner = self._convert_to_instance(
@@ -3693,6 +4030,31 @@ impl TypeEvaluator.assign_type(
         required_method = _protocol_methods.get(dest_type.shared.class_name);
         if required_method {
             if self._lookup_object_member(src_type, required_method) {
+                def has_type_var(ty: TypeBase) -> bool {
+                    if isinstance(ty, TypeVarType) {
+                        return True;
+                    }
+                    if isinstance(ty, UnionType) {
+                        return any(has_type_var(member) for member in ty.types);
+                    }
+                    if isinstance(ty, ClassType) and ty.private.type_args {
+                        return any(has_type_var(arg) for arg in ty.private.type_args);
+                    }
+                    return False;
+                }
+                if dest_type.shared.class_name in ("Iterable", "Iterator")
+                    and dest_type.private.type_args
+                    and not has_type_var(dest_type.private.type_args[0])
+                    and src_type.is_builtin(["list", "tuple", "set", "frozenset"]) {
+                    elem = self._get_iterable_element_type(src_type);
+                    if elem is not None and not isinstance(elem, UnknownType) {
+                        return self.assign_type(
+                            self._convert_to_instance(elem),
+                            self._convert_to_instance(dest_type.private.type_args[0]),
+                            strict
+                        );
+                    }
+                }
                 return True;
             }
         }
@@ -3717,11 +4079,23 @@ impl TypeEvaluator.get_type_of_expression(
     }
 
     if node_.type is not None {
+        contextual_call = False;
+        if expected_type is not None
+            and isinstance(node_, FuncCall)
+            and not node_.params {
+            constructor = node_.target.type;
+            contextual_call = isinstance(constructor, ClassType)
+                and constructor.is_instantiable_class()
+                and constructor.is_builtin(["list", "set", "frozenset", "dict"]);
+        }
         if expected_type is None
-            or not isinstance(
-                node_, (ListVal, DictVal, SetVal, TupleVal, ListCompr, LambdaExpr, )
+            or (
+                not contextual_call
+                and not isinstance(
+                    node_, (ListVal, DictVal, SetVal, TupleVal, ListCompr, LambdaExpr, )
+                )
             ) {
-            if isinstance(node_.type, (UnionType, ClassType)) {
+            if isinstance(node_.type, (UnionType, ClassType, FunctionType)) {
                 if narrowed
                     := self.get_narrowed_type_for_expr(node_, node_.type, node_) {
                     node_.narrowed_type = narrowed;
@@ -3742,7 +4116,14 @@ impl TypeEvaluator.get_type_of_expression(
             and node_.value == '_'
             and node_.find_parent_of_type(MatchPattern) is not None
         );
-        if (mod is None or not mod.is_raised_from_py) and not is_pattern_wildcard {
+        is_annotation_ellipsis = isinstance(node_, Ellipsis)
+            and (
+                node_.find_parent_of_type(SubTag) is not None
+                or node_.find_parent_of_type(FuncSignature) is not None
+            );
+        if (mod is None or not mod.is_raised_from_py)
+            and not is_pattern_wildcard
+            and not is_annotation_ellipsis {
             self.emit_diag(W1051, node_);
         }
     }
@@ -3751,7 +4132,7 @@ impl TypeEvaluator.get_type_of_expression(
         node_.ct_value = self.ct_eval.try_eval(node_);
     }
 
-    if isinstance(result, (UnionType, ClassType)) {
+    if isinstance(result, (UnionType, ClassType, FunctionType)) {
         if narrowed := self.get_narrowed_type_for_expr(node_, result, node_) {
             node_.narrowed_type = narrowed;
             return narrowed;
@@ -3827,9 +4208,7 @@ impl TypeEvaluator._make_coroutine_type(inner: TypeBase) -> TypeBase {
     if self.prefetch.coroutine_class is None {
         return inner;
     }
-    if is_generator_family_type(inner) {
-        return inner;
-    }
+
     coro = self.prefetch.coroutine_class.clone_as_instance();
     coro.private.type_args = [AnyType(), AnyType(), inner];
     return coro;
@@ -3874,12 +4253,27 @@ impl TypeEvaluator._unwrap_awaitable_type(t: TypeBase, node_: UniNode) -> TypeBa
     return t;
 }
 
+impl TypeEvaluator.get_type_of_with_alias(item: ExprAsItem) -> TypeBase {
+    manager_type = self.get_type_of_expression(item.expr);
+    if isinstance(manager_type, UnknownType) {
+        return manager_type;
+    }
+    is_async = isinstance(item.parent, WithStmt) and item.parent.is_async;
+    enter_ret = self.get_type_of_magic_method_call(
+        manager_type, "__aenter__" if is_async else "__enter__", [], item.expr
+    );
+    if enter_ret is None {
+        return manager_type;
+    }
+    if is_async {
+        return self._unwrap_awaitable_type(enter_ret, item.expr);
+    }
+    return enter_ret;
+}
+
 impl TypeEvaluator._is_sv_async_call(expr: FuncCall) -> bool {
     tgt = expr.target;
     if not isinstance(tgt, Name) or tgt.sym is None {
-        return False;
-    }
-    if not expr.in_client_context() {
         return False;
     }
     mod = expr.find_parent_of_type(Module);
@@ -3891,74 +4285,65 @@ impl TypeEvaluator._is_sv_async_call(expr: FuncCall) -> bool {
     if syms is None {
         syms = set();
         import from jaclang.compiler.driver.boundary_classify {
+            CrossAppKind,
+            classify_cross_app_import,
             is_client_native_edge_import
         }
         import from jaclang.compiler.symbol_utils {
             ClientImportVerdict,
             classify_client_import_item,
-            decl_has_access,
-            import_target_pinned_server,
-            is_client_boundary_import,
             resolve_import_source_module
         }
         for imp in mod.get_all_sub_nodes(Import) {
-            is_boundary = is_client_boundary_import(imp);
-            if not is_boundary and imp.in_client_context() {
-                try {
-                    is_boundary = (
-                        not imp.is_service_import
-                        and not imp.is_typed
-                        and not imp.is_virtual_jac
-                        and imp.from_loc is not None
-                        and bool(imp.items)
-                        and str(imp.from_loc.resolve_relative_path()).endswith('.jac')
-                    );
-                } except Exception {
-                    is_boundary = False;
-                }
-            }
-            if not (
-                imp.is_service_import
-                or is_client_native_edge_import(imp, self.program)
-                or is_boundary
-            ) {
-                continue;
-            }
-
-            if imp.is_service_import and not imp.in_client_context() {
+            kind = classify_cross_app_import(imp, None);
+            is_service = kind == CrossAppKind.SERVICE_BRIDGE;
+            is_boundary = kind == CrossAppKind.CLIENT_BRIDGE;
+            is_native_edge = (
+                not is_service
+                and not is_boundary
+                and is_client_native_edge_import(imp, self.program)
+            );
+            if not (is_service or is_boundary or is_native_edge) {
                 continue;
             }
             source_mod = (
                 resolve_import_source_module(self.program, imp) if is_boundary else None
             );
-            pinned_server = import_target_pinned_server(imp) if is_boundary else False;
             for item in imp.items {
                 if not (
                     isinstance(item, ModuleItem)
                     and isinstance(item.name, Name)
                     and item.name.sym is not None
-                    and item.name.sym.sym_type == SymbolType.ABILITY
                 ) {
                     continue;
                 }
-                if (
-                    is_boundary
-                    and not imp.is_service_import
-                    and not is_client_native_edge_import(imp, self.program)
-                ) {
+                sym_kind = item.name.sym.sym_type;
+                if sym_kind != SymbolType.ABILITY {
+                    facts = imp.boundary_facts;
+                    is_bridged_walker = is_service
+                        and (
+                            sym_kind == SymbolType.WALKER_ARCH
+                            or (
+                                facts is not None
+                                and item.name.value in facts.sv_walkers
+                            )
+                        );
+                    if not is_bridged_walker and is_service {
+                        decl = resolved_decl_of(item.name.sym);
+                        owner = decl.name_of if decl is not None else None;
+                        is_bridged_walker = (
+                            isinstance(owner, Archetype) and owner.arch_kind == 'walker'
+                        );
+                    }
+                    if not is_bridged_walker {
+                        continue;
+                    }
+                } elif is_boundary {
                     if source_mod is None {
                         continue;
                     }
                     verdict = classify_client_import_item(source_mod, item);
-                    is_stub = verdict == ClientImportVerdict.BRIDGED
-                        or (
-                            pinned_server
-                            and (
-                                verdict != ClientImportVerdict.DEAD
-                                or decl_has_access(source_mod, item)
-                            )
-                        );
-                    if not is_stub {
+                    if verdict != ClientImportVerdict.BRIDGED {
                         continue;
                     }
                 }
@@ -3971,31 +4356,20 @@ impl TypeEvaluator._is_sv_async_call(expr: FuncCall) -> bool {
 }
 
 impl TypeEvaluator._prefetch_types{
-    def as_class_type(t: TypeBase) -> ClassType | None {
-        if isinstance(t, ClassType) {
-            return t;
-        }
-        return None;
-    }
-
     def get_types_class(type_name: str) -> ClassType | None {
-        return as_class_type(self._get_type_from_module(self.types_module, type_name));
+        return self._get_class_from_module(self.types_module, type_name);
     }
     def get_typing_class(type_name: str) -> ClassType | None {
-        return as_class_type(self._get_type_from_module(self.typing_module, type_name));
+        return self._get_class_from_module(self.typing_module, type_name);
     }
     def get_builtin_class(type_name: str) -> ClassType | None {
-        return as_class_type(
-            self._get_type_from_module(self.builtins_module, type_name)
-        );
+        return self._get_class_from_module(self.builtins_module, type_name);
     }
     def get_enum_class(type_name: str) -> ClassType | None {
-        return as_class_type(self._get_type_from_module(self.enum_module, type_name));
+        return self._get_class_from_module(self.enum_module, type_name);
     }
     def get_jac_builtin_class(type_name: str) -> ClassType | None {
-        return as_class_type(
-            self._get_type_from_module(self.jac_builtins_module, type_name)
-        );
+        return self._get_class_from_module(self.jac_builtins_module, type_name);
     }
 
     self.prefetch.none_type_class = get_types_class("NoneType");
@@ -4042,6 +4416,7 @@ impl TypeEvaluator._prefetch_types{
     }
     self.prefetch.final_class = get_jac_builtin_class("Final");
     self.prefetch.node_class = get_jac_builtin_class("Node");
+    self.prefetch.edge_class = get_jac_builtin_class("Edge");
     self.prefetch.walker_class = get_jac_builtin_class("Walker");
     self.prefetch.path_class = get_jac_builtin_class("GraphQuery");
     self.prefetch.jsx_element_class = get_jac_builtin_class("JsxElement");
@@ -4067,10 +4442,6 @@ impl TypeEvaluator._load_stub_module(path: str) -> Module {
     }
 
     resolved_path = str(Path(path).resolve());
-    compiler = self.program._get_compiler();
-    target_program = compiler.selfhost.resolve(resolved_path, self.program);
-    target_hub = target_program.mod.hub;
-
     if resolved_path in self.program.mod.hub {
         mod = self.program.mod.hub[resolved_path];
         if mod.parent_scope is None and mod is not self.builtins_module {
@@ -4078,130 +4449,33 @@ impl TypeEvaluator._load_stub_module(path: str) -> Module {
         }
         return mod;
     }
-    if resolved_path in target_hub {
-        mod = target_hub[resolved_path];
-        if mod.parent_scope is None and mod is not self.builtins_module {
-            mod.parent_scope = self.builtins_module;
-        }
-        return mod;
-    }
 
-    use_str: (str | None) = None;
-    if path.endswith("builtins.pyi") {
-        file_content = read_file_with_encoding(path);
-        if "def chunks(" not in file_content {
-            _ck_anchor = "    def copy(self) -> list[_T]: ...";
-            if _ck_anchor in file_content {
-                file_content = file_content.replace(
-                    _ck_anchor,
-                    _ck_anchor
-                        + "\n    # Jac extension: chunked iteration views"
-                        + " (`for c in &xs.chunks(n)`).\n"
-                        + "    def chunks(self, n: int, /) -> list[list[_T]]: ...",
-                    1
-                );
-            }
-        }
-        use_str = file_content;
-    }
-
-    mod = self.program.load_dependency_module(path, use_str=use_str);
+    mod = self.program.load_dependency_module(path);
     if mod.parent_scope is None and mod is not self.builtins_module {
         mod.parent_scope = self.builtins_module;
     }
     return mod;
 }
 
-impl TypeEvaluator._read_dunder_all(path: str) -> (set[str] | None) {
-    import from ast {
-        Assign as PyAssign,
-        Constant as PyConstant,
-        List as PyList,
-        Name as PyName,
-        Tuple as PyTuple,
-        parse as py_parse
-    }
-    try {
-        py_tree = py_parse(read_file_with_encoding(path));
-        for node in py_tree.body {
-            if (
-                isinstance(node, PyAssign)
-                and len(node.targets) == 1
-                and isinstance(node.targets[0], PyName)
-                and node.targets[0].id == "__all__"
-                and isinstance(node.value, (PyList, PyTuple))
-            ) {
-                result: set[str] = set();
-                for elt in node.value.elts {
-                    if (isinstance(elt, PyConstant) and isinstance(elt.value, str)) {
-                        result.add(elt.value);
-                    }
-                }
-                return result;
-            }
-        }
-    } except Exception {
-        return None;
-    }
-    return None;
-}
-
-impl TypeEvaluator._read_ambient_imports_by_module(path: str) -> dict[str, set[str]] {
-    import from ast { ImportFrom as PyImportFrom, parse as py_parse }
-    out: dict[str, set[str]] = {};
-    try {
-        allowed = self._read_dunder_all(path);
-        if allowed is None {
-            return out;
-        }
-        py_tree = py_parse(read_file_with_encoding(path));
-        for node in py_tree.body {
-            if (isinstance(node, PyImportFrom) and node.module is not None) {
-                public = {(alias.asname or alias.name) for alias in node.names}
-                    & allowed;
-                if public {
-                    out[node.module] = out.get(node.module, set()) | public;
-                }
-            }
-        }
-    } except Exception {
-        return {};
-    }
-    return out;
-}
-
 impl TypeEvaluator.postinit -> None {
-    self.ct_eval = CtEvaluator(evaluator=self);
-    self._BUILTINS_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/builtins.pyi"
-    );
-    self._TYPING_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/typing.pyi"
-    );
-    self._TYPES_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/types.pyi"
-    );
-    self._JAC_BUILTINS_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "jac_builtins.pyi"
-    );
+    import from jaclang.compiler.frontend.host { active_host }
+    self.ct_eval = CtEvaluator(evaluator=self, env=active_host().ct_environment());
+    import from jaclang.compiler.frontend.codeinfo { jaclang_pkg_root }
+    package = jaclang_pkg_root();
+    stdlib_stubs = os.path.join(package, "vendor", "typeshed", "stdlib");
+    jac_stubs = os.path.join(package, "compiler", "types");
+    self._BUILTINS_STUB_FILE_PATH = os.path.join(stdlib_stubs, "builtins.pyi");
+    self._TYPING_STUB_FILE_PATH = os.path.join(stdlib_stubs, "typing.pyi");
+    self._TYPES_STUB_FILE_PATH = os.path.join(stdlib_stubs, "types.pyi");
+    self._JAC_BUILTINS_STUB_FILE_PATH = os.path.join(jac_stubs, "jac_builtins.pyi");
     self._BUILTIN_OVERRIDES_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "builtin_overrides.pyi"
+        jac_stubs, "builtin_overrides.pyi"
     );
-    self._DOM_TYPES_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "dom_types.pyi"
-    );
-    self._NA_BUILTINS_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "na_builtins.pyi"
-    );
-    self._JS_GLOBALS_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "js_globals.pyi"
-    );
-    self._TYPING_AMBIENT_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "typing_ambient.pyi"
-    );
-    self._ENUM_STUB_FILE_PATH = os.path.join(
-        os.path.dirname(__file__), "../../vendor/typeshed/stdlib/enum.pyi"
-    );
+    self._DOM_TYPES_STUB_FILE_PATH = os.path.join(jac_stubs, "dom_types.pyi");
+    self._NA_BUILTINS_STUB_FILE_PATH = os.path.join(jac_stubs, "na_builtins.pyi");
+    self._JS_GLOBALS_STUB_FILE_PATH = os.path.join(jac_stubs, "js_globals.pyi");
+    self._TYPING_AMBIENT_STUB_FILE_PATH = os.path.join(jac_stubs, "typing_ambient.pyi");
+    self._ENUM_STUB_FILE_PATH = os.path.join(stdlib_stubs, "enum.pyi");
 
     self.prefetch = PrefetchedTypes();
     self._flow_pending_symbols = set();
@@ -4222,9 +4496,10 @@ impl TypeEvaluator.postinit -> None {
     self.na_builtins_module = prelude[5];
     self.js_globals_module = prelude[6];
     self._prefetch_types();
+    install_builtin_extensions(self.prefetch.list_class, self.prefetch.int_class);
 }
 
-impl TypeEvaluator._init_prelude_from_catalog(catalog: any) -> list[Module] {
+impl TypeEvaluator._init_prelude_from_catalog(catalog: StubCatalog) -> list[Module] {
     names = (
         "builtins",
         "typing",
@@ -4245,11 +4520,11 @@ impl TypeEvaluator._init_prelude_from_catalog(catalog: any) -> list[Module] {
     }
     self.builtins_module = loaded[0];
     typing_mod = loaded[1];
-    self.prefetch.type_var_class = self._get_type_from_module(typing_mod, "TypeVar");
-    self.prefetch.param_spec_class = self._get_type_from_module(
+    self.prefetch.type_var_class = self._get_class_from_module(typing_mod, "TypeVar");
+    self.prefetch.param_spec_class = self._get_class_from_module(
         typing_mod, "ParamSpec"
     );
-    self.prefetch.type_var_tuple_class = self._get_type_from_module(
+    self.prefetch.type_var_tuple_class = self._get_class_from_module(
         typing_mod, "TypeVarTuple"
     );
     self.ambient_typing_names_by_module = catalog.ambient_typing_names();
@@ -4257,15 +4532,16 @@ impl TypeEvaluator._init_prelude_from_catalog(catalog: any) -> list[Module] {
 }
 
 impl TypeEvaluator._init_prelude_from_sources -> list[Module] {
+    import from jaclang.compiler.frontend.module_facts { ModuleFacts }
     typing_mod = self._load_stub_module(self._TYPING_STUB_FILE_PATH);
     types_mod = self._load_stub_module(self._TYPES_STUB_FILE_PATH);
     enum_mod = self._load_stub_module(self._ENUM_STUB_FILE_PATH);
 
-    self.prefetch.type_var_class = self._get_type_from_module(typing_mod, "TypeVar");
-    self.prefetch.param_spec_class = self._get_type_from_module(
+    self.prefetch.type_var_class = self._get_class_from_module(typing_mod, "TypeVar");
+    self.prefetch.param_spec_class = self._get_class_from_module(
         typing_mod, "ParamSpec"
     );
-    self.prefetch.type_var_tuple_class = self._get_type_from_module(
+    self.prefetch.type_var_tuple_class = self._get_class_from_module(
         typing_mod, "TypeVarTuple"
     );
     builtins_mod = self._load_stub_module(self._BUILTINS_STUB_FILE_PATH);
@@ -4275,7 +4551,7 @@ impl TypeEvaluator._init_prelude_from_sources -> list[Module] {
     na_builtins_mod = self._load_stub_module(self._NA_BUILTINS_STUB_FILE_PATH);
     js_globals_mod = self._load_stub_module(self._JS_GLOBALS_STUB_FILE_PATH);
 
-    jac_allowed = self._read_dunder_all(self._JAC_BUILTINS_STUB_FILE_PATH);
+    jac_allowed = ModuleFacts.literal_exports(jac_builtins_mod);
     for (name, sym) in jac_builtins_mod.names_in_scope.items() {
         if jac_allowed is not None and name not in jac_allowed {
             continue;
@@ -4289,7 +4565,7 @@ impl TypeEvaluator._init_prelude_from_sources -> list[Module] {
     builtin_overrides_module = self._load_stub_module(
         self._BUILTIN_OVERRIDES_STUB_FILE_PATH
     );
-    overrides_allowed = self._read_dunder_all(self._BUILTIN_OVERRIDES_STUB_FILE_PATH);
+    overrides_allowed = ModuleFacts.literal_exports(builtin_overrides_module);
     for (name, sym) in builtin_overrides_module.names_in_scope.items() {
         if overrides_allowed is not None and name not in overrides_allowed {
             continue;
@@ -4304,9 +4580,8 @@ impl TypeEvaluator._init_prelude_from_sources -> list[Module] {
         }
     }
 
-    raw_groups = self._read_ambient_imports_by_module(
-        self._TYPING_AMBIENT_STUB_FILE_PATH
-    );
+    ambient_mod = self._load_stub_module(self._TYPING_AMBIENT_STUB_FILE_PATH);
+    raw_groups = ModuleFacts.exported_import_names(ambient_mod);
     typing_ambient_flat: set[str] = set();
     for names in raw_groups.values() {
         typing_ambient_flat = typing_ambient_flat | names;
@@ -4379,7 +4654,9 @@ impl TypeEvaluator.get_narrowed_type(
         return None;
     }
     symbol_type = self.get_type_of_symbol(symbol);
-    if not isinstance(symbol_type, (UnionType, ClassType, UnknownType, AnyType)) {
+    if not isinstance(
+        symbol_type, (UnionType, ClassType, FunctionType, UnknownType, AnyType)
+    ) {
         return None;
     }
     self._flow_pending_symbols.add(sym_id);
@@ -4402,7 +4679,7 @@ impl TypeEvaluator.get_narrowed_type_for_expr(
 ) -> TypeBase | None {
     import from jaclang.compiler.types.type_evaluator { NarrowingTarget }
     import from jaclang.compiler.symbol_utils { reference_key_deps }
-    if not isinstance(declared_type, (UnionType, ClassType)) {
+    if not isinstance(declared_type, (UnionType, ClassType, FunctionType)) {
         return None;
     }
     key = self.create_key_for_reference(expr);
@@ -4441,7 +4718,7 @@ impl TypeEvaluator._node_encloses(outer: UniNode, inner: UniNode) -> bool {
 }
 
 impl TypeEvaluator._get_type_from_flow_node(
-    target: NarrowingTarget, flow_node: UniCFGNode, visited: set
+    target: NarrowingTarget, flow_node: UniCFGNode, visited: set[int]
 ) -> TypeBase | None {
     import from jaclang.compiler.types.type_evaluator { NarrowingTarget }
     key = target.key;
@@ -4631,7 +4908,9 @@ impl TypeEvaluator._get_type_from_flow_node(
                 narrowed_from_assignment: TypeBase | None = None;
                 assigned_type: TypeBase | None = None;
                 if flat_target_matched {
-                    assigned_type = self.get_type_of_expression(pred.value);
+                    assigned_type = self.get_type_of_expression(
+                        pred.value, expected_type=target.declared_type
+                    );
                 } elif destructure_path is not None and len(destructure_path) > 0 {
                     assigned_type = self._extract_tuple_element_type_path(
                         self.get_type_of_expression(pred.value), destructure_path
@@ -4642,6 +4921,7 @@ impl TypeEvaluator._get_type_from_flow_node(
                     and not isinstance(assigned_type, UnknownType)
                 ) {
                     declared_type = target.declared_type;
+                    assigned_type = self._widen_literal_for_declaration(assigned_type);
 
                     _decl_extern = (
                         isinstance(declared_type, ClassType)
@@ -4715,7 +4995,7 @@ impl TypeEvaluator._get_type_from_flow_node(
             and self._loop_body_writes_target(pred, target)
             and not self._node_encloses(pred, flow_node)
         );
-        if _after_if_write {
+        if _after_if_write and isinstance(pred, IfStmt) {
             exit_t = self._if_exit_type(target, pred, pred_narrowed, set());
             if exit_t is not None {
                 incoming_types.append(exit_t);
@@ -4759,7 +5039,10 @@ impl TypeEvaluator._get_type_from_flow_node(
 }
 
 impl TypeEvaluator._if_exit_type(
-    target: NarrowingTarget, stmt: IfStmt, entry_type: TypeBase | None, visited: set
+    target: NarrowingTarget,
+    stmt: IfStmt,
+    entry_type: TypeBase | None,
+    visited: set[int]
 ) -> TypeBase | None {
     import from jaclang.compiler.types.type_evaluator { NarrowingTarget }
     arm_types: list[TypeBase] = [];
@@ -4889,9 +5172,8 @@ impl TypeEvaluator._classify_edge(pred: IfStmt, succ: UniCFGNode) -> str {
     return "unconditional";
 }
 
-
 impl TypeEvaluator.create_key_for_reference(expr: Expr) -> str | None {
-    if isinstance(expr, AtomUnit) and expr.value {
+    if isinstance(expr, AtomUnit) and isinstance(expr.value, Expr) {
         return self.create_key_for_reference(expr.value);
     }
     if isinstance(expr, Name) {
@@ -4940,9 +5222,12 @@ impl TypeEvaluator.classify_condition(condition: Expr) -> ConditionInfo | None {
     import from jaclang.compiler.types.type_evaluator { ConditionInfo, NarrowingKind }
 
     if isinstance_info := self._extract_isinstance_info(condition) {
-        (key, narrow_type) = isinstance_info;
+        (key, narrow_type, exact) = isinstance_info;
         return ConditionInfo(
-            kind=NarrowingKind.ISINSTANCE, key=key, narrow_type=narrow_type
+            kind=NarrowingKind.ISINSTANCE,
+            key=key,
+            narrow_type=narrow_type,
+            narrows_on_false=exact
         );
     }
 
@@ -4987,22 +5272,52 @@ impl TypeEvaluator.classify_condition(condition: Expr) -> ConditionInfo | None {
         and len(condition.rights) == 1
     ) {
         left_key = self.create_key_for_reference(condition.left);
-        right_expr = condition.rights[0];
-        if left_key is not None
-            and isinstance(right_expr, (String, Int, Float, Bool)) {
-            literal_type = self.get_type_of_expression(right_expr);
-            op_name = condition.ops[0].name;
-            if op_name == Tok.EE {
+        op_name = condition.ops[0].name;
+        if left_key is not None and op_name in (Tok.EE, Tok.NE) {
+            literal_type = self._extract_literal_operand_type(condition.rights[0]);
+            if literal_type is not None {
                 return ConditionInfo(
-                    kind=NarrowingKind.LITERAL_EQ,
+                    kind=(
+                        NarrowingKind.LITERAL_EQ
+                            if op_name == Tok.EE
+                            else NarrowingKind.LITERAL_NE
+                    ),
                     key=left_key,
                     narrow_type=literal_type
                 );
-            } elif op_name == Tok.NE {
+            }
+        }
+        container = condition.rights[0];
+        if left_key is not None
+            and op_name in (Tok.KW_IN, Tok.KW_NIN)
+            and isinstance(container, (TupleVal, ListVal))
+            and container.values {
+            elem_types: list[TypeBase] = [];
+            for elem in container.values {
+                elem_type = (
+                    self._extract_literal_operand_type(elem)
+                        if isinstance(elem, Expr)
+                        else None
+                );
+                if elem_type is None {
+                    elem_types = [];
+                    break;
+                }
+                elem_types.append(elem_type);
+            }
+            if elem_types {
                 return ConditionInfo(
-                    kind=NarrowingKind.LITERAL_NE,
+                    kind=(
+                        NarrowingKind.MEMBERSHIP_IN
+                            if op_name == Tok.KW_IN
+                            else NarrowingKind.MEMBERSHIP_NOT_IN
+                    ),
                     key=left_key,
-                    narrow_type=literal_type
+                    narrow_type=(
+                        elem_types[0]
+                            if len(elem_types) == 1
+                            else UnionType(types=elem_types)
+                    )
                 );
             }
         }
@@ -5025,7 +5340,6 @@ impl TypeEvaluator.classify_condition(condition: Expr) -> ConditionInfo | None {
     }
     return None;
 }
-
 
 impl TypeEvaluator._find_predicate_for(
     target: NarrowingTarget, condition: Expr
@@ -5090,13 +5404,13 @@ impl TypeEvaluator._find_predicate_for(
                 } else {
                     most_specific = positive_preds[0];
                     for pred in positive_preds[1:] {
-                        if (
-                            isinstance(pred.narrow_type, ClassType)
-                            and isinstance(most_specific.narrow_type, ClassType)
-                            and self.is_sub_class(
-                                most_specific.narrow_type, pred.narrow_type
-                            )
-                        ) {
+                        intersection = self._narrow_member_to(
+                            most_specific.narrow_type, pred.narrow_type
+                        );
+                        if intersection is not None
+                            and self._type_matches_isinstance(
+                                pred.narrow_type, intersection
+                            ) {
                             most_specific = pred;
                         }
                     }
@@ -5178,27 +5492,31 @@ impl TypeEvaluator._find_predicate_for(
     info = self.classify_condition(condition);
     if info is not None and info.key == key {
         match info.kind {
-            case NarrowingKind.ISINSTANCE:
-                return NarrowingPredicate(
-                    key=key, narrow_type=info.narrow_type, is_inverted=False
-                );
-
-            case NarrowingKind.TYPE_IS:
-                return NarrowingPredicate(
-                    key=key, narrow_type=info.narrow_type, is_inverted=False
-                );
-
-            case NarrowingKind.TYPE_GUARD:
+            case NarrowingKind.ISINSTANCE
+                | NarrowingKind.TYPE_IS
+                | NarrowingKind.TYPE_GUARD:
+                narrowed_type = info.narrow_type;
+                if narrowed_type is None {
+                    return None;
+                }
                 return NarrowingPredicate(
                     key=key,
-                    narrow_type=info.narrow_type,
+                    narrow_type=narrowed_type,
                     is_inverted=False,
-                    narrows_on_false=False,
-                    replaces_declared=True
+                    narrows_on_false=info.narrows_on_false
+                        and info.kind != NarrowingKind.TYPE_GUARD,
+                    replaces_declared=info.kind == NarrowingKind.TYPE_GUARD
                 );
 
             case NarrowingKind.CALLABLE:
-                expr_type = self.get_type_of_expression(condition.params[0]);
+                if not isinstance(condition, FuncCall) or not condition.params {
+                    return None;
+                }
+                argument = condition.params[0];
+                if not isinstance(argument, Expr) {
+                    return None;
+                }
+                expr_type = self.get_type_of_expression(argument);
                 callable_type = self._filter_union_to_callables(expr_type);
                 if not isinstance(callable_type, NeverType) {
                     return NarrowingPredicate(
@@ -5234,14 +5552,28 @@ impl TypeEvaluator._find_predicate_for(
                     );
                 }
 
-            case NarrowingKind.LITERAL_EQ:
+            case NarrowingKind.LITERAL_EQ | NarrowingKind.MEMBERSHIP_IN:
+                literal_type = info.narrow_type;
+                if literal_type is None {
+                    return None;
+                }
                 return NarrowingPredicate(
-                    key=key, narrow_type=info.narrow_type, is_inverted=False
+                    key=key,
+                    narrow_type=literal_type,
+                    is_inverted=False,
+                    narrows_on_false=False
                 );
 
-            case NarrowingKind.LITERAL_NE:
+            case NarrowingKind.LITERAL_NE | NarrowingKind.MEMBERSHIP_NOT_IN:
+                literal_type = info.narrow_type;
+                if literal_type is None {
+                    return None;
+                }
                 return NarrowingPredicate(
-                    key=key, narrow_type=info.narrow_type, is_inverted=True
+                    key=key,
+                    narrow_type=literal_type,
+                    is_inverted=True,
+                    narrows_on_true=False
                 );
 
             case NarrowingKind.TRUTHINESS:
@@ -5290,6 +5622,10 @@ impl TypeEvaluator._narrowing_equivalent(
         return False;
     }
     if left.replaces_declared != right.replaces_declared {
+        return False;
+    }
+    if left.narrows_on_true != right.narrows_on_true
+        or left.narrows_on_false != right.narrows_on_false {
         return False;
     }
     if left.attr_name is not None {
@@ -5391,7 +5727,7 @@ impl TypeEvaluator._specialize_narrow_from_base(
         if not isinstance(m, ClassType) {
             continue;
         }
-        args = m.private.type_args or [];
+        args: list[TypeBase] = m.private.type_args or [];
         if len(args) != want or m.shared.same_class(narrow_type.shared) {
             continue;
         }
@@ -5454,6 +5790,17 @@ impl TypeEvaluator._narrow_member_to(
         }
         return self._union_narrowed_types(related);
     }
+    if isinstance(narrow_type, ClassType) {
+        if isinstance(member, FunctionType)
+            and self._lookup_class_member(narrow_type, "__call__") is not None {
+            return narrow_type;
+        }
+        if isinstance(member, ClassType)
+            and member.is_builtin("type")
+            and narrow_type.is_instantiable_class() {
+            return narrow_type;
+        }
+    }
     if self._type_matches_isinstance(member, narrow_type) {
         return member;
     }
@@ -5479,7 +5826,10 @@ impl TypeEvaluator._type_matches_isinstance(
     }
 
     if isinstance(t, ClassType) and isinstance(target_type, ClassType) {
-        if t.shared == target_type.shared {
+        if target_type.is_builtin("type") and not target_type.is_instantiable_class() {
+            return t.is_instantiable_class() or t.is_builtin("type");
+        }
+        if t.shared.same_class(target_type.shared) {
             return True;
         }
 
@@ -5531,7 +5881,7 @@ impl TypeEvaluator._filter_union_for_hasattr(
     }
 }
 
-impl TypeEvaluator._union_narrowed_types(types_list: list) -> TypeBase {
+impl TypeEvaluator._union_narrowed_types(types_list: list[TypeBase]) -> TypeBase {
     if len(types_list) == 0 {
         return NeverType();
     }
@@ -5563,52 +5913,16 @@ impl TypeEvaluator._union_narrowed_types(types_list: list) -> TypeBase {
 impl TypeEvaluator.exclude_type_from_union(
     original: TypeBase, to_exclude: TypeBase
 ) -> TypeBase {
-    if isinstance(original, UnionType) and original.types {
-        exclude_shareds: set = set();
-        exclude_ids: set = set();
-        to_exclude_list: list[TypeBase] = [];
-        if isinstance(to_exclude, UnionType) and to_exclude.types {
-            to_exclude_list = to_exclude.types;
-        } else {
-            to_exclude_list = [to_exclude];
-        }
-        for excl_t in to_exclude_list {
-            if isinstance(excl_t, ClassType) {
-                exclude_shareds.add(excl_t.shared.canonical_key() or id(excl_t.shared));
-            } else {
-                exclude_ids.add(id(excl_t));
-            }
-        }
-        remaining: list[TypeBase] = [];
-        for t in original.types {
-            if isinstance(t, ClassType) {
-                if (t.shared.canonical_key() or id(t.shared)) in exclude_shareds {
-                    continue;
-                }
-            } elif id(t) in exclude_ids {
-                continue;
-            }
-            remaining.append(t);
-        }
-        if len(remaining) == 0 {
-            return NeverType();
-        } elif len(remaining) == 1 {
-            return remaining[0];
-        } else {
-            return UnionType(types=remaining);
-        }
+    members = original.types if isinstance(original, UnionType) else [original];
+    remaining = [
+        member
+        for member in members
+        if not self._type_matches_isinstance(member, to_exclude)
+    ];
+    if len(remaining) == len(members) {
+        return original;
     }
-
-    if isinstance(original, ClassType)
-        and isinstance(to_exclude, ClassType)
-        and original.shared.same_class(to_exclude.shared) {
-        return NeverType();
-    }
-
-    if original is to_exclude {
-        return NeverType();
-    }
-    return original;
+    return self._union_narrowed_types(remaining);
 }
 
 impl TypeEvaluator._get_type_from_match_pattern(
@@ -5656,7 +5970,7 @@ impl TypeEvaluator._union_contains_none(union_type: TypeBase) -> bool {
     }
     none_shared = self.prefetch.none_type_class.shared;
     for t in union_type.types {
-        if isinstance(t, ClassType) and t.shared == none_shared {
+        if isinstance(t, ClassType) and t.shared.same_class(none_shared) {
             return True;
         }
     }
@@ -5665,86 +5979,123 @@ impl TypeEvaluator._union_contains_none(union_type: TypeBase) -> bool {
 
 impl TypeEvaluator._extract_isinstance_info(
     condition: Expr
-) -> tuple[str, TypeBase] | None {
+) -> tuple[str, TypeBase, bool] | None {
     if not isinstance(condition, FuncCall) {
         return None;
     }
     if not isinstance(condition.target, Name)
-        or condition.target.value != "isinstance" {
+        or condition.target.value not in ("isinstance", "issubclass") {
         return None;
     }
     if not condition.params or len(condition.params) != 2 {
         return None;
     }
 
-    narrowing_key = self.create_key_for_reference(condition.params[0]);
+    argument = condition.params[0];
+    if not isinstance(argument, Expr) {
+        return None;
+    }
+    narrowing_key = self.create_key_for_reference(argument);
     if narrowing_key is None {
         return None;
     }
 
     type_arg = condition.params[1];
-
-    if isinstance(type_arg, TupleVal) {
-        type_list: list[TypeBase] = [];
-        for t_expr in type_arg.values {
-            type_list.append(
-                self._convert_to_instance(self.get_type_of_expression(t_expr))
-            );
-        }
-        if not type_list {
-            return None;
-        }
-        narrowed = type_list[0] if len(type_list) == 1 else UnionType(types=type_list);
-        return (narrowing_key, narrowed);
-    }
-
-    arg_type = self.get_type_of_expression(type_arg);
-    named_alts = self._isinstance_tuple_alternatives(arg_type);
-    if named_alts is not None {
-        if not named_alts {
-            return None;
-        }
-        return (
-            narrowing_key,
-            named_alts[0] if len(named_alts) == 1 else UnionType(types=named_alts)
-        );
-    }
-
-    return (narrowing_key, self._convert_to_instance(arg_type));
-}
-
-impl TypeEvaluator._isinstance_tuple_alternatives(
-    arg_type: TypeBase
-) -> list[TypeBase] | None {
-    if (
-        not isinstance(arg_type, ClassType)
-        or not arg_type.is_instance()
-        or not self.prefetch
-        or self.prefetch.tuple_class is None
-        or arg_type.shared != self.prefetch.tuple_class.shared
-    ) {
+    if not isinstance(type_arg, Expr) {
         return None;
     }
-    alts: list[TypeBase] = [];
-    for elem in (arg_type.private.type_args or []) {
-        if not isinstance(elem, ClassType) {
-            return [];
-        }
-        if elem.is_instantiable_class() {
-            alts.append(self._convert_to_instance(elem));
-            continue;
-        }
-        if (
-            self.prefetch.type_class is not None
-            and elem.shared == self.prefetch.type_class.shared
-            and elem.private.type_args
-        ) {
-            alts.append(self._convert_to_instance(elem.private.type_args[0]));
-            continue;
-        }
-        return [];
+
+    alternatives = self._isinstance_class_alternatives(
+        self.get_type_of_expression(type_arg)
+    );
+    if not alternatives {
+        return None;
     }
-    return alts;
+    if condition.target.value == "issubclass" {
+        if not all(
+            isinstance(alternative, ClassType) for alternative in alternatives
+        ) {
+            return None;
+        }
+        alternatives = [
+            alternative.clone_as_class()
+            for alternative in alternatives
+            if isinstance(alternative, ClassType)
+        ];
+    }
+    return (
+        narrowing_key,
+        alternatives[0] if len(alternatives) == 1 else UnionType(types=alternatives),
+        self._isinstance_classinfo_is_exact(type_arg)
+    );
+}
+
+impl TypeEvaluator._isinstance_classinfo_is_exact(expr: Expr) -> bool {
+    if isinstance(expr, AtomUnit) and isinstance(expr.value, Expr) {
+        return self._isinstance_classinfo_is_exact(expr.value);
+    }
+    if isinstance(expr, TupleVal) {
+        return all(
+            isinstance(value, Expr) and self._isinstance_classinfo_is_exact(value)
+            for value in expr.values
+        );
+    }
+    if isinstance(expr, BinaryExpr)
+        and isinstance(expr.op, Token)
+        and expr.op.value == "|" {
+        return self._isinstance_classinfo_is_exact(expr.left)
+            and self._isinstance_classinfo_is_exact(expr.right);
+    }
+    ty = self.get_type_of_expression(expr);
+    return isinstance(ty, ClassType) and ty.is_instantiable_class();
+}
+
+impl TypeEvaluator._isinstance_class_alternatives(
+    arg_type: TypeBase
+) -> list[TypeBase] | None {
+    if isinstance(arg_type, (AnyType, UnknownType)) {
+        return [arg_type];
+    }
+    if isinstance(arg_type, UnionType) {
+        alternatives: list[TypeBase] = [];
+        for member in arg_type.types {
+            resolved = [self._convert_to_instance(member)]
+                if isinstance(member, ClassType)
+                    and not self._is_type_subscript(member)
+                    and not (member.is_builtin("tuple") and member.private.type_args)
+                else self._isinstance_class_alternatives(member);
+            if resolved is None {
+                return None;
+            }
+            alternatives.extend(resolved);
+        }
+        return alternatives;
+    }
+    if not isinstance(arg_type, ClassType) {
+        return None;
+    }
+    if arg_type.is_instantiable_class() {
+        return [self._convert_to_instance(arg_type)];
+    }
+    if self._is_type_subscript(arg_type) and arg_type.private.type_args {
+        return [self._convert_to_instance(arg_type.private.type_args[0])];
+    }
+    if not arg_type.is_builtin("tuple") {
+        return [self._convert_to_instance(arg_type)];
+    }
+    elements = arg_type.private.type_args;
+    if self._tuple_has_variadic_arg(arg_type) {
+        elements = elements[:1];
+    }
+    alternatives: list[TypeBase] = [];
+    for element in elements {
+        resolved = self._isinstance_class_alternatives(element);
+        if resolved is None {
+            return None;
+        }
+        alternatives.extend(resolved);
+    }
+    return alternatives;
 }
 
 impl TypeEvaluator._create_type_guard_type(
@@ -5860,7 +6211,20 @@ impl TypeEvaluator._extract_callable_info(condition: Expr) -> str | None {
     if not condition.params or len(condition.params) != 1 {
         return None;
     }
-    return self.create_key_for_reference(condition.params[0]);
+    argument = condition.params[0];
+    return self.create_key_for_reference(argument)
+        if isinstance(argument, Expr)
+        else None;
+}
+
+impl TypeEvaluator._extract_literal_operand_type(operand: Expr) -> TypeBase | None {
+    if isinstance(operand, AtomUnit) and isinstance(operand.value, Expr) {
+        return self._extract_literal_operand_type(operand.value);
+    }
+    if isinstance(operand, Float) {
+        return self.get_type_of_expression(operand);
+    }
+    return self._literal_type_from_expr(operand);
 }
 
 impl TypeEvaluator._extract_hasattr_info(condition: Expr) -> tuple[str, str] | None {
@@ -5873,7 +6237,11 @@ impl TypeEvaluator._extract_hasattr_info(condition: Expr) -> tuple[str, str] | N
     if not condition.params or len(condition.params) != 2 {
         return None;
     }
-    narrowing_key = self.create_key_for_reference(condition.params[0]);
+    argument = condition.params[0];
+    if not isinstance(argument, Expr) {
+        return None;
+    }
+    narrowing_key = self.create_key_for_reference(argument);
     if narrowing_key is None {
         return None;
     }
@@ -5905,7 +6273,7 @@ impl TypeEvaluator._is_callable_type(t: TypeBase) -> bool {
         if (
             self.prefetch
             and self.prefetch.callable_class
-            and t.shared == self.prefetch.callable_class.shared
+            and t.shared.same_class(self.prefetch.callable_class.shared)
         ) {
             return True;
         }
@@ -5943,16 +6311,17 @@ impl TypeEvaluator._filter_union_to_callables(union_type: TypeBase) -> TypeBase 
 impl TypeEvaluator._is_type_alias_annotation(
     annotation_type: TypeBase, tag_expr: Expr
 ) -> bool {
-    if not self.prefetch or not self.prefetch.callable_class {
-        return False;
-    }
-
     if self._type_alias_tag_ident(tag_expr) != "TypeAlias" {
         return False;
     }
+    if self._is_typing_special_form(annotation_type, "_SpecialForm") {
+        return True;
+    }
     is_special_form = (
         isinstance(annotation_type, ClassType)
-        and annotation_type.shared == self.prefetch.callable_class.shared
+        and self.prefetch is not None
+        and self.prefetch.callable_class is not None
+        and annotation_type.shared.same_class(self.prefetch.callable_class.shared)
     );
     return is_special_form or isinstance(annotation_type, UnknownType);
 }
@@ -5969,6 +6338,7 @@ impl TypeEvaluator._type_alias_tag_ident(tag_expr: Expr) -> (str | None) {
             if mod_item is not None and isinstance(mod_item.name, Name) {
                 return mod_item.name.value;
             }
+            return sym.sym_name;
         }
         return tag_expr.value;
     }
@@ -6012,34 +6382,18 @@ impl TypeEvaluator._distinct_brand_mismatch(
 }
 
 impl TypeEvaluator._resolve_type_alias_rhs(value: Expr) -> TypeBase {
-    if isinstance(value, String) and isinstance(value.lit_value, str) {
+    if isinstance(value, (String, MultiString)) {
+        type_str = literal_string_value(value);
+        if type_str is None {
+            return UnknownType();
+        }
         resolved = self._try_resolve_forward_ref(value);
         if resolved is not None {
             return resolved;
         }
-
         scope = value.find_parent_of_type(UniScopeNode);
         if scope {
-            parsed = self._resolve_string_type_expr(value.lit_value, scope);
-            if parsed is not None {
-                return parsed;
-            }
-        }
-        return UnknownType();
-    }
-    if (
-        isinstance(value, MultiString)
-        and value.strings
-        and isinstance(value.strings[0], String)
-        and isinstance(value.strings[0].lit_value, str)
-    ) {
-        resolved = self._try_resolve_forward_ref(value.strings[0]);
-        if resolved is not None {
-            return resolved;
-        }
-        scope = value.find_parent_of_type(UniScopeNode);
-        if scope {
-            parsed = self._resolve_string_type_expr(value.strings[0].lit_value, scope);
+            parsed = self._resolve_string_type_expr(type_str, scope);
             if parsed is not None {
                 return parsed;
             }
@@ -6049,15 +6403,13 @@ impl TypeEvaluator._resolve_type_alias_rhs(value: Expr) -> TypeBase {
 
     mod = value.find_parent_of_type(Module);
     is_stub = mod is not None and mod.is_raised_from_py;
-    if is_stub and self._pass is not None {
-        pass_ref = self._pass;
-        errors_before = len(pass_ref.errors_had);
-        prog_errors_before = len(pass_ref.prog.errors_had);
-        result = self.get_type_of_expression(value);
-
-        del pass_ref.errors_had[errors_before:];
-        del pass_ref.prog.errors_had[prog_errors_before:];
-        return result;
+    if is_stub {
+        self._diagnostic_suppression_depth += 1;
+        try {
+            return self.get_type_of_expression(value);
+        } finally {
+            self._diagnostic_suppression_depth -= 1;
+        }
     }
     return self.get_type_of_expression(value);
 }
@@ -6065,144 +6417,47 @@ impl TypeEvaluator._resolve_type_alias_rhs(value: Expr) -> TypeBase {
 impl TypeEvaluator._resolve_string_type_expr(
     type_str: str, scope: UniScopeNode
 ) -> TypeBase | None {
-    import from ast { parse as _parse }
+    import from jaclang.compiler.frontend.parser.parser { parse_expression }
+    import from jaclang.compiler.frontend.unitree { SubTag }
+    (expression, had_error, _parser_diags, _lex_diags) = parse_expression(
+        type_str, scope.loc.mod_path
+    );
+
+    owned_nodes = expression.flatten();
+    annotation = SubTag(tag=expression, kid=[expression]);
+    owned_nodes.append(annotation);
+    self._diagnostic_suppression_depth += 1;
     try {
-        tree = _parse(type_str, mode='eval');
-    } except Exception {
-        return None;
-    }
-    try {
-        return self._resolve_py_ast_type_node(tree.body, scope);
-    } except Exception {
-        return None;
-    }
-}
-
-impl TypeEvaluator._resolve_py_ast_type_node(
-    ast_node: object, scope: UniScopeNode
-) -> TypeBase | None {
-    import from ast { Name as _N }
-    import from ast { Constant as _C }
-    import from ast { BinOp as _BO }
-    import from ast { BitOr as _BOR }
-    import from ast { Subscript as _SS }
-    import from ast { Tuple as _TU }
-    import from ast { List as _LI }
-    import from ast { Attribute as _AT }
-
-    if isinstance(ast_node, _N) {
-        sym = lookup_symtab(scope, ast_node.id, self.builtins_module);
-        if not sym {
+        if had_error {
             return None;
         }
-        sym = self.resolve_imported_symbols(sym);
-        return self.get_type_of_symbol(sym);
+        annotation.set_parent(scope);
+        result = self._type_from_union_annotation_arg(expression);
+        return None if isinstance(result, UnknownType) else result;
+    } finally {
+        self._diagnostic_suppression_depth -= 1;
+        for owned in owned_nodes {
+            del [edge owned<-->];
+        }
     }
-
-    if isinstance(ast_node, _C) and ast_node.value is None {
-        if self.prefetch and self.prefetch.none_type_class {
-            return self.prefetch.none_type_class;
-        }
-        return None;
-    }
-
-    if isinstance(ast_node, _BO) and isinstance(ast_node.op, _BOR) {
-        left = self._resolve_py_ast_type_node(ast_node.left, scope);
-        right = self._resolve_py_ast_type_node(ast_node.right, scope);
-        if left is None or right is None {
-            return None;
-        }
-        left_types = left.types if isinstance(left, UnionType) else [left];
-        right_types = right.types if isinstance(right, UnionType) else [right];
-        return UnionType(types=left_types + right_types);
-    }
-
-    if isinstance(ast_node, _SS) {
-        base = self._resolve_py_ast_type_node(ast_node.value, scope);
-        if base is None {
-            return None;
-        }
-
-        if isinstance(ast_node.value, _N) and ast_node.value.id == "Callable" {
-            if isinstance(ast_node.slice, _TU) and len(ast_node.slice.elts) == 2 {
-                params_ast = ast_node.slice.elts[0];
-                ret_ast = ast_node.slice.elts[1];
-                param_types: list[TypeBase] = [];
-                if isinstance(params_ast, _LI) {
-                    for p in params_ast.elts {
-                        pt = self._resolve_py_ast_type_node(p, scope);
-                        if pt is None {
-                            return None;
-                        }
-                        param_types.append(self._convert_to_instance(pt));
-                    }
-                }
-                ret_type = self._resolve_py_ast_type_node(ret_ast, scope);
-                if ret_type is None {
-                    return None;
-                }
-                return create_callable_type(
-                    param_types, self._convert_to_instance(ret_type)
-                );
-            }
-        }
-
-        type_args: list[TypeBase] = [];
-        slice_ast = ast_node.slice;
-        if isinstance(slice_ast, _TU) {
-            for elt in slice_ast.elts {
-                arg = self._resolve_py_ast_type_node(elt, scope);
-                if arg is None {
-                    return None;
-                }
-                type_args.append(arg);
-            }
-        } else {
-            arg = self._resolve_py_ast_type_node(slice_ast, scope);
-            if arg is None {
-                return None;
-            }
-            type_args.append(arg);
-        }
-        if isinstance(base, ClassType) {
-            result = base.clone_as_instance();
-            result.private.type_args = type_args;
-            return result;
-        }
-        return base;
-    }
-
-    if isinstance(ast_node, _AT) {
-        base = self._resolve_py_ast_type_node(ast_node.value, scope);
-        if (
-            base is not None
-            and isinstance(base, ModuleType)
-            and base.symbol_table is not None
-        ) {
-            member = base.symbol_table.lookup(ast_node.attr);
-            if member is None
-                and (inner := collect_member_syms(base.symbol_table, ast_node.attr)) {
-                member = inner[0];
-            }
-            if member {
-                return self.get_type_of_symbol(member);
-            }
-        }
-        return None;
-    }
-    return None;
 }
 
 impl TypeEvaluator._enum_member_attr_type(
     base_type: EnumMemberType, member_name: str
 ) -> (TypeBase | None) {
     if member_name in ('name', '_name_') {
+        if self.prefetch.str_class is None {
+            return None;
+        }
         return self._convert_to_instance(self.prefetch.str_class);
     }
     if member_name in ('value', '_value_') {
         return self._convert_to_instance(base_type.get_value_type());
     }
     enum_cls = base_type.enum_class;
+    if enum_cls is None {
+        return None;
+    }
     if enum_cls.shared.enum_members and member_name in enum_cls.shared.enum_members {
         return EnumMemberType(
             enum_class=enum_cls,
@@ -6229,9 +6484,36 @@ impl TypeEvaluator._intern_shared(shared: ClassDetailsShared) -> ClassDetailsSha
     src = shared.symbol_table?.loc?.orig_src;
     key = (site, src.hash if src is not None else "");
     found = self._shared_intern.get(key);
-    if found is not None {
-        return found;
+    if found is None {
+        self._shared_intern[key] = shared;
+        return shared;
     }
-    self._shared_intern[key] = shared;
-    return shared;
+    if found.symbol_table is not shared.symbol_table
+        and self._scope_is_current(shared.symbol_table) {
+        found.symbol_table = shared.symbol_table;
+    }
+    fresh_bases = [
+        b
+        for b in shared.base_classes
+        if isinstance(b, ClassType)
+    ];
+    known_bases = [
+        b
+        for b in found.base_classes
+        if isinstance(b, ClassType)
+    ];
+    if fresh_bases and not known_bases {
+        found.base_classes = shared.base_classes;
+        found._mro_sig = [];
+        found._provisional = shared._provisional;
+    }
+    return found;
+}
+
+impl TypeEvaluator._scope_is_current(scope: UniScopeNode) -> bool {
+    mod = scope if isinstance(scope, Module) else scope.find_parent_of_type(Module);
+    if mod is None or mod.loc is None or not mod.loc.mod_path {
+        return False;
+    }
+    return self.program.find_module(self.program.hub_key(mod.loc.mod_path)) is mod;
 }

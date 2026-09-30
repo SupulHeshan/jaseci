@@ -1,13 +1,18 @@
+import from jaclang.compiler.frontend.roles { Kid }
 import os;
+import hashlib;
 import json;
 import struct;
 import from jaclang.compiler.frontend.unitree {
     Ability,
     Archetype,
+    Assignment,
+    AtomTrailer,
     ElseIf,
     DictCompr,
     ElseStmt,
     Enum,
+    FuncSignature,
     HasVar,
     IfStmt,
     InnerCompr,
@@ -16,6 +21,8 @@ import from jaclang.compiler.frontend.unitree {
     KWPair,
     Module,
     ModulePath,
+    Name,
+    ParamVar,
     Symbol,
     UniScopeNode
 }
@@ -24,17 +31,19 @@ import from jaclang.compiler.types.types {
     AnyType,
     ClassDetailsShared,
     ClassType,
+    EnumMemberInfo,
     EnumMemberType,
     FunctionType,
     ModuleType,
     NeverType,
     OverloadedType,
+    Parameter,
     TypeBase,
     TypeVarType,
     UnionType,
     UnknownType
 }
-import from jaclang.compiler.frontend.constant { BindingKind }
+import from jaclang.compiler.frontend.constant { BindingKind, ImmutabilityKind }
 import from jaclang.compiler.types.stubcat.format {
     ACCESS_PRIVATE,
     ACCESS_PROTECTED,
@@ -69,11 +78,14 @@ import from jaclang.compiler.types.stubcat.format {
     SH_TYPEDDICT,
     SH_XREF,
     SYMF_DEFER,
+    SYMF_FINAL,
     SYMF_HAS_DEFAULT,
+    SYMF_INSTANCE_METHOD,
     SYMF_NA_ESCAPES,
     SYMF_NA_REGION_HANDLE,
     SYMF_NA_STACK_OK,
     SYMF_PARAM_REBOUND,
+    SYMF_READONLY,
     TV_CLASS_PARAM,
     TV_CONTRAVARIANT,
     TV_COVARIANT,
@@ -238,7 +250,7 @@ def metaclass_of_scope(scope: UniScopeNode, evaluator: any) -> (TypeBase | None)
     if not isinstance(scope, Archetype) {
         return None;
     }
-    for kid in scope.kid {
+    for kid in [scope->:Kid:->] {
         if (
             isinstance(kid, KWPair)
             and kid.key is not None
@@ -289,7 +301,8 @@ obj CatalogWriter {
         pending_syms: list[int] postinit,
         type_ids: dict[any, int] postinit,
         _ident_visiting: set[int] postinit,
-        _type_ident_memo: dict[int, any] postinit,
+        _type_ident_memo: dict[int, tuple[TypeBase, any]] postinit,
+        _canonical_paths: dict[str, str] postinit,
         types: list[TypeBase] postinit,
         pending_types: list[int] postinit,
         shared_ids: dict[any, int] postinit,
@@ -306,9 +319,11 @@ obj CatalogWriter {
         base_dir: str postinit,
         external_modules: set[any] postinit,
         boundary: (Module | None) = None,
+        path_mapper: Callable[[str], str] | None = None,
         failures: int = 0,
         evaluated: int = 0,
-        failure_log: list[str] = [];
+        failure_log: list[str] = [],
+        orphans: list[str] = [];
 
     def postinit {
         self.strings = {};
@@ -337,10 +352,20 @@ obj CatalogWriter {
         self.sym_types = {};
         self.sym_props = {};
         self.forced_scopes = set();
-        self.base_dir = os.path.realpath(self.pkg_dir);
+        self._canonical_paths = {};
+        self.base_dir = self._real_path(self.pkg_dir);
         self.external_modules = set();
         self._ident_visiting = set();
         self._type_ident_memo = {};
+    }
+
+    def _real_path(path: str) -> str {
+        found = self._canonical_paths.get(path);
+        if found is None {
+            found = os.path.realpath(path);
+            self._canonical_paths[path] = found;
+        }
+        return found;
     }
 
     def in_boundary(mod: (Module | None)) -> bool {
@@ -359,7 +384,7 @@ obj CatalogWriter {
             if not bpath or not mpath {
                 return False;
             }
-            return os.path.realpath(mpath) == os.path.realpath(bpath);
+            return self._real_path(mpath) == self._real_path(bpath);
         } except Exception {
             return False;
         }
@@ -378,7 +403,7 @@ obj CatalogWriter {
             mpath = "";
         }
         if mpath {
-            return os.path.realpath(mpath);
+            return self._real_path(mpath);
         }
         return id(mod);
     }
@@ -391,7 +416,7 @@ obj CatalogWriter {
             return id(scope);
         }
         mod = module_of(scope);
-        if mod is None or not self.in_boundary(mod) {
+        if mod is None {
             return id(scope);
         }
         loc = scope.loc;
@@ -415,7 +440,7 @@ obj CatalogWriter {
         }
         home = home_scope(sym);
         mod = module_of(home);
-        if home is None or mod is None or not self.in_boundary(mod) {
+        if home is None or mod is None {
             return id(sym);
         }
         loc = sym.decl.loc if sym.decl else None;
@@ -442,8 +467,17 @@ obj CatalogWriter {
             tab = None;
         }
         mod = module_of(tab) if tab is not None else None;
-        if tab is None or mod is None or not self.in_boundary(mod) {
+        if tab is None or mod is None {
             return id(shared);
+        }
+        if not self.in_boundary(mod) {
+            return (
+                "xref",
+                self._mod_ident(mod),
+                self.scope_dotted_path(tab),
+                shared.class_name,
+                shared.canonical_key()
+            );
         }
         return (self._scope_ident(tab), shared.class_name, );
     }
@@ -476,12 +510,12 @@ obj CatalogWriter {
         if not path {
             return "";
         }
-        real = os.path.realpath(path);
+        real = self._real_path(path);
         prefix = self.base_dir + os.sep;
         if real.startswith(prefix) {
             return real[len(prefix):].replace(os.sep, "/");
         }
-        return real;
+        return self.path_mapper(real) if self.path_mapper is not None else real;
     }
 
     def add_module(mod: Module, dotted: str) -> None {
@@ -544,12 +578,57 @@ obj CatalogWriter {
         }
     }
 
+    def _materialize_lazy_members(scope: UniScopeNode) -> None {
+        if not isinstance(scope, Archetype) {
+            return;
+        }
+        owner = scope.name_spec.sym;
+        if owner is None {
+            return;
+        }
+        cls_t: any = None;
+        try {
+            cls_t = self.evaluator.get_type_of_symbol(owner);
+        } except Exception {
+            return;
+        }
+        if not isinstance(cls_t, ClassType) {
+            return;
+        }
+        for method_name in ("init", "__post_init__") {
+            method_sym = scope.lookup(method_name, deep=False);
+            if method_sym is None or not isinstance(method_sym.decl.name_of, Ability) {
+                continue;
+            }
+            ability = method_sym.decl.name_of;
+            sig = ability.signature;
+            if isinstance(sig, FuncSignature) and sig.params {
+                for param in sig.params {
+                    if isinstance(param, ParamVar) and param.name.value != "self" {
+                        cls_t.lookup_member_symbol(param.name.value);
+                    }
+                }
+            }
+            for trailer in ability.get_all_sub_nodes(AtomTrailer) {
+                holder = trailer.parent;
+                if not isinstance(holder, Assignment)
+                    or trailer is not holder.target[0] {
+                    continue;
+                }
+                if isinstance(trailer.right, Name) {
+                    cls_t.lookup_member_symbol(trailer.right.value);
+                }
+            }
+        }
+    }
+
     def force_scope(scope: UniScopeNode) -> None {
         key = self._scope_ident(scope);
         if key in self.forced_scopes {
             return;
         }
         self.forced_scopes.add(key);
+        self._materialize_lazy_members(scope);
         members = collect_scope_members(scope);
         if isinstance(scope, Module) {
             for (name, sym) in star_import_members(scope, self.evaluator).items() {
@@ -599,6 +678,28 @@ obj CatalogWriter {
             and self.in_boundary(module_of(own_scope)) {
             self.force_scope(own_scope);
         }
+    }
+
+    def _jac_method_of(sym: Symbol) -> (Ability | None) {
+        decl = sym.decl;
+        node_ = decl.name_of if decl is not None else None;
+        if not isinstance(node_, Ability) or not node_.is_method {
+            return None;
+        }
+        if node_.is_static or node_.is_cls_method {
+            return None;
+        }
+        sig = node_.signature;
+        if isinstance(sig, FuncSignature) and sig.is_in_py_class {
+            return None;
+        }
+        for dec in (node_.decorators or ()) {
+            if isinstance(dec, Name)
+                and dec.sym_name in ("staticmethod", "classmethod") {
+                return None;
+            }
+        }
+        return node_;
     }
 
     def property_facts(sym: Symbol) -> tuple[int, int, (TypeBase | None)] {
@@ -668,7 +769,7 @@ obj CatalogWriter {
         }
         memo = self._type_ident_memo.get(tid);
         if memo is not None {
-            return memo;
+            return memo[1];
         }
         if tid in self._ident_visiting {
             return tid;
@@ -679,7 +780,7 @@ obj CatalogWriter {
         } finally {
             self._ident_visiting.discard(tid);
         }
-        self._type_ident_memo[tid] = key;
+        self._type_ident_memo[tid] = (t, key);
         return key;
     }
 
@@ -704,7 +805,7 @@ obj CatalogWriter {
                 );
             }
             if isinstance(t, FunctionType) {
-                params: list = [];
+                params: list[tuple[str, int, int, any, bool, bool, bool, bool]] = [];
                 for p in (t.parameters or []) {
                     params.append(
                         (
@@ -802,8 +903,8 @@ obj CatalogWriter {
         }
     }
 
-    def _types_ident(ts: (list | None)) -> tuple {
-        out: list = [];
+    def _types_ident(ts: (list[TypeBase] | None)) -> tuple[any, ...] {
+        out: list[any] = [];
         for x in (ts or []) {
             out.append(self._type_ident(x) if x is not None else -1);
         }
@@ -1013,9 +1114,16 @@ obj CatalogWriter {
         if self._sym_ident(sym) not in self.sym_types {
             self.force_symbol(sym);
         }
+        target = sym;
+        if sym.imported {
+            try {
+                target = self.evaluator.resolve_to_definition_symbol(sym);
+            } except Exception {}
+        }
         out = bytearray();
         put_uvar(out, self.sid(sym.sym_name));
-        put_uvar(out, self.sid(str(sym.sym_type.value)));
+
+        put_uvar(out, self.sid(str(target.sym_type.value)));
         access = ACCESS_PUBLIC;
         if sym.access.value == "private" {
             access = ACCESS_PRIVATE;
@@ -1036,11 +1144,6 @@ obj CatalogWriter {
         alias_mod = -1;
         alias_name = "";
         if sym.imported {
-            try {
-                target = self.evaluator.resolve_to_definition_symbol(sym);
-            } except Exception {
-                target = sym;
-            }
             if target is not sym {
                 target_mod = module_of(home_scope(target));
                 alias_mod = self.ref_module(target_mod);
@@ -1090,6 +1193,14 @@ obj CatalogWriter {
         }
         if sym.na_stack_ok {
             symbits |= SYMF_NA_STACK_OK;
+        }
+        if self._jac_method_of(sym) is not None {
+            symbits |= SYMF_INSTANCE_METHOD;
+        }
+        if sym.immutability is ImmutabilityKind.FINAL {
+            symbits |= SYMF_FINAL;
+        } elif sym.immutability is ImmutabilityKind.READONLY {
+            symbits |= SYMF_READONLY;
         }
         try {
             decl_node = sym.decl.name_of if sym.decl else None;
@@ -1142,7 +1253,7 @@ obj CatalogWriter {
                 tps.append(tv);
             }
             put_refs(out, self.ref_types(tps));
-            params = t.parameters or [];
+            params: list[Parameter] = t.parameters or [];
             put_uvar(out, len(params));
             for p in params {
                 put_uvar(out, self.sid(p.name or ""));
@@ -1248,11 +1359,20 @@ obj CatalogWriter {
         return bytes(out);
     }
 
+    def note_orphan(sh: ClassDetailsShared) {
+        key = sh.canonical_key();
+        site = f"{key[0]}:{key[1]}:{key[2]}" if key is not None else "<no site>";
+        self.orphans.append(f"{sh.class_name} @ {site}");
+    }
+
     def encode_shared(idx: int) -> bytes {
         sh = self.shareds[idx];
         out = bytearray();
         put_uvar(out, self.sid(sh.class_name or ""));
         home_mod = module_of(sh.symbol_table) if sh.symbol_table is not None else None;
+        if self.boundary is not None and home_mod is None {
+            self.note_orphan(sh);
+        }
         if (
             self.boundary is not None
             and home_mod is not None
@@ -1296,7 +1416,13 @@ obj CatalogWriter {
             bits |= SH_ENUM;
         }
         put_uvar(out, bits);
-        put_ref(out, self.ref_scope(sh.symbol_table));
+        scope_ref = self.ref_scope(sh.symbol_table);
+        if scope_ref < 0
+            and self.boundary is not None
+            and sh.symbol_table is not None {
+            self.note_orphan(sh);
+        }
+        put_ref(out, scope_ref);
         mro: list[TypeBase] = [];
         for cls in (sh.mro or []) {
             mro.append(cls);
@@ -1308,26 +1434,26 @@ obj CatalogWriter {
         }
         put_refs(out, self.ref_types(tps));
         put_refs(out, self.ref_types(sh.base_classes));
-        fields = sh.typeddict_fields or {};
+        fields: dict[str, TypeBase] = sh.typeddict_fields or {};
         put_uvar(out, len(fields));
         for (fname, ftype) in fields.items() {
             put_uvar(out, self.sid(fname));
             put_ref(out, self.ref_type(ftype));
         }
         put_ref(out, self.ref_type(sh.enum_value_type));
-        members = sh.enum_members or {};
+        members: dict[str, EnumMemberInfo] = sh.enum_members or {};
         put_uvar(out, len(members));
         for (mname, info) in members.items() {
             put_uvar(out, self.sid(mname));
             put_ref(out, self.ref_type(info.value_type));
             self.put_literal(out, info.literal_value);
         }
-        ct_params = sh.ct_params or [];
+        ct_params: list[str] = sh.ct_params or [];
         put_uvar(out, len(ct_params));
         for name in ct_params {
             put_uvar(out, self.sid(name));
         }
-        derived = sh._derived_special_types or {};
+        derived: dict[str, ClassType] = sh._derived_special_types or {};
         put_uvar(out, len(derived));
         for (dname, dtype) in derived.items() {
             put_uvar(out, self.sid(dname));
@@ -1390,7 +1516,7 @@ obj CatalogWriter {
         ambient_sid = self.sid(json.dumps(ambient_json, sort_keys=True));
 
         recblob = bytearray();
-        def lay(recs: list) -> bytes {
+        def lay(recs: list[bytes | None]) -> bytes {
             offsets: list[bytes] = [];
             for r in recs {
                 offsets.append(len(recblob).to_bytes(4, "little"));
@@ -1466,4 +1592,53 @@ obj CatalogWriter {
             "failure_log": list(self.failure_log)
         };
     }
+}
+
+class IncoherentInterface(RuntimeError) {
+    has mod_path: str,
+        orphans: list[str],
+        failures: list[str];
+
+    def init(
+        self: IncoherentInterface,
+        mod_path: str,
+        orphans: list[str],
+        failures: list[str] | None = None
+    ) {
+        RuntimeError.__init__(
+            self,
+            f"interface of {mod_path} references {len(orphans)} class scope(s) "
+            "with no live module: "
+                + ", ".join(orphans)
+                + (
+                    "; type evaluation failed: " + "; ".join(failures)
+                        if failures
+                        else ""
+                )
+        );
+        self.mod_path = mod_path;
+        self.orphans = list(orphans);
+        self.failures = list(failures or []);
+    }
+}
+
+def build_module_iface(
+    mod: Module,
+    evaluator: any,
+    pkg_dir: str,
+    path_mapper: Callable[[str], str] | None = None
+) -> bytes {
+    writer = CatalogWriter(
+        evaluator=evaluator, pkg_dir=pkg_dir, boundary=mod, path_mapper=path_mapper
+    );
+    dotted = mod.name or "";
+    writer.add_module(mod, dotted);
+    writer.force_all();
+    key = mod.loc.mod_path if mod.loc else dotted;
+    body = writer.emit(writer.rel_of(key), {});
+    if writer.orphans or writer.failures {
+        raise IncoherentInterface(key, writer.orphans, writer.failure_log);
+    }
+    digest = hashlib.sha256(body).hexdigest();
+    return digest.encode("utf-8") + body;
 }

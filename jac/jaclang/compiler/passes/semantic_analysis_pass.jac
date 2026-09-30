@@ -1,5 +1,7 @@
-import from collections.abc { Sequence }
 import from jaclang.compiler.frontend.unitree {
+    Module,
+    TreeWalker,
+    UniNode,
     Ability,
     ArchHas,
     Archetype,
@@ -20,12 +22,13 @@ import from jaclang.compiler.frontend.unitree {
     ParamVar,
     SpecialVarRef,
     TypedCtxBlock,
-    UniNode,
     VisitStmt
 }
+import from jaclang.compiler.passes.context { CompileContext, TreePass }
+import from collections.abc { Sequence }
 import from jaclang.compiler.frontend.constant { ExprCtx }
 import from jaclang.compiler.frontend.constant { Tokens as Tok }
-import from jaclang.compiler.passes.uni_pass { UniPass }
+
 import from jaclang.compiler.frontend.diagnostics {
     E2004,
     E2005,
@@ -37,7 +40,7 @@ import from jaclang.compiler.frontend.diagnostics {
 
 def inform_from_walker(nd: UniNode) -> None;
 
-walker SemanticAnalysisPass(UniPass) {
+walker SemanticAnalysisPass(TreePass) {
     can enter_archetype with Archetype entry;
     def _check_archetype(nd: Archetype) -> None;
     def _property_type_names(methods: list[Ability]) -> dict[str, str];

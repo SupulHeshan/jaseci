@@ -693,6 +693,8 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       return d;
     },
     eq(a, b) {
+      if (a === null || a === undefined || typeof a !== "object") return a === b;
+      if (b === null || b === undefined || typeof b !== "object") return false;
       const ka = Object.keys(a), kb = Object.keys(b);
       if (ka.length !== kb.length) return false;
       for (const k of ka) {
@@ -1177,10 +1179,42 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
   types: __JAC_TYPES_RUNTIME__,
 
   builtin: {
+    bindFields(args, keywords, names) {
+      if (args.length > names.length) {
+        throw new _jac.exc.TypeError(`Expected at most ${names.length} positional arguments, got ${args.length}`);
+      }
+      const props = Object.assign(Object.create(null), keywords);
+      for (let i = 0; i < args.length; i++) {
+        const name = names[i];
+        if (Object.prototype.hasOwnProperty.call(props, name)) {
+          throw new _jac.exc.TypeError(`Multiple values for argument '${name}'`);
+        }
+        props[name] = args[i];
+      }
+      return props;
+    },
     round(n, ndigits) {
       if (ndigits === undefined) return Math.round(n);
       const f = Math.pow(10, ndigits);
       return Math.round(n * f) / f;
+    },
+    min(iterable, key) {
+      let found = false, best, bestKey;
+      for (const v of _jac.builtin.iter(iterable)) {
+        const k = key ? key(v) : v;
+        if (!found || k < bestKey) { best = v; bestKey = k; found = true; }
+      }
+      if (!found) throw new _jac.exc.ValueError("min() arg is an empty sequence");
+      return best;
+    },
+    max(iterable, key) {
+      let found = false, best, bestKey;
+      for (const v of _jac.builtin.iter(iterable)) {
+        const k = key ? key(v) : v;
+        if (!found || k > bestKey) { best = v; bestKey = k; found = true; }
+      }
+      if (!found) throw new _jac.exc.ValueError("max() arg is an empty sequence");
+      return best;
     },
     sum(iterable, start) {
       let total = start || 0;
@@ -1297,6 +1331,18 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
     },
     id(o) {
       if (o === null || o === undefined) return 0;
+      if (typeof o === "object" || typeof o === "function") {
+        // Share reference identity across separately emitted Jac modules,
+        // without retaining otherwise unreachable objects.
+        const key = Symbol.for("jac.objectIdentity");
+        const state = globalThis[key] ??= { ids: new WeakMap(), next: 1 };
+        let value = state.ids.get(o);
+        if (value === undefined) {
+          value = state.next++;
+          state.ids.set(o, value);
+        }
+        return value;
+      }
       if (typeof o === "number") return o;
       return typeof o === "string" ? _jac.builtin._strHash(o) : 0;
     },
@@ -1511,7 +1557,10 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
 
   exc: __JAC_EXC_RUNTIME__
 }""",
-     _JS_RESERVED_EXC_NAMES: set[str] = {"TypeError", "ReferenceError"};
+     _JS_RESERVED_EXC_NAMES: set[str] = {"TypeError", "ReferenceError"},
+     JAC_PRELUDE_MODULE: str = "@jac/prelude",
+     JAC_PRELUDE_BASENAME: str = "jac_prelude.js",
+     JAC_RUNTIME_GLOBAL: str = "__jacRuntime";
 
 def _build_exc_runtime_js -> str {
     import from jaclang.compiler.type_registry { JAC_TYPE_REGISTRY }
@@ -1841,56 +1890,56 @@ def build_jac_runtime_js -> str {
     );
 }
 
-glob _OSP_CORE_JS_CACHE: list[str] = [];
+def build_jac_prelude_module -> str {
+    return (
+        "const _jac = (globalThis."
+        + JAC_RUNTIME_GLOBAL
+        + " ??= "
+        + build_jac_runtime_js()
+        + ");\nexport { _jac };\n"
+    );
+}
+
+def write_jac_prelude_file(dir_path: str) -> str {
+    import os;
+    os.makedirs(dir_path, exist_ok=True);
+    out = os.path.join(dir_path, JAC_PRELUDE_BASENAME);
+    with open(out, "w", encoding="utf-8") as handle {
+        handle.write(build_jac_prelude_module());
+    }
+    return out;
+}
+
+def stage_jac_prelude_package(dir_path: str) -> str {
+    import os;
+    import json;
+    pkg = os.path.join(dir_path, "node_modules", "@jac", "prelude");
+    os.makedirs(pkg, exist_ok=True);
+    with open(os.path.join(pkg, "index.js"), "w", encoding="utf-8") as handle {
+        handle.write(build_jac_prelude_module());
+    }
+    with open(os.path.join(pkg, "package.json"), "w", encoding="utf-8") as handle {
+        handle.write(
+            json.dumps(
+                {"name": JAC_PRELUDE_MODULE, "type": "module", "main": "index.js"}
+            )
+                + "\n"
+        );
+    }
+    return pkg;
+}
+
+def point_jac_prelude_at(js: str, target: str = "") -> str {
+    dest = target or ("./" + JAC_PRELUDE_BASENAME);
+    for quote in ['"', "'"] {
+        js = js.replace(quote + JAC_PRELUDE_MODULE + quote, quote + dest + quote);
+    }
+    return js;
+}
 
 def build_osp_core_js -> str {
-    if _OSP_CORE_JS_CACHE {
-        return _OSP_CORE_JS_CACHE[0];
-    }
-    import from jaclang.compiler.backends.kernel_units {
-        es_pass_fingerprint,
-        load_unit_artifact,
-        osp_core_unit_path,
-        store_unit_artifact
-    }
-    import from jaclang.compiler.driver.program { JacProgram }
-    import from jaclang.compiler.backends.es.esast_gen_pass { EsastGenPass }
-    import from jaclang.compiler.backends.es.es_unparse { es_to_js }
-    import from jaclang.compiler.backends.es { estree as es }
-    import from jaclang.compiler.driver.compile_options { CompileOptions }
-    fp = es_pass_fingerprint();
-    cl_copy = osp_core_unit_path('cl');
-    cached = load_unit_artifact(cl_copy, "mjs", fp);
-    if cached is not None {
-        _OSP_CORE_JS_CACHE.append(cached);
-        return cached;
-    }
-    prog = JacProgram();
-    ir = prog.compile(
-        file_path=cl_copy,
-        options=CompileOptions(force_codespace='client', no_cgen=True)
-    );
-    import from jaclang.compiler.driver.pass_driver { run_pass }
-    program = run_pass(EsastGenPass, ir, prog).ir_out.gen.es_ast;
-    kept: list = [];
-    if isinstance(program, es.Program) {
-        for stmt in program.body {
-            is_jac_rt = (
-                isinstance(stmt, es.VariableDeclaration)
-                and stmt.declarations
-                and isinstance(stmt.declarations[0].id, es.Identifier)
-                and (stmt.declarations[0].id.name == "_jac")
-            );
-            if is_jac_rt or isinstance(stmt, es.ExportNamedDeclaration) {
-                continue;
-            }
-            kept.append(stmt);
-        }
-    }
-    js = es_to_js(es.Program(body=kept));
-    store_unit_artifact(cl_copy, "mjs", fp, js);
-    _OSP_CORE_JS_CACHE.append(js);
-    return js;
+    import from jaclang.compiler.backends.es.client_kernel_cache { osp_core_js }
+    return osp_core_js();
 }
 
 def build_osp_driver_js -> str {
@@ -1904,7 +1953,7 @@ if (!globalThis.__jacOspCore) {
     osp_edge_peer,
     osp_spawn, osp_visit, osp_report, osp_disengage, osp_forget,
     osp_register_type, osp_register_desc, osp_node_desc, osp_is_a,
-    WalkerDesc, NodeDesc, Slot, OspRuntime
+    OspWalkerDesc, OspNodeDesc, OspSlot, OspRuntime
   };
 }
 var __ospC = globalThis.__jacOspCore;
@@ -1917,16 +1966,21 @@ function __ospId(o) {
   if (h === undefined) { h = __ospO.length; __ospO.push(o); __ospH.set(o, h); }
   return h;
 }
-function __ospConnW(src, tgt, mkEdge, undirected, tag = -1) {
+function __ospConnW(src, tgt, mkEdge, undirected, tag = -1, edgesOnly = false) {
   const srcs = Array.isArray(src) ? src : [src];
   const tgts = Array.isArray(tgt) ? tgt : [tgt];
+  for (const value of [...srcs, ...tgts]) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError("connect operands must be nodes or flat collections of nodes");
+    }
+  }
   const sh = srcs.map(__ospId);
   const th = tgts.map(__ospId);
   const eh = [];
   for (let i = 0; i < sh.length * th.length; i++) eh.push(__ospId(mkEdge()));
   const r = __ospC.osp_conn_many(sh, th, eh, undirected ? 1 : 0, tag, 0, 0);
   if (r < 0) throw new Error("cannot connect a destroyed node");
-  return tgts.length === 1 ? tgts[0] : tgts;
+  return edgesOnly ? eh.map((h) => __ospO[h]) : tgt;
 }
 function __ospRefsW(origin, dir, tag = -1, edgesOnly = 0, pred = null) {
   const oh = __ospId(origin);

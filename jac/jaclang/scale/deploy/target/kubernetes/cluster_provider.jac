@@ -2,19 +2,22 @@ import from jaclang.scale._optdeps.kubernetes { client }
 import from jaclang.scale.observability.logger { Logger }
 
 obj ClusterProvider {
-    def service_type -> str;
-    def validate_ports(node_port: int, current_namespace: str) -> None;
-    def service_url(lb_endpoint: (str | None), ingress_node_port: int) -> (str | None);
-    def prometheus_scrape_port(container_port: int) -> int;
+    def service_type -> str abst;
+    def validate_ports(node_port: int, current_namespace: str) -> None abst;
+    def service_url(
+        lb_endpoint: (str | None), ingress_node_port: int
+    ) -> (str | None) abst;
+
+    def prometheus_scrape_port(container_port: int) -> int abst;
     def ingress_controller_service(
         service_name: str, namespace: str, controller_name: str, ingress_node_port: int
-    ) -> dict;
+    ) -> dict[str, any] abst;
 
     def log_ingress_deployed(
         logger: (Logger | None), app_name: str, ingress_node_port: int
-    ) -> None;
+    ) -> None abst;
 
-    def needs_nlb_wait -> bool;
+    def needs_nlb_wait -> bool abst;
 }
 
 obj AWSProvider(ClusterProvider) {
@@ -36,7 +39,7 @@ obj AWSProvider(ClusterProvider) {
 
     def ingress_controller_service(
         service_name: str, namespace: str, controller_name: str, ingress_node_port: int
-    ) -> dict {
+    ) -> dict[str, any] {
         return {
             'apiVersion': 'v1',
             'kind': 'Service',
@@ -84,12 +87,15 @@ obj LocalProvider(ClusterProvider) {
         v1 = client.CoreV1Api();
         all_services = v1.list_service_for_all_namespaces();
         used_ports: dict[int, str] = {};
-        for svc in (all_services.items or []) {
+
+        svc_items: list[any] = all_services.items or [];
+        for svc in svc_items {
             if svc.metadata.namespace == current_namespace {
                 continue;
             }
             svc_id = f"{svc.metadata.namespace}/{svc.metadata.name}";
-            for port_obj in (svc.spec.ports or []) {
+            svc_ports: list[any] = svc.spec.ports or [];
+            for port_obj in svc_ports {
                 if port_obj.node_port is not None {
                     used_ports[port_obj.node_port] = svc_id;
                 }
@@ -116,7 +122,7 @@ obj LocalProvider(ClusterProvider) {
 
     def ingress_controller_service(
         service_name: str, namespace: str, controller_name: str, ingress_node_port: int
-    ) -> dict {
+    ) -> dict[str, any] {
         return {
             'apiVersion': 'v1',
             'kind': 'Service',

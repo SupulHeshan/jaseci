@@ -1,21 +1,36 @@
+import time;
+import from jaclang.compiler.passes.context { CompileContext }
 import from c { def PyList_New(n: int) -> int;  }
 import from c { def PyList_SetItem(l: int, i: int, v: int) -> int;  }
 import from c { def Py_DecRef(o: int) -> int;  }
+import from c { def PyUnicode_FromString(p: int) -> int;  }
+import from c { def __jac_region_depth -> int;  }
+import from c { def __jac_region_unwind(depth: int) -> None;  }
 
 import from jaclang.compiler.jc_materialize {
     hint_commentdata,
     hint_srcdiag,
-    jc_graph_wipe,
-    jc_mz_dispose,
     jc_mz_obj,
     jc_mz_run,
-    jc_mz_shapes3
+    jc_mz_shape_keys
 }
 
 import from jaclang.compiler.frontend.parser.parser { parse_program }
 import from jaclang.compiler.frontend.parser.tokens { SrcDiag, CommentData }
-import from jaclang.compiler.frontend.unitree { Module, UniNode }
+import from jaclang.compiler.frontend.unitree { Module, Import }
 import from jaclang.compiler.frontend.roles { AccessorsRole, BodyRole, SpecRole }
+import from jaclang.compiler.frontend.constant { CodeContext }
+import from jaclang.compiler.passes.early_passes { EARLY_PASSES, SymTabBuildPass }
+import from jaclang.compiler.passes.context { Alert }
+import from jaclang.compiler.passes.annex_weave {
+    merge_annex_into,
+    prune_generated_imports
+}
+import from jaclang.compiler.frontend.kernel_analyze {
+    ANALYSIS_CRASHED,
+    AnalysisReport,
+    run_kernel_analysis
+}
 
 obj JcState {
     has p_errs: int = 0,
@@ -23,12 +38,17 @@ obj JcState {
         mod_h: int = 0,
         diags_h: int = 0,
         lexdiags_h: int = 0,
-        comments_h: int = 0;
+        comments_h: int = 0,
+        analysis_h: int = 0,
+        early_context: int = 0,
+        pass_times: list[float] = [],
+        pass_names_h: list[int] = [],
+        pass_errors_h: list[int] = [],
+        pass_warnings_h: list[int] = [];
 }
 
 glob _JC: JcState = JcState(),
-     _ANNEX_SRC: list[str] = [],
-     _ANNEX_PATH: list[str] = [];
+     _ANNEXES: list[tuple[str, str, str]] = [];
 
 def:pub jc_probe -> int {
     return 44061;
@@ -45,6 +65,19 @@ def _clear_results {
     _drop_h(_JC.diags_h);
     _drop_h(_JC.lexdiags_h);
     _drop_h(_JC.comments_h);
+    for h in _JC.pass_names_h {
+        _drop_h(h);
+    }
+    for h in _JC.pass_errors_h {
+        _drop_h(h);
+    }
+    for h in _JC.pass_warnings_h {
+        _drop_h(h);
+    }
+    _JC.pass_times.clear();
+    _JC.pass_names_h.clear();
+    _JC.pass_errors_h.clear();
+    _JC.pass_warnings_h.clear();
     _JC.mod_h = 0;
     _JC.diags_h = 0;
     _JC.lexdiags_h = 0;
@@ -53,33 +86,48 @@ def _clear_results {
     _JC.lex_errs = 0;
 }
 
-def _clear_annexes {
-    while _ANNEX_SRC {
-        _ANNEX_SRC.pop();
-    }
-    while _ANNEX_PATH {
-        _ANNEX_PATH.pop();
-    }
-}
-
-def:pub jc_annex(src: str, path: str) -> int {
-    _ANNEX_SRC.append(src);
-    _ANNEX_PATH.append(path);
+def:pub jc_set_early(context: int) -> int {
+    _JC.early_context = context;
     return 0;
 }
 
-def _weave(r: Region, main_mod: Module, annex_src: str, annex_path: str) -> int {
-    (a_mod, a_errs, _pd, _cm, _ld, a_lex_errs) = parse_program(annex_src, annex_path);
-    if a_errs > 0 or a_lex_errs > 0 {
-        return 1;
+def:pub jc_completed -> int {
+    return len(_JC.pass_times);
+}
+
+def:pub jc_pass_time(index: int) -> float {
+    return _JC.pass_times[index];
+}
+
+def:pub jc_take_pass_name(index: int) -> int {
+    h = _JC.pass_names_h[index];
+    _JC.pass_names_h[index] = 0;
+    return h;
+}
+
+def:pub jc_take_pass_alerts(index: int, warnings: int) -> int {
+    handles = _JC.pass_warnings_h if warnings != 0 else _JC.pass_errors_h;
+    h = handles[index];
+    handles[index] = 0;
+    return h;
+}
+
+def:pub jc_annex(source: str, path: str, consumer: str) -> int {
+    _ANNEXES.append((source, path, consumer));
+    return 0;
+}
+
+def _weave(r: Region, mod: Module) -> int {
+    for (source, path, _consumer) in _ANNEXES {
+        (a_mod, a_errs, _pd, _cm, _ld, a_lex_errs) = parse_program(source, path);
+        if a_errs > 0 or a_lex_errs > 0 {
+            return 1;
+        }
+        merge_annex_into(mod, a_mod);
     }
-    stmts = list(a_mod.body);
-    if stmts {
-        main_mod.absorb_annex_body(stmts);
-        for sub in a_mod._in_mod_nodes {
-            if sub is not a_mod {
-                main_mod._in_mod_nodes.append(sub);
-            }
+    for (_source, path, consumer) in _ANNEXES {
+        if consumer {
+            prune_generated_imports(mod, path, consumer);
         }
     }
     return 0;
@@ -92,18 +140,77 @@ def _materialize(
     comments: list[CommentData],
     lex_diags: list[SrcDiag]
 ) -> int {
+    _register_shape_keys();
     out = jc_mz_run(id(mod));
     if out == 0 {
-        jc_mz_dispose();
         return 1;
     }
-    _apply_shapes(mod);
     _JC.mod_h = out;
     _JC.diags_h = _mz_list(p_diags, hint_srcdiag());
     _JC.lexdiags_h = _mz_list(lex_diags, hint_srcdiag());
     _JC.comments_h = _mz_list(comments, hint_commentdata());
-    jc_mz_dispose();
     return 0;
+}
+
+def _has_absorb_import(mod: Module) -> bool {
+    for imp in mod.get_all_sub_nodes(Import) {
+        if imp.is_absorb {
+            return True;
+        }
+    }
+    return False;
+}
+
+def _run_early_passes(mod: Module) -> list[CompileContext] {
+    done: list[CompileContext] = [];
+    if _JC.early_context == 0 or _JC.p_errs != 0 or _JC.lex_errs != 0 {
+        return done;
+    }
+    if _JC.early_context == 2 {
+        mod.set_code_context(CodeContext.CLIENT);
+    } elif _JC.early_context == 3 {
+        mod.set_code_context(CodeContext.NATIVE);
+    }
+    for pass_type in EARLY_PASSES {
+        if pass_type is SymTabBuildPass and _has_absorb_import(mod) {
+            break;
+        }
+        ctx = CompileContext(
+            current_node=mod, from_pass=pass_type, pass_name=pass_type.__name__
+        );
+        started = time.time();
+        mod spawn pass_type(module=mod, ctx=ctx);
+        ctx.time_taken = time.time() - started;
+        done.append(ctx);
+    }
+    return done;
+}
+
+def _finish_unit(
+    r: Region,
+    mod: Module,
+    p_diags: list[SrcDiag],
+    comments: list[CommentData],
+    lex_diags: list[SrcDiag]
+) -> int {
+    done = _run_early_passes(mod);
+    status = _materialize(r, mod, p_diags, comments, lex_diags);
+    if status != 0 {
+        return status;
+    }
+    tag = _alert_tag();
+    for ctx in done {
+        _JC.pass_times.append(ctx.time_taken);
+        _JC.pass_names_h.append(PyUnicode_FromString(id(ctx.pass_name)));
+        _JC.pass_errors_h.append(_mz_list(ctx.errors_had, tag));
+        _JC.pass_warnings_h.append(_mz_list(ctx.warnings_had, tag));
+    }
+    return 0;
+}
+
+def _alert_tag -> int {
+    import from jaclang.runtime.osp_tag { stable_osp_tag }
+    return stable_osp_tag("Alert");
 }
 
 def _run_in_region(src: str, path: str) -> int {
@@ -116,26 +223,27 @@ def _run_in_region(src: str, path: str) -> int {
         _JC.p_errs = p_errs;
         _JC.lex_errs = lex_errs;
         if p_errs == 0 and lex_errs == 0 {
-            i = 0;
-            n = len(_ANNEX_SRC);
-            while i < n and status == 0 {
-                status = _weave(r, mod, _ANNEX_SRC[i], _ANNEX_PATH[i]);
-                i += 1;
-            }
+            status = _weave(r, mod);
         }
         if status == 0 {
-            status = _materialize(r, mod, p_diags, comments, lex_diags);
+            status = _finish_unit(r, mod, p_diags, comments, lex_diags);
         }
-        jc_graph_wipe();
     }
     return status;
 }
 
+def _drop_stale_regions {
+    if __jac_region_depth() != 0 {
+        __jac_region_unwind(0);
+    }
+}
+
 def:pub jc_run(src: str, path: str) -> int {
     _clear_results();
-    jc_graph_wipe();
     status = _run_in_region(src, path);
-    _clear_annexes();
+    _drop_stale_regions();
+    _ANNEXES.clear();
+    _JC.early_context = 0;
     return status;
 }
 
@@ -171,7 +279,7 @@ def:pub jc_lex_errs -> int {
     return _JC.lex_errs;
 }
 
-def _mz_list(items: list, hint: int) -> int {
+def _mz_list(items: list[any], hint: int) -> int {
     out = PyList_New(len(items));
     i = 0;
     for it in items {
@@ -181,47 +289,38 @@ def _mz_list(items: list, hint: int) -> int {
     return out;
 }
 
-def _shape_code(s: (str | None)) -> int {
-    if s is None {
-        return 0;
-    }
-    if s == "one" {
-        return 2;
-    }
-    if s == "many" {
-        return 3;
-    }
-    return 1;
+def _register_shape_keys {
+    probe: dict[type, str] = {};
+    probe[BodyRole] = "one";
+    probe[SpecRole] = "one";
+    probe[AccessorsRole] = "one";
+    jc_mz_shape_keys(id(probe));
 }
 
-def _packed_shapes(nd: UniNode) -> int {
-    shapes = nd._role_shapes;
-    if shapes is None {
-        return 0;
+def:pub jc_analyze(inputs: str, path: str, source: str, has_source: int) -> int {
+    _drop_stale_regions();
+    _drop_h(_JC.analysis_h);
+    _JC.analysis_h = 0;
+    status = ANALYSIS_CRASHED;
+    try {
+        outcome = run_kernel_analysis(
+            inputs, path, source if has_source != 0 else None
+        );
+        status = outcome.status;
+        text = outcome.to_json();
+    } except Exception as err {
+        text = AnalysisReport(
+            status=ANALYSIS_CRASHED, message=f"kernel analysis raised: {err}"
+        ).to_json();
     }
-    b = _shape_code(shapes.get(BodyRole));
-    sp = _shape_code(shapes.get(SpecRole));
-    a = _shape_code(shapes.get(AccessorsRole));
-    return b | (sp << 4) | (a << 8);
+    _JC.analysis_h = PyUnicode_FromString(id(text));
+    return status;
 }
 
-def _apply_shapes(mod: Module) {
-    stack: list[UniNode] = [mod];
-    seen: set[int] = set();
-    while stack {
-        cur = stack.pop();
-        if id(cur) in seen {
-            continue;
-        }
-        seen.add(id(cur));
-        sc = _packed_shapes(cur);
-        if sc != 0 {
-            jc_mz_shapes3(id(cur), sc);
-        }
-        for k in cur._children() {
-            stack.append(k);
-        }
-    }
+def:pub jc_take_analysis -> int {
+    h = _JC.analysis_h;
+    _JC.analysis_h = 0;
+    return h;
 }
 
 def:pub jc_rc_debug(v: int) -> int {

@@ -1,8 +1,11 @@
 import jaclang.compiler.frontend.unitree as uni;
 import from jaclang.compiler.type_registry { JAC_TYPE_REGISTRY }
+import from jaclang.compiler.frontend.constant { is_borrow_kind }
 
-def collect_foreign_structs(modules: list) -> dict {
-    out: dict = {};
+def collect_foreign_structs(
+    modules: list[uni.Module]
+) -> dict[str, list[tuple[str, str | None]]] {
+    out: dict[str, list[tuple[str, str | None]]] = {};
     for mod in modules {
         if mod is None {
             continue;
@@ -13,7 +16,7 @@ def collect_foreign_structs(modules: list) -> dict {
             }
             for decl in imp.clib_decls {
                 if isinstance(decl, uni.Archetype) and decl.name is not None {
-                    fields: list = [];
+                    fields: list[tuple[str, str | None]] = [];
                     for var in decl.get_has_vars() {
                         tname: (str | None) = None;
                         if var.type_tag is not None and var.type_tag.tag is not None {
@@ -43,8 +46,8 @@ def declared_type_name(type_expr: (uni.UniNode | None)) -> (str | None) {
     return None;
 }
 
-def collect_foreign_fns(modules: list) -> dict {
-    out: dict = {};
+def collect_foreign_fns(modules: list[uni.Module]) -> dict[str, dict[str, any]] {
+    out: dict[str, dict[str, any]] = {};
     for mod in modules {
         if mod is None {
             continue;
@@ -65,18 +68,23 @@ def collect_foreign_fns(modules: list) -> dict {
                 if fname is None {
                     continue;
                 }
-                params: list = [];
+                params: list[tuple[str | None, str | None]] = [];
+                borrowed: list[bool] = [];
                 for p in decl.signature.get_parameters() {
                     if p.is_vararg or p.is_kwargs {
                         continue;
                     }
+                    is_borrow = p.type_tag is not None
+                        and is_borrow_kind(p.type_tag.ownership);
                     ptn = declared_type_name(p.type_tag.tag)
-                        if (p.type_tag and p.type_tag.tag)
+                        if (p.type_tag and p.type_tag.tag and not is_borrow)
                         else None;
                     params.append((p.name.value if p.name else None, ptn));
+                    borrowed.append(is_borrow);
                 }
                 out[fname] = {
                     "params": params,
+                    "borrowed": borrowed,
                     "ret": declared_type_name(decl.signature.return_type)
                 };
             }
@@ -86,7 +94,7 @@ def collect_foreign_fns(modules: list) -> dict {
 }
 
 def foreign_struct_layout(
-    structs: dict, name: str
+    structs: dict[str, list[tuple[str, str | None]]], name: str
 ) -> tuple[int, int, list[tuple[int, bool, int]]] {
     fields = structs.get(name, []);
     offset = 0;

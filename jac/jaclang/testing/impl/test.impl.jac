@@ -104,7 +104,7 @@ impl JacTestResult.postinit -> None {
 }
 
 impl invoke_native_test(
-    engine: any, symbol: str, test_name: str, init_symbols: (list | None) = None
+    engine: any, symbol: str, test_name: str, init_symbols: (list[str] | None) = None
 ) -> None {
     import ctypes;
     import os;
@@ -118,26 +118,7 @@ impl invoke_native_test(
         raise RuntimeError(f"native test symbol missing: {symbol}");
     }
     native_fn = ctypes.CFUNCTYPE(ctypes.c_char_p)(addr);
-    def run_glob_inits {
-        done = engine?._jac_glob_inits_done;
-        if done is None {
-            done = set();
-            try {
-                setattr(engine, "_jac_glob_inits_done", done);
-            } except Exception {}
-        }
-        for init_sym in (init_symbols or []) {
-            if init_sym in done {
-                continue;
-            }
-            done.add(init_sym);
-            init_addr = engine.get_function_address(init_sym);
-            if init_addr {
-                (ctypes.CFUNCTYPE(None)(init_addr))();
-            }
-        }
-    }
-    mirrors: list = [];
+    mirrors: list[tuple[int, str]] = [];
     for (fd, name) in ((1, "stdout"), (2, "stderr")) {
         stream = getattr(sys, name, None);
         stream_fd: (int | None) = None;
@@ -153,15 +134,14 @@ impl invoke_native_test(
         }
     }
     if not mirrors {
-        run_glob_inits();
         msg = native_fn();
         if msg is not None {
             raise AssertionError(msg.decode("utf-8", "replace"));
         }
         return;
     }
-    saved: dict = {};
-    sinks: dict = {};
+    saved: dict[int, int] = {};
+    sinks: dict[int, tuple[any, str]] = {};
     for (fd, name) in mirrors {
         saved[fd] = os.dup(fd);
         sink = tempfile.TemporaryFile();
@@ -170,7 +150,6 @@ impl invoke_native_test(
     }
     msg: any = None;
     try {
-        run_glob_inits();
         msg = native_fn();
     } finally {
         try {

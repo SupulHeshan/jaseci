@@ -14,6 +14,7 @@ import from tests.support {
     compile_native,
     get_func,
     has_error_code,
+    native_address,
     native_force_opts
 }
 import jaclang;
@@ -45,11 +46,11 @@ def get_sfunc(eng: any, name: str, restype: type | None, *argtypes: type) -> any
     # bytes/str args build their backing storage via jac_str_new; str
     # returns come back as the full bytes of the result string, so existing
     # comparisons keep working.
-    addr = eng.get_function_address(name);
+    addr = native_address(eng, name);
     assert addr != 0 , f"Function '{name}' not found in JIT engine";
     real_res: any = JacStrABI if restype == ctypes.c_char_p else restype;
-    str_slots: list = [];
-    real_args: list = [];
+    str_slots: list[bool] = [];
+    real_args: list[any] = [];
     for a in argtypes {
         if a == ctypes.c_char_p {
             str_slots.append(True);
@@ -65,7 +66,7 @@ def get_sfunc(eng: any, name: str, restype: type | None, *argtypes: type) -> any
     sn_addr = 0;
     for sn in ("jac_str_new", "__jac_str_new") {
         try {
-            sn_addr = eng.get_function_address(sn);
+            sn_addr = native_address(eng, sn);
         } except Exception {
             sn_addr = 0;
         }
@@ -78,9 +79,9 @@ def get_sfunc(eng: any, name: str, restype: type | None, *argtypes: type) -> any
             if sn_addr
             else None
     );
-    keepalive: list = [];
+    keepalive: list[any] = [];
     def _call(*args: any) -> any {
-        c_args: list = [];
+        c_args: list[any] = [];
         for (a, is_str) in zip(args, str_slots) {
             if is_str {
                 b = a.encode("utf-8") if isinstance(a, str) else a;

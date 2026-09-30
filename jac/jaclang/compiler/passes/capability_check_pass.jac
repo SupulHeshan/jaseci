@@ -1,8 +1,11 @@
+import from jaclang.compiler.frontend.roles { Kid }
+import from jaclang.compiler.passes.context { CompileContext, CompilerPass }
 import from jaclang.compiler.frontend.unitree {
     Ability,
     ArchSpec,
     Archetype,
     AtomTrailer,
+    Assignment,
     CtrlStmt,
     EdgeOpRef,
     EdgeRefTrailer,
@@ -16,6 +19,7 @@ import from jaclang.compiler.frontend.unitree {
     FuncCall,
     FuncSignature,
     ImplDef,
+    ImplImport,
     Import,
     KWPair,
     LambdaExpr,
@@ -27,18 +31,20 @@ import from jaclang.compiler.frontend.unitree {
     ParamVar,
     PyInlineCode,
     String,
-    SubTag,
     Token,
     UnaryExpr,
+    TupleVal,
+    ListVal,
     UniNode,
-    YieldExpr
+    YieldExpr,
+    in_type_position
 }
-import from jaclang.compiler.passes.transform { Transform }
-import from jaclang.compiler.backends.py.module_codegen_pass {
-    ModuleCodegenPass,
+import from jaclang.compiler.frontend.module_facts {
+    ModuleFacts,
     client_capability_violations
 }
 import from jaclang.compiler.frontend.constant { SymbolType }
+import from jaclang.compiler.types.types { ClassType }
 import from jaclang.compiler.frontend.diagnostics {
     E5090,
     E5096,
@@ -47,7 +53,10 @@ import from jaclang.compiler.frontend.diagnostics {
     W6003,
     W6004
 }
-import from jaclang.compiler.frontend.codeinfo { NATIVE_SUPPORTED_STDLIB }
+import from jaclang.compiler.frontend.codeinfo {
+    NATIVE_SUPPORTED_STDLIB,
+    is_native_by_location
+}
 
 glob NATIVE_REJECT_NODES: tuple[type[PyInlineCode]] = (PyInlineCode, );
 
@@ -61,11 +70,16 @@ def node_within(name_nd: UniNode, top: (UniNode | None)) -> bool;
 
 def base_expr_is_erased(base: UniNode) -> bool;
 
-def name_in_type_position(name_nd: UniNode) -> bool;
+def name_erased_natively(name_nd: UniNode) -> bool;
 
 def static_fstring_spec_text(spec: UniNode) -> (str | None);
 
-def call_has_kwargs_sink(call: FuncCall) -> bool;
+def call_binds_kwargs_spread(call: FuncCall) -> bool;
+
+def call_constructs_class_value(call: FuncCall) -> bool;
+
+def _class_bounded_typevar(t: object) -> bool;
+
 
 def native_capability_violations(
     mod: Module
@@ -82,14 +96,7 @@ def partition_native_capability_violations(
     )
 ];
 
-walker PortabilityWarnPass(Transform) {
-    has ir_in: Module,
-        cancel_token: any = None;
-
-    static has PROVIDES: tuple = ('portability', );
-
-    def postinit -> None;
-    def transform(ir_in: Module) -> Module;
+walker PortabilityWarnPass(CompilerPass) {
     def _run_impl(ir_in: Module) -> Module;
     can run_walk with Module entry;
     def _check_js_globals(mod: Module) -> None;
@@ -99,24 +106,12 @@ walker PortabilityWarnPass(Transform) {
     def _check_js_properties(mod: Module) -> None;
 }
 
-walker NativeCapabilityCheckPass(Transform) {
-    static has PROVIDES: tuple = ('capability', );
-    has ir_in: Module,
-        cancel_token: any = None;
-
-    def postinit -> None;
-    def transform(ir_in: Module) -> Module;
+walker NativeCapabilityCheckPass(CompilerPass) {
     def _run_impl(ir_in: Module) -> Module;
     can run_walk with Module entry;
 }
 
-walker ClientCapabilityCheckPass(Transform) {
-    static has PROVIDES: tuple = ('client_capability', );
-    has ir_in: Module,
-        cancel_token: any = None;
-
-    def postinit -> None;
-    def transform(ir_in: Module) -> Module;
+walker ClientCapabilityCheckPass(CompilerPass) {
     def _run_impl(ir_in: Module) -> Module;
     can run_walk with Module entry;
 }

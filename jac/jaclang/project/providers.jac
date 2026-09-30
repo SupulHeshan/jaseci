@@ -10,8 +10,28 @@ import from jaclang.project.pyvenv {
     summarize_pip_failure
 }
 
-glob EMIT_EJECT: str = "eject",
-     EMIT_PUBLISH: str = "publish";
+glob VENV_DEPS_MARKER: str = ".jac-deps-hash";
+
+
+def _venv_deps_hash(specs: list[str]) -> str {
+    import hashlib;
+    return hashlib.sha256("\n".join(sorted(specs)).encode("utf-8")).hexdigest();
+}
+
+
+def venv_deps_satisfied(venv_dir: Path, specs: list[str]) -> bool {
+    try {
+        marker = (venv_dir / VENV_DEPS_MARKER).read_text(encoding="utf-8");
+    } except OSError {
+        return False;
+    }
+    return marker.strip() == _venv_deps_hash(specs);
+}
+
+
+def write_venv_deps_marker(venv_dir: Path, specs: list[str]) {
+    (venv_dir / VENV_DEPS_MARKER).write_text(_venv_deps_hash(specs), encoding="utf-8");
+}
 
 obj ResolvedDependency {
     has name: str,
@@ -109,12 +129,6 @@ obj EcosystemProvider {
     def list_installed(config: JacConfig) -> list[str] {
         return [];
     }
-
-    def emit_standalone(
-        config: JacConfig, deps: list[ResolvedDependency], out_dir: Path, mode: str
-    ) -> list[Path] {
-        return [];
-    }
 }
 
 def manifest_plugin_deps(
@@ -163,13 +177,13 @@ obj PythonProvider(EcosystemProvider) {
         config: JacConfig, include_dev: bool = False
     ) -> list[ResolvedDependency] {
         resolved: list[ResolvedDependency] = [];
-        for (name, version) in config.dependencies.items() {
+        for (name, version) in config.pypi_dependencies.items() {
             resolved.append(
                 ResolvedDependency(name=name, version=version, origin="manifest")
             );
         }
         if include_dev {
-            for (name, version) in config.dev_dependencies.items() {
+            for (name, version) in config.pypi_dev_dependencies.items() {
                 resolved.append(
                     ResolvedDependency(
                         name=name, version=version, origin="manifest", dev=True
@@ -177,7 +191,7 @@ obj PythonProvider(EcosystemProvider) {
                 );
             }
         }
-        for (name, git_info) in config.git_dependencies.items() {
+        for (name, git_info) in config.pypi_git_dependencies.items() {
             if isinstance(git_info, dict) and "git" in git_info {
                 resolved.append(
                     ResolvedDependency(
@@ -258,9 +272,33 @@ obj PythonProvider(EcosystemProvider) {
 
     def pip_spec(dep: ResolvedDependency) -> str {
         if dep.source == "git" {
-            return make_git_spec(dep.data.get("git", ""), dep.data.get("branch", ""));
+            return make_git_spec(
+                dep.data.get("git", ""),
+                dep.data.get("branch", "") or dep.data.get("rev", "")
+            );
+        }
+        if dep.version.startswith("@") {
+            return f"{dep.name} {dep.version}";
         }
         return make_pip_spec(dep.name, dep.version);
+    }
+
+    def freeze(config: JacConfig) -> list[str] {
+        (returncode, stdout, _) = self._run_project_pip(
+            config, ["list", "--format=freeze", "--exclude-editable"]
+        );
+        if returncode != 0 {
+            return [];
+        }
+        infrastructure = {"pip", "setuptools", "wheel"};
+        return sorted(
+            [
+                line.strip()
+                for line in stdout.splitlines()
+                if "==" in line
+                    and line.split("==", 1)[0].strip().lower() not in infrastructure
+            ]
+        );
     }
 
     def specs_for(deps: list[ResolvedDependency]) -> list[str] {
@@ -308,8 +346,12 @@ obj PythonProvider(EcosystemProvider) {
             return self._install_global(specs, ctx);
         }
         venv_dir = self._project_venv(config);
-        ensure_venv(venv_dir, ctx.verbose);
         is_dry_run = ctx.is_dry_run();
+
+        if not is_dry_run and venv_deps_satisfied(venv_dir, specs) {
+            return True;
+        }
+        ensure_venv(venv_dir, ctx.verbose);
         (before_snapshot_ok, before_set) = (
             self._snapshot_installed(config) if not is_dry_run else (False, set())
         );
@@ -360,14 +402,16 @@ obj PythonProvider(EcosystemProvider) {
 
     def _install_global(specs: list[str], ctx: InstallContext) -> bool {
         import subprocess;
-        import sys;
-        cmd: list[str] = [sys.executable, "-m", "pip", "install", "--upgrade"]
-            + ctx.install_flags
-            + specs;
+        import from jaclang.project.pyvenv { pip_command, pip_python, pip_env }
+        cmd: list[str] = pip_command(
+            pip_python(), ["install", "--upgrade"] + ctx.install_flags + specs
+        );
         if ctx.verbose {
             console.print(f"  Running: {' '.join(cmd)}", style="muted");
         }
-        result = subprocess.run(cmd, capture_output=not ctx.verbose, text=True);
+        result = subprocess.run(
+            cmd, capture_output=not ctx.verbose, text=True, env=pip_env()
+        );
         if result.returncode != 0 {
             console.error(
                 f"Install failed:\n{result.stderr
@@ -444,7 +488,7 @@ obj PythonProvider(EcosystemProvider) {
                     }
                 }
             }
-            config.add_dependency(name, version_str, dev=dev, dep_type="python");
+            config.add_dependency(name, version_str, dev=dev, dep_type="pypi");
             recorded.append(version_str);
         }
         return recorded;
@@ -453,13 +497,13 @@ obj PythonProvider(EcosystemProvider) {
     override def remove_package(
         config: JacConfig, name: str, dev: bool, ctx: InstallContext
     ) -> bool {
-        dep_type = "python";
+        dep_type = "pypi";
         is_dev = dev;
-        if name in config.git_dependencies {
-            dep_type = "git";
+        if name in config.pypi_git_dependencies {
+            dep_type = "pypi-git";
         } elif not dev
-            and name not in config.dependencies
-            and name in config.dev_dependencies {
+            and name not in config.pypi_dependencies
+            and name in config.pypi_dev_dependencies {
             is_dev = True;
         }
         if not config.remove_dependency(name, dev=is_dev, dep_type=dep_type) {
@@ -542,24 +586,6 @@ obj PythonProvider(EcosystemProvider) {
             return [];
         }
     }
-
-    override def emit_standalone(
-        config: JacConfig, deps: list[ResolvedDependency], out_dir: Path, mode: str
-    ) -> list[Path] {
-        lines: list[str] = [];
-        for dep in deps {
-            spec = self.pip_spec(dep);
-            if dep.origin.startswith("capability:") {
-                lines.append(f"{spec}  # via {dep.origin}");
-            } else {
-                lines.append(spec);
-            }
-        }
-        out_dir.mkdir(parents=True, exist_ok=True);
-        req_path = out_dir / "requirements.txt";
-        req_path.write_text("\n".join(lines) + "\n", encoding="utf-8");
-        return [req_path];
-    }
 }
 
 def _major_minor(version: str) -> str {
@@ -636,6 +662,10 @@ def reset_provider_registry {
 
 def initialize_provider_registry -> None {
     registry = get_provider_registry();
+    if not registry.`has("jac") {
+        import from jaclang.packages.provider { JacPackageProvider }
+        registry.register(JacPackageProvider());
+    }
 
     try {
         import from jaclang.client.plugin_config { JacClientPluginConfig }
@@ -675,14 +705,23 @@ def capability_dependencies(
         resolve_closure,
         scale_intent_from_config
     }
-    import from jaclang.project.kinds { plan_project_run }
+    import from jaclang.project.kinds { plan_app_run }
     if config is None {
         return [];
     }
     if not action {
         proj_root = str(config.project_root) if config.project_root else ".";
-        plan = plan_project_run(config, proj_root);
-        action = plan.action if plan else "execute";
+        action = "execute";
+        for app in (list(config.apps.values()) or [config.resolve_app("")]) {
+            try {
+                if plan_app_run(config, proj_root, app).action == "serve" {
+                    action = "serve";
+                    break;
+                }
+            } except ValueError {
+                continue;
+            }
+        }
     }
     intent = scale_intent_from_config(config);
     if intent and action != "serve" {
@@ -727,9 +766,9 @@ def _declared_constraint(
     config: JacConfig, name: str, dev: bool
 ) -> tuple[str, str] | None {
     sections = (
-        [config.dev_dependencies, config.dependencies]
+        [config.pypi_dev_dependencies, config.pypi_dependencies]
             if dev
-            else [config.dependencies, config.dev_dependencies]
+            else [config.pypi_dependencies, config.pypi_dev_dependencies]
     );
     wanted = _normalized_name(name);
     for section in sections {

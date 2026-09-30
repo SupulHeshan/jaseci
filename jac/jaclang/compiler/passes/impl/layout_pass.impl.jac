@@ -1,14 +1,13 @@
 import from jaclang.compiler.frontend.constant { Tokens as Tok }
-import from jaclang.compiler.tools.unparse_pass { unparse_node }
+import from jaclang.compiler.frontend.unparse { unparse_node }
 
 impl LayoutPass.postinit -> None {
     self.registry = LayoutRegistry();
     self.isinstance_targets = set();
-    super.postinit();
 }
 
 impl LayoutPass._run_impl(ir_in: Module) -> Module {
-    module = self.ir_in;
+    module = self.module;
 
     self._build_enum_layouts(module);
 
@@ -53,10 +52,10 @@ impl LayoutPass._run_impl(ir_in: Module) -> Module {
 impl LayoutPass._collect_archetypes(module: Module) -> dict[str, Archetype] {
     arch_map: dict[str, Archetype] = {};
     for nd in module.get_all_sub_nodes(Archetype) {
-        aname = nd.name.value if nd.name else None;
-        if aname is None {
+        if nd.name is None {
             continue;
         }
+        aname = archetype_native_name(nd);
 
         if aname not in arch_map or nd.body is not None {
             arch_map[aname] = nd;
@@ -66,26 +65,17 @@ impl LayoutPass._collect_archetypes(module: Module) -> dict[str, Archetype] {
 }
 
 impl LayoutPass._collect_isinstance_targets(module: Module) -> None {
-    import from jaclang.compiler.backends.py.module_codegen_pass { ModuleCodegenPass }
-    import from jaclang.compiler.frontend.constant { CodeContext }
-    calls: list = [];
-    for stmt in ModuleCodegenPass.iter_context_stmts(module, CodeContext.NATIVE) {
-        if isinstance(stmt, FuncCall) {
-            calls.append(stmt);
-        }
-        calls.extend(stmt.get_all_sub_nodes(typ=FuncCall));
-    }
-    for call in calls {
+    for call in module.get_all_sub_nodes(FuncCall) {
         tgt = call.target;
         if not (isinstance(tgt, Name) and tgt.value == "isinstance") {
             continue;
         }
-        params = call.params or [];
+        params: list[Expr | KWPair] = list(call.params or []);
         if len(params) < 2 {
             continue;
         }
         type_arg = params[1];
-        cands: list = [];
+        cands: list[Expr | KWPair] = [];
         if isinstance(type_arg, TupleVal) {
             for v in (type_arg.values or []) {
                 cands.append(v);
@@ -95,7 +85,7 @@ impl LayoutPass._collect_isinstance_targets(module: Module) -> None {
         }
         for c in cands {
             if isinstance(c, Name) {
-                self.isinstance_targets.add(c.value);
+                self.isinstance_targets.add(referenced_native_name(c) or c.value);
             }
         }
     }
@@ -115,9 +105,14 @@ impl LayoutPass._build_hierarchy(archetypes: dict[str, Archetype]) -> None {
                 } elif isinstance(base_expr, AstSymbolNode) {
                     pname = base_expr.sym_name;
                 }
-                if pname is None or is_erased_base_name(pname, archetypes) {
+                if pname is None {
                     continue;
                 }
+                _pnative = referenced_native_name(base_expr);
+                if _pnative is None and is_erased_base_name(pname, archetypes) {
+                    continue;
+                }
+                pname = _pnative or pname;
                 parents.append(pname);
                 parent_mods.append(declaring_module_path(base_expr));
             }
@@ -186,7 +181,7 @@ impl LayoutPass._compute_c3_mro(class_name: str) -> list[str] {
             }
         }
         if candidate is None {
-            self.emit(E5030, name=class_name);
+            self.ctx.emit(E5030, name=class_name);
             return result;
         }
         result.append(candidate);
@@ -204,15 +199,19 @@ impl LayoutPass._compute_c3_mro(class_name: str) -> list[str] {
 }
 
 impl LayoutPass._topo_sort(arch_map: dict[str, Archetype]) -> list[str] {
+    return self.registry.dependency_order(list(arch_map));
+}
+
+impl LayoutRegistry.dependency_order(names: list[str]) -> list[str] {
+    """Order layouts after their ancestors, including incomplete imported MROs.""";
     visited: set[str] = set();
     order: list[str] = [];
-    reg = self.registry;
 
-    for aname in arch_map {
+    for aname in names {
         if aname in visited {
             continue;
         }
-        stack: list[tuple] = [(aname, False)];
+        stack: list[tuple[str, bool]] = [(aname, False)];
         while stack {
             (name, processed) = stack.pop();
             if name in visited {
@@ -224,7 +223,7 @@ impl LayoutPass._topo_sort(arch_map: dict[str, Archetype]) -> list[str] {
                 continue;
             }
             stack.append((name, True));
-            mro = reg.mro_order.get(name, [name]);
+            mro = self.mro_order.get(name, [name]);
             for ancestor in reversed(mro[1:]) {
                 if ancestor not in visited {
                     stack.append((ancestor, False));
@@ -236,24 +235,16 @@ impl LayoutPass._topo_sort(arch_map: dict[str, Archetype]) -> list[str] {
 }
 
 impl LayoutPass._build_layout(arch: Archetype) -> ArchetypeLayout {
-    """Assign an archetype's header and field slots.
+    """Assign header and field slots with stable dispatch requirements.
 
-    `needs_vtable` folds two different questions together. `parents_set` and
-    `isinstance_targets` ask "is anything dispatched through me", which is a
-    real requirement. `bool(parents)` asks "do I have a base", which is a
-    property of the declaration and says nothing about dispatch -- and this
-    pass is per-module, so a base whose only subclass lives elsewhere is
-    nobody's parent here and comes out flat while its child, merely for
-    having a base, claims a vtable slot the base lacks. Their headers then
-    disagree and `adopt_imported_bases` declines the pair.
-
-    The build-time answer is left exactly as it was, so no existing layout
-    moves. `vtable_by_dispatch` records which of the two questions answered,
-    which is what lets adoption -- where both layouts are finally in hand --
-    tell a header the class needs from one it merely inherited the habit of.
+    Abstract interfaces reserve a vtable even when their implementations live
+    in other modules. Local parents, isinstance targets, and OSP archetypes
+    likewise require dispatch. A concrete class may initially acquire a slot
+    merely because it declares a base; imported-base adoption can remove that
+    provisional slot when neither the class nor its ancestors need dispatch.
     """;
     reg = self.registry;
-    aname = arch.name.value if arch.name else "unknown";
+    aname = archetype_native_name(arch);
     mro = reg.mro_order.get(aname, [aname]);
     parents = reg.class_parents.get(aname, []);
 
@@ -268,11 +259,14 @@ impl LayoutPass._build_layout(arch: Archetype) -> ArchetypeLayout {
     }
 
     vtable_by_dispatch = (
-        is_osp or aname in parents_set or aname in self.isinstance_targets
+        is_osp
+        or arch.is_abstract
+        or aname in parents_set
+        or aname in self.isinstance_targets
     );
     needs_vtable = bool(parents) or vtable_by_dispatch;
 
-    fields: list[FieldInfo] = [];
+    fields: list[FieldLayout] = [];
     field_index: dict[str, int] = {};
     parent_field_start: dict[str, int] = {};
     seen_fields: set[str] = set();
@@ -308,7 +302,7 @@ impl LayoutPass._build_layout(arch: Archetype) -> ArchetypeLayout {
                 continue;
             }
             seen_fields.add(finfo.name);
-            new_field = FieldInfo(
+            new_field = FieldLayout(
                 name=finfo.name,
                 index=current_idx,
                 type_tag=finfo.type_tag,
@@ -322,6 +316,18 @@ impl LayoutPass._build_layout(arch: Archetype) -> ArchetypeLayout {
             field_index[finfo.name] = current_idx;
             current_idx += 1;
         }
+    }
+
+    if EXC_MESSAGE_FIELD not in seen_fields
+        and any(JAC_TYPE_REGISTRY.is_exception(p) for p in parents) {
+        seen_fields.add(EXC_MESSAGE_FIELD);
+        fields.append(
+            FieldLayout(
+                name=EXC_MESSAGE_FIELD, index=current_idx, type_tag="str", owner=aname
+            )
+        );
+        field_index[EXC_MESSAGE_FIELD] = current_idx;
+        current_idx += 1;
     }
 
     for var in arch.get_has_vars() {
@@ -346,7 +352,7 @@ impl LayoutPass._build_layout(arch: Archetype) -> ArchetypeLayout {
             type_tag = unparse_node(type_node) or str(type_node);
         }
         is_fn_ptr = type_node is not None and isinstance(type_node, FuncSignature);
-        new_field = FieldInfo(
+        new_field = FieldLayout(
             name=fname,
             index=current_idx,
             type_tag=type_tag,
@@ -373,7 +379,7 @@ impl LayoutPass._build_layout(arch: Archetype) -> ArchetypeLayout {
         tnode = tp.bound;
         ptag = (unparse_node(tnode) or str(tnode)) if tnode is not None else "int";
         fields.append(
-            FieldInfo(
+            FieldLayout(
                 name=pname,
                 index=current_idx,
                 type_tag=ptag,
@@ -626,7 +632,7 @@ impl LayoutPass._acyclic_walk(name: str, state: dict[str, int]) -> int {
         }
         key: (str | None) = None;
         try {
-            key = tb.mangle();
+            key = native_type_key(tb);
         } except Exception {
             key = None;
         }
@@ -789,15 +795,51 @@ impl LayoutPass._validate_obj_fields(
         }
 
         if not var.type_tag or not var.type_tag.tag {
-            self.emit(W5031, node_override=var, arch=aname, field=fname);
+            self.ctx.emit(W5031, node_override=var, arch=aname, field=fname);
             continue;
         }
         type_node = var.type_tag.tag;
-        if not self._is_layout_compatible_type(type_node, arch_map) {
+        if not self._is_layout_compatible_semantic_type(var.type)
+            and not self._is_layout_compatible_type(type_node, arch_map) {
             type_str = unparse_node(type_node) or str(type_node);
-            self.emit(W5032, node_override=var, arch=aname, field=fname, type=type_str);
+            self.ctx.emit(
+                W5032, node_override=var, arch=aname, field=fname, type=type_str
+            );
         }
     }
+}
+
+impl LayoutPass._is_layout_compatible_semantic_type(typ: TypeBase | None) -> bool {
+    import from jaclang.compiler.types.types { ClassType, FunctionType, UnionType }
+    if isinstance(typ, UnionType) {
+        return bool(typ.types)
+            and all(
+                self._is_layout_compatible_semantic_type(member) for member in typ.types
+            );
+    }
+    if isinstance(typ, FunctionType) {
+        return True;
+    }
+    if not isinstance(typ, ClassType) or typ._shared is None {
+        return False;
+    }
+    declaration = typ.shared.symbol_table;
+    if isinstance(declaration, Archetype)
+        and declaration.loc.mod_path.endswith(".jac") {
+        return True;
+    }
+    if typ.is_builtin(
+        list(LAYOUT_COMPATIBLE_SCALARS)
+            + ["None", "NoneType", "ptr", "PtrView", "Pinned"]
+    ) {
+        return True;
+    }
+    if typ.is_builtin(["list", "dict", "set", "frozenset", "tuple"]) {
+        args = typ.private.type_args;
+        return bool(args)
+            and all(self._is_layout_compatible_semantic_type(arg) for arg in args);
+    }
+    return False;
 }
 
 impl LayoutPass._is_layout_compatible_type(
@@ -807,12 +849,17 @@ impl LayoutPass._is_layout_compatible_type(
     if type_node is None {
         return False;
     }
-    if isinstance(type_node, FuncSignature) {
+    if isinstance(type_node, (FuncSignature, Null)) {
         return True;
     }
 
     if isinstance(type_node, UnaryExpr) and type_node.ownership != OwnershipKind.NONE {
         return self._is_layout_compatible_type(type_node.operand, arch_map);
+    }
+
+    if isinstance(type_node, Expr)
+        and self._is_layout_compatible_semantic_type(type_node.type) {
+        return True;
     }
 
     if isinstance(type_node, Name) {
@@ -824,11 +871,12 @@ impl LayoutPass._is_layout_compatible_type(
             return True;
         }
 
-        if tname in arch_map {
+        _tnative = referenced_native_name(type_node) or tname;
+        if _tnative in arch_map {
             return True;
         }
 
-        if tname in self.registry.layouts {
+        if _tnative in self.registry.layouts {
             return True;
         }
 
@@ -841,7 +889,7 @@ impl LayoutPass._is_layout_compatible_type(
     }
 
     if isinstance(type_node, BinaryExpr) {
-        op_val = getattr(type_node.op, 'value', '');
+        op_val = type_node.op.value if isinstance(type_node.op, Token) else '';
         if op_val == "|" {
             return (
                 self._is_layout_compatible_type(type_node.left, arch_map)
@@ -856,7 +904,7 @@ impl LayoutPass._is_layout_compatible_type(
             target_name = type_node.target.value;
         }
 
-        if target_name == "type" {
+        if target_name in ("type", "Callable") {
             return True;
         }
         if target_name in {"list", "dict", "set", "frozenset", "tuple"} {
@@ -881,29 +929,20 @@ impl LayoutPass._is_layout_compatible_type(
         }
     }
 
-    if isinstance(type_node, Name) {
-        tname = type_node.value;
-        if tname in LAYOUT_COMPATIBLE_SCALARS {
-            return True;
-        }
-        if tname in arch_map {
-            return True;
-        }
-        if tname in self.registry.layouts {
-            return True;
-        }
-    }
     return False;
 }
 
-impl LayoutPass.transform(ir_in: Module) -> Module {
-    self.ir_out = ir_in;
-    ir_in spawn self;
-    out = self.ir_out;
-    assert isinstance(out, Module);
-    return out;
+impl LayoutPass.run_walk with Module entry {
+    self.module = self._run_impl(here);
 }
 
-impl LayoutPass.run_walk with Module entry {
-    self.ir_out = self._run_impl(here);
+impl FieldLayout.semantic_type.getter -> TypeBase | None {
+    declaration = self.decl_node;
+    if isinstance(declaration, AstTypedVarNode) {
+        return declaration.type;
+    }
+    if isinstance(declaration, TypeParam) {
+        return declaration.name.type;
+    }
+    return None;
 }

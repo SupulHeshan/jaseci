@@ -1,3 +1,4 @@
+import from jaclang.jac0core.cache_paths { atomic_write }
 import io;
 import os;
 import json;
@@ -6,6 +7,13 @@ import logging;
 import shutil;
 import tarfile;
 import from pathlib { Path }
+import from jaclang.project.jac_version {
+    exact_pin,
+    is_plain_version,
+    satisfies,
+    split_clause,
+    version_key
+}
 import from urllib.request { urlopen }
 import from urllib.error { HTTPError }
 import from jaclang.scale.injector.bundle { TOOLCHAIN_SUBDIR }
@@ -30,7 +38,7 @@ def cluster_node_archs -> list[str] {
     } except ImportError {
         return [];
     }
-    nodes: list = [];
+    nodes: list[any] = [];
     try {
         nodes = list(client.CoreV1Api().list_node(_request_timeout=10).items);
     } except Exception as e {
@@ -80,94 +88,6 @@ def _http_get_bytes(url: str) -> bytes {
 glob GH_REPO: str = "jaseci-labs/jac";
 
 
-def _ver_key(v: str) -> tuple[int, int, int] {
-    parts = (v.strip().split(".") + ["0", "0", "0"])[:3];
-    out: list[int] = [];
-    for p in parts {
-        digits = "".join(
-            [
-                c
-                for c in p
-                if c.isdigit()
-            ]
-        );
-        out.append(int(digits) if digits else 0);
-    }
-    return (out[0], out[1], out[2]);
-}
-
-
-def _valid_version(s: str) -> bool {
-    return all([p.isdigit() for p in s.strip().split(".")]);
-}
-
-
-def _split_op(clause: str) -> tuple[str, str] {
-    for op in ["==", "!=", ">=", "<=", "~=", ">", "<"] {
-        if clause.startswith(op) {
-            return (op, clause[len(op):].strip());
-        }
-    }
-    return ("==", clause.strip());
-}
-
-
-def _satisfies(version: str, spec: str) -> bool {
-    v = _ver_key(version);
-    for raw in spec.split(",") {
-        clause = raw.strip();
-        if not clause {
-            continue;
-        }
-        (op, target) = _split_op(clause);
-        t = _ver_key(target);
-        if op == "==" and v != t {
-            return False;
-        } elif op == "!=" and v == t {
-            return False;
-        } elif op == ">=" and v < t {
-            return False;
-        } elif op == "<=" and v > t {
-            return False;
-        } elif op == ">" and v <= t {
-            return False;
-        } elif op == "<" and v >= t {
-            return False;
-        } elif op == "~=" {
-            ncomp = len(
-                [
-                    x
-                    for x in target.split(".")
-                    if x != ""
-                ]
-            );
-            cap = (t[0], t[1] + 1, 0) if ncomp >= 3 else (t[0] + 1, 0, 0);
-            if v < t or v >= cap {
-                return False;
-            }
-        }
-    }
-    return True;
-}
-
-
-def _exact_of(spec: str) -> str {
-    clauses = [
-        c.strip()
-        for c in spec.split(",")
-        if c.strip()
-    ];
-    if len(clauses) != 1 {
-        return "";
-    }
-    (op, target) = _split_op(clauses[0]);
-    if op == "==" and _valid_version(target) {
-        return target;
-    }
-    return "";
-}
-
-
 def _list_release_versions(repo: str) -> list[str] {
     api = f"https://api.github.com/repos/{repo}/releases?per_page=100";
     try {
@@ -179,8 +99,20 @@ def _list_release_versions(repo: str) -> list[str] {
     out: list[str] = [];
     for rel in arr {
         tag = str(rel.get("tag_name", ""));
-        if tag.startswith("v") and not rel.get("prerelease", False) {
-            out.append(tag[1:]);
+        if (
+            not tag.startswith("v")
+            or rel.get("prerelease", False)
+            or rel.get("draft", False)
+        ) {
+            continue;
+        }
+        version = tag[1:];
+        prefix = f"jac-{version}-";
+        for asset in rel.get("assets", []) {
+            if str(asset.get("name", "")).startswith(prefix) {
+                out.append(version);
+                break;
+            }
         }
     }
     return out;
@@ -192,25 +124,25 @@ def _resolve_target_version(repo: str, spec: str) -> str {
     if not spec {
         return "";
     }
-    exact = _exact_of(spec);
+    exact = exact_pin(spec);
     if exact {
         return exact;
     }
     for raw in spec.split(",") {
         clause = raw.strip();
-        if clause and not _valid_version(_split_op(clause)[1]) {
+        if clause and not is_plain_version(split_clause(clause)[1]) {
             return "";
         }
     }
     matches = [
         v
         for v in _list_release_versions(repo)
-        if _satisfies(v, spec)
+        if satisfies(v, spec)
     ];
     if not matches {
         return "";
     }
-    return max(matches, key=_ver_key);
+    return max(matches, key=version_key);
 }
 
 
@@ -233,7 +165,7 @@ def _pick_stable_assets(meta: any, suffix: str) -> tuple[str, str] {
 }
 
 
-glob _deploy_version_memo: dict = {};
+glob _deploy_version_memo: dict[str, any] = {};
 
 
 def resolve_deploy_version(project_dir: str, channel: str) -> str {
@@ -255,7 +187,7 @@ def deploy_generation_refusal(
     if offline {
         found = find_project_root(Path(project_dir));
         pinned = (
-            _exact_of(str(JacConfig.load(found[1]).project.jac_version or ""))
+            exact_pin(str(JacConfig.load(found[1]).project.jac_version or ""))
                 if found is not None and channel == Channel.STABLE.value
                 else ""
         );
@@ -270,8 +202,8 @@ def deploy_generation_refusal(
     if not pinned or not running {
         return "";
     }
-    (pin_major, pin_minor, _) = _ver_key(pinned);
-    (run_major, run_minor, _) = _ver_key(running);
+    (pin_major, pin_minor, _) = version_key(pinned);
+    (run_major, run_minor, _) = version_key(running);
     if (pin_major, pin_minor) == (run_major, run_minor) {
         return "";
     }
@@ -354,7 +286,7 @@ def host_seal_platform -> str {
 }
 
 
-def stable_release_meta(version: str = "") -> dict {
+def stable_release_meta(version: str = "") -> dict[str, any] {
     api = f"https://api.github.com/repos/{GH_REPO}/releases/tags/v{version}"
         if version
         else f"https://api.github.com/repos/{GH_REPO}/releases/latest";
@@ -372,7 +304,7 @@ def stable_release_meta(version: str = "") -> dict {
 }
 
 
-def _no_asset_message(meta: dict, suffix: str, version: str) -> str {
+def _no_asset_message(meta: dict[str, any], suffix: str, version: str) -> str {
     tag = str(meta.get("tag_name", version or "latest"));
     return (
         f"No `jac-*{suffix}` asset on the {GH_REPO} release ({tag}). The node "
@@ -467,54 +399,24 @@ def download_release_binary(
 }
 
 
-def _write_cache_atomic(cache_file: Path, payload: bytes) {
-    cache_file.parent.mkdir(parents=True, exist_ok=True);
-    tmp = cache_file.with_name(f"{cache_file.name}.{os.getpid()}.tmp");
-    tmp.write_bytes(payload);
-    tmp.replace(cache_file);
-}
-
-
 def _fetch_verified_asset(
     url: str, checksum_url: str, cache_file: Path, what: str
 ) -> bytes {
-    want = "";
-    if checksum_url {
-        parts = _http_get_bytes(checksum_url).decode("utf-8").split();
-        if not parts {
-            raise RuntimeError(
-                f"Checksum file at {checksum_url} is empty or malformed; "
-                f"cannot verify the download."
-            );
-        }
-        want = parts[0].strip().lower();
-        if cache_file.is_file() {
-            cached_bytes: bytes | None = None;
-            try {
-                cached_bytes = cache_file.read_bytes();
-            } except OSError {}
-            if cached_bytes is not None
-                and hashlib.sha256(cached_bytes).hexdigest() == want {
-                logger.info(f"Using the cached {what} (checksum match).");
-                return cached_bytes;
-            }
-        }
+    import from jaclang.toolchains.store { Artifact, fetch }
+    if not checksum_url {
+        raise RuntimeError(
+            f"No checksum is available for {what}; refusing an unverified download."
+        );
     }
-    payload = _http_get_bytes(url);
-    if want {
-        got = hashlib.sha256(payload).hexdigest();
-        if got != want {
-            raise RuntimeError(
-                f"Checksum mismatch for the downloaded {what} "
-                f"(expected {want}, got {got}); refusing to ship it."
-            );
-        }
-        try {
-            _write_cache_atomic(cache_file, payload);
-        } except Exception as e {
-            logger.warning(f"Could not cache the downloaded {what} ({e}).");
-        }
+    parts = _http_get_bytes(checksum_url).decode("utf-8").split();
+    if not parts {
+        raise RuntimeError(f"Checksum file at {checksum_url} is empty or malformed.");
     }
+    digest = parts[0].strip().lower();
+    artifact = Artifact("jac-deployment", digest, "asset", url, digest);
+    payload = fetch(artifact, cache_file).read_bytes();
+    import from jaclang.cache.registry { maybe_sweep }
+    maybe_sweep("scale-binaries");
     return payload;
 }
 
@@ -533,7 +435,7 @@ def host_toolchain_path(project_dir: str, channel: str = "") -> str {
     payload = download_release_binary(channel, arch, version, plat);
     path = _binary_cache_path(channel, arch, plat, version);
     if not path.is_file() {
-        _write_cache_atomic(path, payload);
+        atomic_write(path, payload);
     }
     path.chmod(0o755);
     logger.info(f"Host build steps for this deploy run the pinned jac {version}.");
@@ -576,7 +478,7 @@ def resolve_pod_base_image(
     } else {
         target = resolve_deploy_version(project_dir, channel.value)
             if probe
-            else _exact_of(resolve_pinned_spec(project_dir));
+            else exact_pin(resolve_pinned_spec(project_dir));
         tag = target or "latest";
     }
     image = f"{OFFICIAL_IMAGE}:{tag}";
@@ -614,13 +516,8 @@ def resolve_pod_base_image(
 
 
 def _scale_cache_root -> Path {
-    base = os.environ.get("JAC_SCALE_CACHE_DIR", "");
-    if base {
-        return Path(base);
-    }
-    return Path(os.environ.get("XDG_CACHE_HOME", "") or (Path.home() / ".cache"))
-        / "jac"
-        / "scale-binaries";
+    import from jaclang.cache.registry { bucket }
+    return bucket("scale-binaries").path();
 }
 
 
@@ -639,7 +536,7 @@ def _admin_dist_cache_path(channel: str, version: str = "") -> Path {
 
 
 def pack_binary_bytes(binary_bytes: bytes) -> bytes {
-    import from jaclang.scale.injector.bundle { open_det_tar }
+    import from jaclang.dist.archive { open_det_tar }
     buf = io.BytesIO();
     (tar, gz) = open_det_tar(buf);
     try {

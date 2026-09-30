@@ -1,9 +1,35 @@
 import os;
+import from _user_home { user_home }
+
 
 glob sep: str = "/",
      extsep: str = ".",
      pardir: str = "..",
      curdir: str = ".";
+
+def:pub exists(path: str) -> bool {
+    return os.path.exists(path);
+}
+
+def:pub isfile(path: str) -> bool {
+    return os.path.isfile(path);
+}
+
+def:pub isdir(path: str) -> bool {
+    return os.path.isdir(path);
+}
+
+def:pub realpath(path: str) -> str {
+    return os.path.realpath(path);
+}
+
+def:pub getsize(path: str) -> int {
+    return os.path.getsize(path);
+}
+
+def:pub getmtime(path: str) -> float {
+    return os.path.getmtime(path);
+}
 
 
 def:pub isabs(p: str) -> bool {
@@ -202,4 +228,27 @@ def:pub normpath(p: str) -> str {
         return ".";
     }
     return out;
+}
+
+
+def:pub expanduser(path: str) -> str {
+    if not path.startswith("~") {
+        return path;
+    }
+    end = path.find("/");
+    if end < 0 {
+        end = len(path);
+    }
+    home: str | None = None;
+    if end == 1 {
+        home = os.getenv("HOME");
+    }
+    if home is None {
+        home = user_home(path[1:end]);
+    }
+    if home is None {
+        return path;
+    }
+    expanded = _rstrip_slashes(home) + path[end:];
+    return expanded or "/";
 }

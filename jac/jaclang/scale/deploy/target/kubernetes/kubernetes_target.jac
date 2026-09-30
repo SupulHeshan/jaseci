@@ -1,5 +1,9 @@
 import from jaclang.scale.deploy.target.deployment_target { DeploymentTarget }
-import from jaclang.scale.models.resource_status { ResourceStatus, ResourceStatusInfo }
+import from jaclang.scale.models.resource_status {
+    ResourceStatus,
+    ResourceStatusInfo,
+    assess_workload
+}
 import from jaclang.scale.models.progress { EventSink, NoopSink, ProgressEvent }
 import from jaclang.scale.observability.logger { Logger }
 import from jaclang.scale.deploy.target.kubernetes.kubernetes_config {
@@ -8,7 +12,6 @@ import from jaclang.scale.deploy.target.kubernetes.kubernetes_config {
 import from jaclang.scale.deploy.target.kubernetes.utils.kubernetes_utils {
     COMPANION_DEFS,
     create_k8s_secret,
-    ensure_namespace_exists,
     get_cluster_provider,
     resize_pvc_if_needed
 }
@@ -22,14 +25,14 @@ import from jaclang.scale.config.config_loader { get_scale_config }
 import from jaclang.scale.deploy.database.kubernetes_postgres {
     KubernetesPostgresProvider
 }
-import from jaclang.scale.deploy.target.kubernetes.monitoring { MonitoringDeployer }
 import from jaclang.scale.deploy.target.kubernetes.ingress { IngressDeployer }
+import from jaclang.scale.models.deploy_context { DATABASE_URL_ENV }
 
 obj KubernetesTargetBase(DeploymentTarget) {
     has config: KubernetesConfig,
         logger: (Logger | None) = None,
         k8s_config: KubernetesConfig postinit,
-        env_list: list = [],
+        env_list: list[any] = [],
         secrets: dict[str, str] = {},
         env: dict[str, str] = {},
         events: EventSink = NoopSink(),
@@ -55,7 +58,8 @@ obj KubernetesTargetBase(DeploymentTarget) {
 
     def _owner_labels -> dict[str, str] {
         return {
-            str(k): str(v) for (k, v) in dict(self.k8s_config.labels or {}).items()
+            str(k): str(v)
+            for (k, v) in dict[str, any](self.k8s_config.labels or {}).items()
         };
     }
 
@@ -131,7 +135,7 @@ obj KubernetesTargetBase(DeploymentTarget) {
             );
             self.env_list.append(
                 {
-                    'name': 'JAC_DB_URL',
+                    'name': DATABASE_URL_ENV,
                     'valueFrom': {
                         'secretKeyRef': {
                             'name': external_secret_name,
@@ -147,7 +151,7 @@ obj KubernetesTargetBase(DeploymentTarget) {
         );
         self.env_list.append(
             {
-                'name': 'JAC_DB_URL',
+                'name': DATABASE_URL_ENV,
                 'valueFrom': {
                     'secretKeyRef': {
                         'name': pg_result['secret']['metadata']['name'],
@@ -233,23 +237,8 @@ obj KubernetesTargetBase(DeploymentTarget) {
             core_v1 = client.CoreV1Api();
             namespace = self.k8s_config.namespace;
 
-            deployment = apps_v1.read_namespaced_deployment(
-                name=app_name, namespace=namespace
-            );
-
-            replicas = deployment.spec.replicas or 0;
-            ready_replicas = deployment.status.ready_replicas or 0;
-
-            if ready_replicas == replicas and replicas > 0 {
-                status = ResourceStatus.RUNNING;
-            } elif ready_replicas > 0 {
-                status = ResourceStatus.PENDING;
-            } else {
-                status = ResourceStatus.FAILED;
-            }
-
-            return ResourceStatusInfo(
-                status=status, replicas=replicas, ready_replicas=ready_replicas
+            return assess_workload(
+                apps_v1.read_namespaced_deployment(name=app_name, namespace=namespace)
             );
         } except Exception as e {
             if self.logger {
@@ -471,7 +460,7 @@ obj KubernetesTargetBase(DeploymentTarget) {
         }
     }
 
-    def get_full_status(app_name: str) -> dict {
+    def get_full_status(app_name: str) -> dict[str, any] {
         try {
             self._load_cluster_config();
             apps_v1 = client.AppsV1Api();
@@ -546,7 +535,7 @@ obj KubernetesTargetBase(DeploymentTarget) {
             }
         }
 
-        component_defs = [
+        component_defs: list[dict[str, any]] = [
             {'k8s_name': app_name + d[0], 'display': d[1], 'is_sts': d[2]}
             for d in COMPANION_DEFS
         ];
@@ -561,24 +550,15 @@ obj KubernetesTargetBase(DeploymentTarget) {
                 resource_map = dep_map;
             }
             if k8s_name in resource_map {
-                r = resource_map[k8s_name];
-                replicas = r.spec.replicas or 0;
-                ready = r.status.ready_replicas or 0;
-                if ready == replicas and replicas > 0 {
-                    status = 'running';
-                } elif ready > 0 {
-                    status = 'degraded';
-                } elif k8s_name in restarting_apps {
-                    status = 'restarting';
-                } else {
-                    status = 'pending';
-                }
+                health = assess_workload(
+                    resource_map[k8s_name], crashlooping=k8s_name in restarting_apps
+                );
                 components.append(
                     {
                         'name': display_name,
-                        'status': status,
-                        'ready': ready,
-                        'total': replicas
+                        'status': health.status.value,
+                        'ready': health.ready_replicas,
+                        'total': health.replicas
                     }
                 );
                 if display_name == 'Grafana' {

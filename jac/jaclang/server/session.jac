@@ -18,7 +18,9 @@ import from jaclang.data.store { AnchorRow, ConnInfo, PgStore, Store, TxnIsolati
 
 glob logger = logging.getLogger(__name__),
      MAX_RETRIES = 5,
+     EDGE_PAGE = 1000,
      SCRATCH_ENV = 'JAC_DB_SCRATCH',
+     SCRATCH_OWNER_ENV = 'JAC_DB_SCRATCH_OWNER',
      RETENTION_ENV = 'JAC_DB_RETENTION_DAYS',
      RO_UNITS_ENV = 'JAC_DB_RO_UNITS',
      RO_WRITER_TTL_ENV = 'JAC_DB_RO_WRITER_TTL_S',
@@ -28,11 +30,16 @@ glob logger = logging.getLogger(__name__),
          'promotions_for',
          'conninfo_from_url',
          'shared_pg_data_dir',
+         'ProjectDatabase',
+         'project_database',
          'project_db_name',
          'takeover_project',
          'mark_scratch_base',
          'scratch_requested',
          'scratch_lease',
+         'scratch_owner_pid',
+         'own_child_databases',
+         'drop_owned_databases',
          'drop_scratch_database',
          'retention_days_for',
          'runtime_for_base',
@@ -40,6 +47,7 @@ glob logger = logging.getLogger(__name__),
          'unit_writes_recorded',
          'record_unit_writes',
          'SCRATCH_ENV',
+         'SCRATCH_OWNER_ENV',
          'RETENTION_ENV',
          'RO_UNITS_ENV'
      ];
@@ -94,28 +102,41 @@ obj RuntimeLease {
 
 obj ScratchState {
     has database: str,
-        base_path: str;
+        base_path: str,
+        owner_pid: int = 0;
 }
 
 
 def promotions_for(base_path: (str | None)) -> dict[str, list[str]];
 def shared_pg_data_dir -> str;
+obj ProjectDatabase {
+    has name: str,
+        owner: str,
+        in_project: bool = False;
+}
+
+
+def project_database(base_path: str, target_path: (str | None)) -> ProjectDatabase;
 def project_db_name(base_path: str, target_path: (str | None)) -> str;
 def conninfo_from_url(url: str) -> ConnInfo;
 def takeover_project(base_path: str, target_path: (str | None) = None) -> int;
 def mark_scratch_base(base_path: str) -> None;
 def scratch_requested(base_path: (str | None)) -> bool;
 def scratch_lease(base_path: str) -> ScratchLease;
+def scratch_owner_pid -> int;
+def own_child_databases -> None;
+def drop_owned_databases(data_dir: str = '') -> int;
 def drop_scratch_database -> None;
 def retention_days_for(base_path: (str | None)) -> int;
 def runtime_for_base(base_path: str, target_path: (str | None) = None) -> RuntimeLease;
 
 
 obj Session(Memory) {
-    has store: (Store | None) = None,
+    has _store: (Store | None) = None,
+        _data_location: (str | None) = None,
+        _lease: (RuntimeLease | None) = None,
         _flushed_hash: dict[UUID, int] postinit,
         _txn_changed: set[UUID] postinit,
-        _runtime: (any | None) postinit,
         _fetch_count: int postinit,
         _active_units: int postinit,
         _flushing: (int | None) postinit,
@@ -123,10 +144,48 @@ obj Session(Memory) {
         _ro_units: int postinit,
         _unit_stack: list[tuple[(str | None), bool]] postinit,
         _snapshot_reads: set[UUID] postinit,
-        _version_seen: dict[UUID, int] postinit;
+        _version_seen: dict[UUID, int] postinit,
+        _foreign_refs: set[UUID] postinit;
+
+    override def new_session(target_path: str) -> Session {
+        if self.store is None {
+            raise RuntimeError(
+                'Cannot create a provider session without a bound store'
+            );
+        }
+        return Session(
+            _store=self.store.new_session(),
+            base_path=self.base_path,
+            target_path=target_path
+        );
+    }
+
+    override def preserve_unresolved_ref(id: UUID) -> bool {
+        return id in self._foreign_refs;
+    }
+
+    has store: (Store | None) {
+        getter {
+            if self._store is None and self.base_path {
+                with self._lock {
+                    if self._store is None {
+                        self._boot_store();
+                    }
+                }
+            }
+            return self._store;
+        }
+        setter(value: (Store | None)) {
+            self._store = value;
+            self._data_location = None;
+        }
+    }
 
     def postinit -> None;
+    def _runtime_lease -> RuntimeLease;
+    def _boot_store -> None;
     def data_location -> (str | None);
+    def __repr__ -> str;
     def get(id: UUID) -> (Anchor | None);
     def delete(id: UUID) -> None;
     def close -> None;
@@ -146,17 +205,17 @@ obj Session(Memory) {
     def read_scope_exit -> None;
     def flush(full: bool = False) -> None;
     def _flush_locked(full: bool) -> None;
+    def ensure_writable_txn -> None;
     def read_barrier -> None;
     def _recover_conflict -> None;
+    def _rollback_quiet -> None;
     def _ensure_txn -> None;
     def _txn_isolation -> TxnIsolation;
     def _register_ro_writers -> str;
     def _raise_ro_retry -> None;
     def _drop_snapshot_reads -> None;
-    def _materialize(
-        row: AnchorRow, edge_ids: (list[UUID] | None) = None
-    ) -> (Anchor | None);
-
-    def _serialize(anchor: Anchor) -> AnchorRow;
+    def _materialize(row: AnchorRow) -> (Anchor | None);
+    def _load_edges(nd: NodeAnchor) -> list[EdgeAnchor];
+    def _serialize(anchor: Anchor, props: (any | None) = None) -> AnchorRow;
     def _evict_uncommitted -> None;
 }

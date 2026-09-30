@@ -16,51 +16,30 @@ unresolved libc import and the loader would abort, so a clean run proves the
 merge. Together the file covers the archive-merge path on both object formats.
 """
 
+import from tests.support { jac_command }
+import from jaclang.compiler.backends.native.entry_points { inject_main }
+
 import os;
+import from jaclang.compiler.driver.compile_options {
+    push_native_target,
+    pop_native_target
+}
 import struct;
 import subprocess;
 import sys;
 import tempfile;
 import from pathlib { Path }
-import from jaclang.compiler.driver.program { JacProgram }
-import from jaclang.compiler.driver.compile_options { CompileOptions }
 import from jaclang.compiler.backends.native.macho_linker { MachOLinker }
 import from jaclang.compiler.backends.native.elf_linker { ElfLinker }
 import from jaclang.compiler.backends.native.linker_common { select_ar_members }
-import from jaclang.cli.commands.nacompile {
-    _inject_entry_elf_static,
-    _collect_musl_static,
-    _musl_lib_dir
+import from jaclang.compiler.backends.native.static_link {
+    collect_musl_static,
+    musl_lib_dir
 }
+import from tests.support { program_ir }
 import jaclang.compiler.backends.native.llvm.binding as llvm;
 
 glob FIXTURES = str(Path(__file__).resolve().parent / "fixtures");
-
-
-"""Compile a fixture for `triple` and return its LLVM IR text (mirrors the
-nacompile CLI AOT path; see test_exec_link)."""
-def _compile_ir(fixture: str, triple: str) -> str {
-    prev = os.environ.get("JAC_NATIVE_TARGET", None);
-    os.environ["JAC_NATIVE_TARGET"] = triple;
-    try {
-        prog = JacProgram();
-        ir = prog.compile(
-            file_path=os.path.join(FIXTURES, fixture),
-            options=CompileOptions(aot_mode=True)
-        );
-        assert not prog.errors_had , f"compile errors: {[
-            str(e) for e in prog.errors_had
-        ]}";
-        ir_txt = str(ir.gen.llvm_ir);
-    } finally {
-        if prev is None {
-            os.environ.pop("JAC_NATIVE_TARGET", None);
-        } else {
-            os.environ["JAC_NATIVE_TARGET"] = prev;
-        }
-    }
-    return ir_txt;
-}
 
 
 """Assemble IR into a relocatable object using the fixed-base large code model,
@@ -77,36 +56,11 @@ def _emit_object(ir_txt: str, triple: str) -> bytes {
 }
 
 
-"""Inject `main` for Mach-O — mirrors nacompile's _inject_entry_macho."""
-def _inject_macho(ir_txt: str) -> str {
-    globals_ir = ""
-        if "__jac_argc" in ir_txt
-        else "@__jac_argc = global i32 0\n@__jac_argv = global ptr null\n\n";
-    return ir_txt
-        + (
-            "\n; --- injected entry point ---\n"
-            + globals_ir
-            + "define i32 @main(i32 %argc, ptr %argv) {\nentry:\n"
-            + "    store i32 %argc, ptr @__jac_argc\n"
-            + "    store ptr %argv, ptr @__jac_argv\n"
-            + "    call void @jac_entry()\n    ret i32 0\n}\n"
-        );
-}
-
-
-"""Inject `main` + `_start` for ELF — mirrors nacompile's _inject_entry_elf
-(see test_exec_link). ELF executables need an explicit `_start` that calls
-`main` and `exit`, unlike Mach-O where dyld provides the entry stub."""
-def _inject_elf(ir_txt: str) -> str {
-    # Static musl entry (crt1.o supplies `_start`); see test_exec_link.
-    return _inject_entry_elf_static(ir_txt);
-}
-
-
 """Locate a bundled archive by name from any pbs build, or None."""
 def _find_bundled(libname: str) -> (str | None) {
     jac_dir = Path(__file__).resolve().parents[4];
-    hits = list(jac_dir.`glob(f".pbs-build/*/python/build/lib/{libname}"));
+    hits = sorted(jac_dir.`glob(f".python-build/*/*/python/build/lib/{libname}"));
+    hits += sorted(jac_dir.`glob(f".python-build/*/python/build/lib/{libname}"));
     return str(hits[0]) if hits else None;
 }
 
@@ -128,13 +82,11 @@ test "Mach-O: static-link lzma_crc32 from liblzma.a, run, verify (#6978 0.1a)" {
     assert members , "ar selection found no member defining _lzma_crc32";
     member_bytes = [m.data for m in members];
 
-    relobj = _emit_object(
-        _inject_macho(_compile_ir("static_archive_crc32.jac", triple)), triple
-    );
+    relobj = _emit_object(program_ir("static_archive_crc32.jac", triple), triple);
     d = tempfile.mkdtemp();
     out = os.path.join(d, "crc32_static");
     ok = MachOLinker.link(
-        obj_bytes=relobj,
+        objects=[relobj],
         output_path=out,
         needed_libs=["/usr/lib/libSystem.B.dylib"],
         shared=False,
@@ -167,13 +119,11 @@ test "Mach-O: static-link XML_ExpatVersion from libexpat.a (multi-member) (#6978
     assert len(members) > 1 , f"expected a multi-member closure, got {len(members)}";
     member_bytes = [m.data for m in members];
 
-    relobj = _emit_object(
-        _inject_macho(_compile_ir("static_archive_expat.jac", triple)), triple
-    );
+    relobj = _emit_object(program_ir("static_archive_expat.jac", triple), triple);
     d = tempfile.mkdtemp();
     out = os.path.join(d, "expat_static");
     ok = MachOLinker.link(
-        obj_bytes=relobj,
+        objects=[relobj],
         output_path=out,
         needed_libs=["/usr/lib/libSystem.B.dylib"],
         shared=False,
@@ -202,7 +152,7 @@ test "nacompile CLI: `import from lzma` static-links the floor, no dylib dep (#6
     d = tempfile.mkdtemp();
     out = os.path.join(d, "crc32_cli");
     comp = subprocess.run(
-        [sys.executable, "-m", "jaclang", "nacompile", fixture, "-o", out],
+        jac_command("build", "--native", fixture, "-o", out),
         capture_output=True,
         text=True,
         timeout=180
@@ -225,7 +175,7 @@ test "nacompile CLI: `import from lzma` static-links the floor, no dylib dep (#6
 
 
 """Emit a PIC relocatable object for `triple` (shared-object flavor, matching
-emit_shared_library's target-machine settings)."""
+link_plan.link_artifact's target-machine settings)."""
 def _emit_pic_object(ir_txt: str, triple: str) -> bytes {
     llvm.initialize_all_targets();
     llvm.initialize_all_asmprinters();
@@ -241,14 +191,16 @@ def _emit_pic_object(ir_txt: str, triple: str) -> bytes {
 """Link a shared ELF .so from a main object plus archive members and return
 (image bytes, {symbol: vaddr}) for byte-level inspection on any host. In the
 ElfLinker shared layout BASE_VADDR is 0, so every vaddr is also a file offset."""
-def _link_elf_shared(main_ir: str, member_irs: list[str], triple: str) -> tuple {
+def _link_elf_shared(
+    main_ir: str, member_irs: list[str], triple: str
+) -> tuple[any, ...] {
     d = tempfile.mkdtemp();
     out = os.path.join(d, "libt.so");
     prev = os.environ.get("JAC_SYMMAP", None);
     os.environ["JAC_SYMMAP"] = "1";
     try {
         ok = ElfLinker.link(
-            obj_bytes=_emit_pic_object(main_ir, triple),
+            objects=[_emit_pic_object(main_ir, triple)],
             output_path=out,
             needed_libs=["libc.so.6"],
             crt_objects=[],
@@ -268,7 +220,7 @@ def _link_elf_shared(main_ir: str, member_irs: list[str], triple: str) -> tuple 
     }
     assert ok , "ElfLinker.link(shared) returned False";
     raw = Path(out).read_bytes();
-    symmap: dict = {};
+    symmap: dict[str, int] = {};
     for line in Path(out + ".symmap").read_text().splitlines() {
         (n, v) = line.rsplit(" ", 1);
         symmap[n] = int(v, 16);
@@ -278,16 +230,16 @@ def _link_elf_shared(main_ir: str, member_irs: list[str], triple: str) -> tuple 
 
 
 """Parse an ELF image's section headers into {name: (file_off, size)}."""
-def _elf_section_map(raw: bytes) -> dict {
+def _elf_section_map(raw: bytes) -> dict[str, any] {
     e_shoff = struct.unpack_from("<Q", raw, 40)[0];
     (e_shentsize, e_shnum, e_shstrndx) = struct.unpack_from("<HHH", raw, 58);
-    hdrs: list = [];
+    hdrs: list[any] = [];
     for i in range(e_shnum) {
         hdrs.append(struct.unpack_from("<IIQQQQIIQQ", raw, e_shoff + i * e_shentsize));
     }
     shstr = hdrs[e_shstrndx];
     sdata = raw[shstr[4]:shstr[4] + shstr[5]];
-    smap: dict = {};
+    smap: dict[str, any] = {};
     for h in hdrs {
         end = sdata.index(b"\x00", h[0]);
         smap[sdata[h[0]:end].decode()] = (h[4], h[5]);
@@ -377,7 +329,7 @@ test "ELF: RELA addends survive into RELATIVE dynamic relocs" {
     smap = _elf_section_map(raw);
     assert ".rela.dyn" in smap , f"no .rela.dyn emitted: {smap.keys()}";
     (rd_off, rd_size) = smap[".rela.dyn"];
-    rels: list = [];
+    rels: list[any] = [];
     for i in range(rd_size // 24) {
         rels.append(struct.unpack_from("<QQq", raw, rd_off + i * 24));
     }
@@ -407,7 +359,7 @@ test "ELF: static-link jac_floor_magic from a member object, run, verify (#6978 
     # Execution stays gated to a Linux x86_64 host that can run the result.
     triple = "x86_64-unknown-linux-gnu";
     main_obj = _emit_object(
-        _inject_elf(_compile_ir("static_archive_elf_leaf.jac", triple)), triple
+        program_ir("static_archive_elf_leaf.jac", triple, static_musl=True), triple
     );
     # The archive member as a raw relocatable object -- the same shape
     # select_ar_members hands back as `.data`: a leaf defining the extern the
@@ -420,17 +372,17 @@ test "ELF: static-link jac_floor_magic from a member object, run, verify (#6978 
 
     d = tempfile.mkdtemp();
     out = os.path.join(d, "floor_static_elf");
-    if _musl_lib_dir(triple) is None {
+    if musl_lib_dir(triple) is None {
         return;
     }
-    musl = _collect_musl_static(main_obj, triple);
+    musl = collect_musl_static([main_obj], triple);
     assert musl is not None , "musl runtime unexpectedly unavailable";
     (members, crt) = musl;
     # Prepend the member-under-test to the vendored musl members: an unmerged
     # member would leave `jac_floor_magic` undefined (resolved to 0) and the
     # program would crash, so a clean run proves the merge.
     ok = ElfLinker.link(
-        obj_bytes=main_obj,
+        objects=[main_obj],
         output_path=out,
         needed_libs=[],
         crt_objects=crt,

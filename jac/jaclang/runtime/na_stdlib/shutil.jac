@@ -3,11 +3,8 @@ import from c { def access(path: str, mode: i32) -> i32;  }
 import from c { def unlink(path: str) -> i32;  }
 import from c { def rmdir(path: str) -> i32;  }
 import from c { def rename(oldp: str, newp: str) -> i32;  }
-import from c { def opendir(path: str) -> int;  }
-import from c { def readdir(dirp: int) -> int;  }
-import from c { def closedir(dirp: int) -> i32;  }
-import from c { def strdup(s: int) -> str;  }
-import from _dirent_native { dirent_name }
+import from _directory_native { try_directory_names }
+import from _errno_native { errno_message }
 
 
 def:pub which(cmd: str) -> (str | None) {
@@ -63,41 +60,57 @@ def:pub move(src: str, dst: str) -> str {
     if rename(src, real_dst) == 0 {
         return real_dst;
     }
+    reason = errno_message();
     if os.path.isdir(src) {
-        raise ValueError(f"move: cannot relocate directory '{src}' across filesystems");
+        raise ValueError(f"move: could not move directory '{src}': {reason}");
     }
     copyfile(src, real_dst);
-    unlink(src);
+    if unlink(src) != 0 {
+        raise ValueError(f"move: could not remove '{src}': {errno_message()}");
+    }
     return real_dst;
 }
 
-def:pub rmtree(path: str) {
-    d = opendir(path);
-    if d == 0 {
-        raise ValueError(f"rmtree: cannot open '{path}'");
-    }
-    children: list[str] = [];
-    while True {
-        ent = readdir(d);
-        if ent == 0 {
-            break;
-        }
-        nm = dirent_name(ent);
-        if nm == "." or nm == ".." {
+def:pub rmtree(path: str, ignore_errors: bool = False) {
+    _rmtree_walk(path, ignore_errors);
+}
+
+def _rmtree_children(path: str, ignore_errors: bool) -> bool {
+    ok = True;
+    for nm in try_directory_names(path) {
+        child = os.path.join(path, nm);
+        if unlink(child) == 0 {
             continue;
         }
-        children.append(nm);
-    }
-    closedir(d);
-    for nm in children {
-        child = os.path.join(path, nm);
+        reason = errno_message();
         if os.path.isdir(child) {
-            rmtree(child);
-        } else {
-            unlink(child);
+            if not _rmtree_walk(child, ignore_errors) {
+                ok = False;
+            }
+            continue;
+        }
+        if not ignore_errors {
+            raise ValueError(f"rmtree: could not remove '{child}': {reason}");
+        }
+        ok = False;
+    }
+    return ok;
+}
+
+def _rmtree_walk(path: str, ignore_errors: bool) -> bool {
+    ok = _rmtree_children(path, ignore_errors);
+    if rmdir(path) != 0 {
+        if not _rmtree_children(path, ignore_errors) {
+            ok = False;
+        }
+        if rmdir(path) != 0 {
+            if not ignore_errors {
+                raise ValueError(
+                    f"rmtree: could not remove '{path}': {errno_message()}"
+                );
+            }
+            return False;
         }
     }
-    if rmdir(path) != 0 {
-        raise ValueError(f"rmtree: could not remove '{path}'");
-    }
+    return ok;
 }

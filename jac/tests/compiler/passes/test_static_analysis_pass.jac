@@ -1,5 +1,6 @@
 """Static analysis pass tests."""
 
+import from jaclang.compiler.backends.py.codegen_shim { generated_python }
 import os;
 import from tests.support { JAC_ROOT }
 import jaclang;
@@ -149,7 +150,7 @@ test "ambient typing names resolve without import" {
         assert len(undef) == 0 , f"{tname} should be ambient: got {undef}";
     }
     assert len(error_msgs) == 0 , f"Expected no errors, got: {error_msgs}";
-    py_code = prog.compile(file_path).gen.py;
+    py_code = generated_python(prog.compile(file_path).gen);
     assert py_code is not None , "Expected Python codegen to succeed";
     assert "from typing import" in py_code , f"Expected typing import auto-injected, got:\n{py_code[:500]}";
     for tname in typing_names {
@@ -240,7 +241,7 @@ test "bootstrap-compiled modules keep the ambient-import advisory" {
     }
     assert is_bootstrap_compiled_module("/repo/jac/jaclang/runtime/runtime.jac");
     assert is_bootstrap_compiled_module(
-        "/repo/jac/jaclang/compiler/passes/uni_pass.jac"
+        "/repo/jac/jaclang/compiler/passes/execution.jac"
     );
     assert is_bootstrap_compiled_module("C:\\repo\\jac\\jaclang\\runtime\\runtime.jac");
     assert not is_bootstrap_compiled_module(
@@ -358,7 +359,7 @@ test "every import shape binding a deprecated typing alias is refused with E1123
     ]}";
 
     # The remedy has to be in the message the author reads, not just the help.
-    refused = {};
+    refused: dict[str, str] = {};
     for e in e1123 {
         for (alias, builtin) in [
             ("List", "list"),

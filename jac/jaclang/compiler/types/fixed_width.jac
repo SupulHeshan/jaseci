@@ -27,7 +27,10 @@ obj AssignVerdict {
 }
 
 def interval_of_op(
-    op: str, left: (tuple | None), right: (tuple | None), target: str
+    op: str,
+    left: (tuple[int, int] | None),
+    right: (tuple[int, int] | None),
+    target: str
 ) -> bool {
     if left is None or right is None {
         return False;
@@ -57,7 +60,7 @@ def interval_of_op(
     return t_lo <= lo and hi <= t_hi;
 }
 
-def interval_of_expr(expr: (Expr | None)) -> (tuple | None) {
+def interval_of_expr(expr: (Expr | None)) -> (tuple[int, int] | None) {
     if expr is None {
         return None;
     }
@@ -295,6 +298,14 @@ def unify_numeric_operands(
         annotate_coercion(left_node, right_inst);
     }
     return right_inst;
+}
+
+def arithmetic_result_type(evaluator: TypeEvaluator, t: TypeBase) -> TypeBase {
+    int_class = evaluator.prefetch.int_class if evaluator.prefetch else None;
+    if numeric_name_of(t) == "bool" and int_class is not None {
+        return evaluator._convert_to_instance(int_class);
+    }
+    return t;
 }
 
 def both_numeric(left_type: TypeBase, right_type: TypeBase) -> bool {

@@ -30,8 +30,8 @@ class Instruction(NamedValue, _HasMetadata) {
         assert isinstance(flags, (`tuple, `list));
         self.opname = opname;
         self.operands = operands;
-        self.flags = `list(flags);
-        self.metadata = {};
+        self.flags: list[str] = `list(flags);
+        self.metadata: dict[str, any] = {};
     }
 
     @property
@@ -132,7 +132,7 @@ class CallInstr(Instruction) {
         self.tail = tail;
         self.fastmath = FastMathFlags(fastmath);
         self.attributes = CallInstrAttributes(attrs);
-        self.arg_attributes = {};
+        self.arg_attributes: dict[int, ArgumentAttributes] = {};
         if arg_attrs {
             for (idx, attrs) in arg_attrs.items() {
                 if not (0 <= idx < len(args)) {
@@ -197,7 +197,7 @@ class CallInstr(Instruction) {
     }
 
     def _descr(self: CallInstr, buf: any, add_metadata: any) -> object {
-        def descr_arg(i: any, a: any) -> object {
+        def descr_arg(i: any, a: any) -> str {
             if (i in self.arg_attributes) {
                 attrs = ' '.join(self.arg_attributes[i]._to_list(a.type)) + ' ';
             } else {
@@ -584,6 +584,75 @@ class StoreInstr(Instruction) {
     }
 }
 
+class LoadAtomicInstr(Instruction) {
+    def init(
+        self: LoadAtomicInstr,
+        parent: any,
+        ptr: any,
+        ordering: str,
+        align: int,
+        name: any = '',
+        typ: any = None
+    ) -> object {
+        if (typ is None) {
+            if isinstance(ptr, AllocaInstr) {
+                typ = ptr.allocated_type;
+            } elif not ptr.type.is_opaque {
+                typ = ptr.type.pointee;
+            } else {
+                raise ValueError("Load lacks type.");
+            }
+        }
+        super.init(parent, typ, "load atomic", [ptr], name=name);
+        self.ordering = ordering;
+        self.align = align;
+    }
+
+    def descr(self: LoadAtomicInstr, buf: any) -> object {
+        [val] = self.operands;
+        buf.append(
+            "load atomic {0}, {1} {2} {3}, align {4}{5}\n".format(
+                self.type,
+                val.type,
+                val.get_reference(),
+                self.ordering,
+                self.align,
+                self._stringify_metadata(leading_comma=True)
+            )
+        );
+    }
+}
+
+class StoreAtomicInstr(Instruction) {
+    def init(
+        self: StoreAtomicInstr,
+        parent: any,
+        val: any,
+        ptr: any,
+        ordering: str,
+        align: int
+    ) -> object {
+        super.init(parent, types.VoidType(), "store atomic", [val, ptr]);
+        self.ordering = ordering;
+        self.align = align;
+    }
+
+    def descr(self: StoreAtomicInstr, buf: any) -> object {
+        (val, ptr) = self.operands;
+        buf.append(
+            "store atomic {0} {1}, {2} {3} {4}, align {5}{6}\n".format(
+                val.type,
+                val.get_reference(),
+                ptr.type,
+                ptr.get_reference(),
+                self.ordering,
+                self.align,
+                self._stringify_metadata(leading_comma=True)
+            )
+        );
+    }
+}
+
 class AllocaInstr(Instruction) {
     def init(
         self: AllocaInstr, parent: any, typ: any, count: any, name: any
@@ -671,7 +740,7 @@ class PhiInstr(Instruction) {
         self: PhiInstr, parent: any, typ: any, name: any, flags: any = ()
     ) -> object {
         super.init(parent, typ, "phi", (), name=name, flags=flags);
-        self.incomings = [];
+        self.incomings: list[tuple[Value, Block]] = [];
     }
 
     def descr(self: PhiInstr, buf: any) -> object {

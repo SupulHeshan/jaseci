@@ -35,7 +35,7 @@ impl runtime_api_names(framework: str = "") -> set[str] {
     names: set[str] = set();
 
     for m in re.finditer(
-        r"(?m)^(?:async\s+)?(?:def|glob)(?::\w+)?\s+([A-Za-z_][A-Za-z0-9_]*)", text
+        r"(?m)^(?:async\s+)?(?:def|glob|obj)(?::\w+)?\s+([A-Za-z_][A-Za-z0-9_]*)", text
     ) {
         names.add(m.group(1));
     }
@@ -118,17 +118,16 @@ def _pkg_root(spec: str) -> (str | None) {
     return parts[0];
 }
 
-glob _PEER_VERSIONS: dict[str, str] = {
-         "react": "^18.2.0",
-         "react-dom": "^18.2.0",
-         "react-router-dom": "^6.22.0",
-         "react-error-boundary": "^5.0.0",
-         "@tanstack/react-form": "^1.33.0",
+glob _SOLID_PEER_VERSIONS: dict[str, str] = {
          "@tanstack/solid-form": "^1.33.0",
          "solid-js": "^1.9.13",
-         "@solidjs/router": "^0.16.1",
-         "zod": "^4.3.6"
+         "@solidjs/router": "^0.16.1"
      };
+
+def _peer_versions -> dict[str, str] {
+    import from jaclang.client.npm_provider { CORE_RUNTIME_DEPS, OPTIONAL_RUNTIME_DEPS }
+    return {** CORE_RUNTIME_DEPS, ** OPTIONAL_RUNTIME_DEPS, ** _SOLID_PEER_VERSIONS};
+}
 
 def _runtime_peer_deps(js: str) -> dict[str, str] {
     roots: set[str] = set();
@@ -147,12 +146,14 @@ def _runtime_peer_deps(js: str) -> dict[str, str] {
         }
     }
     peers: dict[str, str] = {};
+    known = _peer_versions();
     for pkg in sorted(roots) {
-        version = _PEER_VERSIONS.get(pkg);
+        version = known.get(pkg);
         if version is None {
             raise ValueError(
                 f"runtime imports unknown peer package {pkg!r}; "
-                "add it to _PEER_VERSIONS in runtime_npm.impl.jac and the "
+                "add it to CORE_RUNTIME_DEPS/OPTIONAL_RUNTIME_DEPS in "
+                "npm_provider.jac (or _SOLID_PEER_VERSIONS here) and the "
                 "client dependency defaults"
             );
         }
@@ -179,6 +180,27 @@ def _relative_dep_specs(js: str) -> list[str] {
         }
     }
     return specs;
+}
+
+def _point_at_packaged_prelude(js: str, member_rel: str) -> str {
+    import posixpath;
+    import from jaclang.compiler.backends.es.jac_runtime_js {
+        JAC_PRELUDE_BASENAME,
+        JAC_PRELUDE_MODULE
+    }
+    up = posixpath.dirname(member_rel);
+    target = posixpath.normpath(
+        posixpath.join(posixpath.relpath(".", up or "."), JAC_PRELUDE_BASENAME)
+    )
+        if up
+        else JAC_PRELUDE_BASENAME;
+    if not target.startswith(".") {
+        target = "./" + target;
+    }
+    for quote in ['"', "'"] {
+        js = js.replace(quote + JAC_PRELUDE_MODULE + quote, quote + target + quote);
+    }
+    return js;
 }
 
 def _collect_dep_modules(
@@ -252,6 +274,8 @@ impl build_runtime_tarball(
         Path(resolve_client_runtime_cl_path()).relative_to(base).as_posix()
     );
     (entry_js, deps) = _collect_dep_modules(entry_js, entry_dir);
+    entry_js = _point_at_packaged_prelude(entry_js, "index.js");
+    deps = [(rel, _point_at_packaged_prelude(dep_js, rel)) for (rel, dep_js) in deps];
 
     exports = runtime_export_names(entry_js, framework);
     if exports {
@@ -261,9 +285,14 @@ impl build_runtime_tarball(
     all_js = "\n".join([entry_js] + [dep_js for (_, dep_js) in deps]);
     peers = _runtime_peer_deps(all_js);
     pj = _runtime_package_json(version, name, peers);
+    import from jaclang.compiler.backends.es.jac_runtime_js {
+        JAC_PRELUDE_BASENAME,
+        build_jac_prelude_module
+    }
     members: list[tuple[str, bytes]] = [
         ("package/package.json", pj.encode("utf-8")),
-        ("package/index.js", entry_js.encode("utf-8"))
+        ("package/index.js", entry_js.encode("utf-8")),
+        (f"package/{JAC_PRELUDE_BASENAME}", build_jac_prelude_module().encode("utf-8"))
     ];
     for (rel, dep_js) in deps {
         members.append((f"package/{rel}", dep_js.encode("utf-8")));
