@@ -1876,7 +1876,7 @@ test "return_type" {
     program = JacProgram();
     path = os.path.join(CHECKER_FIXTURES, "checker_return_type.jac");
     mod = program.compile(path, options=NO_TC);
-    assert len(program.errors_had) == 4;
+    assert len(program.errors_had) == 5;
 
     expected_errors = [
         """
@@ -1892,7 +1892,7 @@ test "return_type" {
         """
         Cannot return Literal[""], expected int
 
-        def bar()  -> int {
+        def bar -> int {
             return "";  # <-- Error
             ^^^^^^^^^^
         """,
@@ -1900,9 +1900,15 @@ test "return_type" {
         Cannot return float, expected int
             return 1.1;  # <-- Error
             ^^^^^^^^^^
+        """,
+        """
+        Return type annotation required when function returns a value
+            return 0;  # <-- Error (no return annotation, but returning a value)
+            ^^^^^^^^^
         """
     ];
 
+    # Regression (#9094): caller's `return bump();` must not also raise E1002.
     for i in range(len(expected_errors)) {
         assert_error_pretty_found(
             expected_errors[i], program.errors_had[i].pretty_print()
@@ -5634,4 +5640,23 @@ test "a bare name in a method body skips the class scope" {
     assert len(make_hints) == 2 , f"Expected W2001 for 'make' in both methods, got: {names}";
     assert any("`Toolbox.make`" in h for h in make_hints) , f"static method hint: {make_hints}";
     assert any("`cls.make`" in h for h in make_hints) , f"class method hint: {make_hints}";
+}
+
+test "arguments of a call whose callee is Any are still type-evaluated" {
+    # `any(...)` resolves its callee to the `Any` keyword type, and calling an
+    # `any`-typed value has no signature to check arguments against. Both
+    # calls still evaluate their arguments, so a comprehension passed straight
+    # to them carries its element type to the backends.
+    program = JacProgram();
+    mod = program.compile(
+        os.path.join(CHECKER_FIXTURES, "checker_any_call_arguments.jac")
+    );
+    assert len(program.errors_had) == 0 , "Unexpected errors:\n"
+        + "\n---\n".join(e.pretty_print() for e in program.errors_had);
+    comprs = mod.get_all_sub_nodes(uni.ListCompr);
+    assert len(comprs) == 3 , f"expected three comprehensions, got {len(comprs)}";
+    for compr in comprs {
+        assert str(compr.type) == "list[bool]" , f"line {compr.loc.first_line}: {compr.type}";
+        assert str(compr.out_expr.type) == "bool" , f"line {compr.loc.first_line}: {compr.out_expr.type}";
+    }
 }
