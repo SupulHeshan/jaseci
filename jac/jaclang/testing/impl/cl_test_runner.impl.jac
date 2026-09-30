@@ -372,6 +372,7 @@ impl run_cl_test_file(
     serve: bool = True,
     timeout: float = 120.0
 ) -> list[ClTestResult] {
+    filepath = module_entry_for(filepath);
     (module_js, tests, imports, server_imports) = compile_cl_module(filepath);
     if test_name {
         tests = [
@@ -553,8 +554,36 @@ impl _parse_results(stdout: str, tests: list[any]) -> (list[ClTestResult] | None
     return None;
 }
 
+impl module_entry_for(filepath: str) -> str {
+    """The module a client test path belongs to.
+
+    An annex (`foo.test.jac`, `foo.impl.jac`) is a fragment, not a compilation
+    unit: its symbols only exist once the compiler has merged it into `foo.jac`.
+    Compiling one on its own yields a module that references names it never
+    defines, which reaches the harness as a bare identifier and fails at call
+    time with a `ReferenceError` -- or, when the base module carried the
+    placement pin the annex no longer matches, as a builtin left unlowered
+    (#9606). Directory discovery collects annex paths, so every entry point here
+    resolves through this before it compiles anything. A path that is not an
+    annex, or an annex whose base file is missing, is returned unchanged so the
+    compiler reports the real problem instead of this function hiding it.
+    """;
+    import from jaclang.jac0core.ext_registry { is_annex }
+    path = str(filepath);
+    if not is_annex(os.path.basename(path)) {
+        return path;
+    }
+    try {
+        import from jaclang.compiler.driver.bccache { discover_base_file }
+        base = discover_base_file(path);
+    } except Exception {
+        return path;
+    }
+    return base if base else path;
+}
+
 impl module_is_client(filepath: str) -> bool {
-    path = os.path.abspath(str(filepath));
+    path = os.path.abspath(module_entry_for(str(filepath)));
     if path in _COLOR_CACHE {
         return _COLOR_CACHE[path];
     }
