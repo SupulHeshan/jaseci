@@ -4,19 +4,9 @@ Client tests run under bun in a sealed temp dir with no `node_modules`, so
 every non-relative import spec has to be rewritten to something bun can
 resolve.  These cover that rewriting for modules that are not `@jac/runtime`.
 
-They also cover which file the runner compiles (#9606). An annex is a fragment,
-not a compilation unit. Directory discovery collects annex paths, and the client
-branch used to hand them straight to the compiler, so the module under test was
-never in the unit: the harness referenced a name nothing defined and failed at
-call time with a `ReferenceError`, or, where the base module held the placement
-pin the annex no longer matched, with a builtin left unlowered. The server branch
-never had this because it resolves the annex to its base file first.
-
-No base module is an answer, not a failure: a self-contained annex is a real
-pattern here (`examples/jaclang_org/core/site/jacyac/fullstack.test.jac` has no
-`fullstack.jac`), so it compiles as its own unit. A resolution *error* is not an
-answer and propagates, since falling back to the annex would silently restore
-the defect.
+They also cover which file the runner compiles (#9606): an annex resolves to its
+base module, an annex with no base is its own unit, and a resolution error
+propagates instead of silently falling back to the annex.
 """
 
 import from pathlib { Path }
