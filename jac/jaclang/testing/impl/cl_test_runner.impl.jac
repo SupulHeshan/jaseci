@@ -560,13 +560,8 @@ impl module_entry_for(filepath: str) -> str {
     if not is_annex(os.path.basename(path)) {
         return path;
     }
-    try {
-        import from jaclang.compiler.driver.bccache { discover_base_file }
-        base = discover_base_file(path);
-    } except Exception {
-        return path;
-    }
-    return base or path;
+    import from jaclang.compiler.driver.bccache { discover_base_file }
+    return discover_base_file(path) or path;
 }
 
 impl module_is_client(filepath: str) -> bool {
