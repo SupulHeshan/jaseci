@@ -39,6 +39,22 @@ def _ctx(td: str) -> ExecutionContext {
 }
 
 
+def _seed(td: str) -> UUID {
+    old = JacRuntime.exec_ctx;
+    ctx = _ctx(td);
+    JacRuntime.exec_ctx = ctx;
+    try {
+        c = WCounter(n=0);
+        root ++> c;
+        ctx.mem.commit();
+        return c.__jac__.id;
+    } finally {
+        JacRuntime.exec_ctx = old;
+        ctx.close();
+    }
+}
+
+
 test "a stored anchor carries a version that advances on write" {
     with TemporaryDirectory() as td {
         old = JacRuntime.exec_ctx;
@@ -128,6 +144,147 @@ test "a write over a stale read reports instead of vanishing" {
         } finally {
             JacRuntime.exec_ctx = old;
             ctxa.close();
+        }
+    }
+}
+
+
+test "a write inside a pushed context leaves the caller's session clean" {
+    with TemporaryDirectory() as td {
+        old = JacRuntime.exec_ctx;
+        cid = _seed(td);
+        caller = _ctx(td);
+        JacRuntime.exec_ctx = caller;
+        try {
+            held = caller.mem.get(cid);
+            assert held is not None , "the caller must hold a copy to go stale";
+            caller.mem.commit();
+
+            bg = _ctx(td);
+            token = JacRuntime.push_request_context(bg);
+            try {
+                theirs = bg.mem.get(cid);
+                assert theirs is not None;
+                _as_any(theirs).archetype.n = 1;
+                assert cid in bg.mem._dirty , (
+                    "the session that loaded the anchor owns the write"
+                );
+                assert cid not in caller.mem._dirty , (
+                    "the caller never touched this anchor"
+                );
+                bg.mem.commit();
+            } finally {
+                JacRuntime.reset_request_context(token);
+                bg.close();
+            }
+
+            # The caller holds a stale copy it never wrote to. Committing must
+            # be a no-op, not a write-back of that copy at the version it read.
+            caller.mem.commit();
+        } finally {
+            JacRuntime.exec_ctx = old;
+            caller.close();
+        }
+        verify = _ctx(td);
+        JacRuntime.exec_ctx = verify;
+        try {
+            got = verify.mem.get(cid);
+            assert got is not None;
+            assert _as_any(got).archetype.n == 1 , (
+                "the background write must survive the caller's commit"
+            );
+        } finally {
+            JacRuntime.exec_ctx = old;
+            verify.close();
+        }
+    }
+}
+
+
+test "a read on the caller's session survives a write from a pushed context" {
+    with TemporaryDirectory() as td {
+        old = JacRuntime.exec_ctx;
+        cid = _seed(td);
+        caller = _ctx(td);
+        JacRuntime.exec_ctx = caller;
+        try {
+            assert caller.mem.get(cid) is not None;
+            caller.mem.commit();
+
+            bg = _ctx(td);
+            token = JacRuntime.push_request_context(bg);
+            try {
+                theirs = bg.mem.get(cid);
+                assert theirs is not None;
+                _as_any(theirs).archetype.n = 7;
+                bg.mem.commit();
+            } finally {
+                JacRuntime.reset_request_context(token);
+                bg.close();
+            }
+
+            # Reads flush whatever the session was told it owes, so a leaked
+            # mark fails requests that only read, on anchors they never touched.
+            caller.mem.read_barrier();
+        } finally {
+            JacRuntime.exec_ctx = old;
+            caller.close();
+        }
+    }
+}
+
+
+test "a pushed context does not absorb a write made to the caller's own copy" {
+    # The mirror of the case above, and the one an ambient guess gets wrong in
+    # the other direction. Both sessions hold their own copy of the anchor, and
+    # the caller writes *its* copy while the background context is pushed. If
+    # the write is charged to the pushed session, that session flushes its own
+    # untouched copy over the top and the caller's real write then collides
+    # with the version it just bumped.
+    with TemporaryDirectory() as td {
+        old = JacRuntime.exec_ctx;
+        cid = _seed(td);
+        caller = _ctx(td);
+        JacRuntime.exec_ctx = caller;
+        try {
+            held = caller.mem.get(cid);
+            assert held is not None;
+            caller.mem.commit();
+
+            bg = _ctx(td);
+            token = JacRuntime.push_request_context(bg);
+            try {
+                mine = bg.mem.get(cid);
+                assert mine is not None , "both sessions must hold a copy";
+                _as_any(held).archetype.n = 5;
+                assert cid in caller.mem._dirty , (
+                    "the write belongs to the session holding the written copy"
+                );
+                assert cid not in bg.mem._dirty , (
+                    "the pushed session wrote nothing and must flush nothing"
+                );
+                bg.mem.commit();
+            } finally {
+                JacRuntime.reset_request_context(token);
+                bg.close();
+            }
+
+            caller.mem.commit();
+        } finally {
+            JacRuntime.exec_ctx = old;
+            caller.close();
+        }
+        verify = _ctx(td);
+        JacRuntime.exec_ctx = verify;
+        try {
+            got = verify.mem.get(cid);
+            assert got is not None;
+            assert _as_any(got).archetype.n == 5 , (
+                "the caller's write must reach the store intact"
+            );
+        } finally {
+            JacRuntime.exec_ctx = old;
+            verify.close();
         }
     }
 }

@@ -115,6 +115,8 @@ obj Anchor {
 
     def ensure_id -> UUID;
     def own_access -> Permission;
+    def bind_memory(mem: any) -> None;
+    def owning_memory -> any;
     def is_populated -> bool;
     def make_stub -> TANCH;
     def populate -> None;
@@ -630,7 +632,15 @@ def _dirty_setattr(self: any, name: str, value: any) -> None {
         return;
     }
     object.__setattr__(self, name, value);
-    md = ctx.mem?.mark_dirty;
+    # The write belongs to the session holding *this* copy of the anchor, which
+    # is not always the ambient one: a unit of work that pushes its own context
+    # (background job, scheduler, cross-app call) reaches anchors loaded by the
+    # caller, and the caller reaches anchors loaded before the push. Charging an
+    # ambient guess leaves one session believing it must write a copy it never
+    # touched, and the other believing it has nothing to write.
+    owner = an.owning_memory();
+    target = ctx.mem if owner is None else owner;
+    md = target?.mark_dirty;
     if md is not None {
         md(an);
     }
