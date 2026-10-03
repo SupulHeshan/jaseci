@@ -52,11 +52,7 @@ impl Anchor.bind_memory(mem: any) -> None {
     if held is not None and held() is mem {
         return;
     }
-    try {
-        self.__dict__['_mem'] = weakref.ref(mem);
-    } except TypeError {
-        self.__dict__['_mem'] = None;
-    }
+    self.__dict__['_mem'] = weakref.ref(mem);
 }
 
 impl Anchor.owning_memory -> any {
