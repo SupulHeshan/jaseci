@@ -60,7 +60,8 @@ def _as_any(v: any) -> any {
 
 
 node _RoNode {
-    has label: str = "";
+    has label: str = "",
+        tags: list[str] = [];
 }
 
 
@@ -255,14 +256,14 @@ test "isolation: a read-tier unit that writes after its snapshot closed opens a 
         try {
             loaded = s.get(aid);
             assert loaded is not None;
-            _as_any(loaded).archetype.label = 'changed';
-            # The write is charged to the session that loaded the anchor, so it
-            # lands in `_dirty` here. Drop the mark: a recorded write makes the
-            # unit retry at SERIALIZABLE, which is a different path from the one
-            # under test. The guard below is the one that has to discover a
-            # pending write by hashing alone, and it only bites while `_dirty`
-            # is empty.
-            s._dirty.clear();
+            # Mutating a container field in place never reaches __setattr__, so
+            # nothing marks it and the pending write is left for the flush to
+            # find by hashing. That is how a real unit arrives at the guard
+            # below, which only bites while `_dirty` is empty.
+            _as_any(loaded).archetype.tags.append('changed');
+            assert not s._dirty , (
+                'an in-place mutation is discovered by hashing, not by a mark'
+            );
             if _store(s).in_txn() {
                 _store(s).commit();
             }
