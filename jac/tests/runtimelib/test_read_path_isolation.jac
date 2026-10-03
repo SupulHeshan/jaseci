@@ -60,8 +60,7 @@ def _as_any(v: any) -> any {
 
 
 node _RoNode {
-    has label: str = "",
-        tags: list[str] = [];
+    has label: str = "";
 }
 
 
@@ -256,13 +255,17 @@ test "isolation: a read-tier unit that writes after its snapshot closed opens a 
         try {
             loaded = s.get(aid);
             assert loaded is not None;
-            # Mutating a container field in place never reaches __setattr__, so
-            # nothing marks it and the pending write is left for the flush to
-            # find by hashing. That is how a real unit arrives at the guard
-            # below, which only bites while `_dirty` is empty.
-            _as_any(loaded).archetype.tags.append('changed');
-            assert not s._dirty , (
-                'an in-place mutation is discovered by hashing, not by a mark'
+            _as_any(loaded).archetype.label = 'changed';
+            # The guard below only bites while the heuristic still wants the
+            # read tier, which is where a real unit lands when a write leaves
+            # no mark: an in-place mutation of a container field never reaches
+            # __setattr__, so nothing marks it and the flush finds it by
+            # hashing. Dropping the mark pins that precondition itself rather
+            # than the tracking gap that happens to produce it.
+            s._dirty.clear();
+            assert s._txn_isolation() is TxnIsolation.SNAPSHOT_READ_ONLY , (
+                'the guard under test only bites while the isolation heuristic '
+                'still wants the read tier'
             );
             if _store(s).in_txn() {
                 _store(s).commit();
