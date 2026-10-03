@@ -637,10 +637,12 @@ def _dirty_setattr(self: any, name: str, value: any) -> None {
     # (background job, scheduler, cross-app call) reaches anchors loaded by the
     # caller, and the caller reaches anchors loaded before the push. Charging an
     # ambient guess leaves one session believing it must write a copy it never
-    # touched, and the other believing it has nothing to write.
+    # touched, and the other believing it has nothing to write. No owner means
+    # no session holds this copy, so there is nothing to mark: falling back to
+    # the ambient session would charge it for a write it never made, which is
+    # the same mistake by a narrower route.
     owner = an.owning_memory();
-    target = ctx.mem if owner is None else owner;
-    md = target?.mark_dirty;
+    md = owner?.mark_dirty;
     if md is not None {
         md(an);
     }
