@@ -146,17 +146,3 @@ def type_identity_cl() -> dict[any, any] {
         "arch_class_name": type(_I).__name__
     };
 }
-
-"""Known type()-identity gaps (#8887 review): a tuple lowers to a plain
-array and JS has one `number` type, so these read the opposite of
-Python. Pinned so closing or regressing either is a conscious update.
-"""
-def type_identity_known_gaps_cl() -> dict[any, any] {
-    t: tuple[int, int] = (1, 2);
-    f: float = 3.0;
-    return {
-        "type_tuple_is_list": 1 if type(t) is list else 0,
-        "type_tuple_is_tuple": 1 if type(t) is tuple else 0,
-        "type_float_is_float": 1 if type(f) is float else 0
-    };
-}

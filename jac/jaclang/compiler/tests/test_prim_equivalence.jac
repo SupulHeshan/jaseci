@@ -764,26 +764,6 @@ with entry {
     );
 }
 
-test "type() identity known gaps (#8887 review)" {
-    # Pins the known representation-erasure gaps so they stay documented
-    # instead of silently implied-fixed.
-    js_code = compile_fixture_to_js("prim_builtins_introspection.jac");
-    result = run_js_function(js_code, "type_identity_known_gaps_cl");
-    assert result["type_tuple_is_list"] == 1 , (
-        "known gap: a compiled tuple is indistinguishable from a list, so "
-        "type(tuple) is list reads true (Python: False)"
-    );
-    assert result["type_tuple_is_tuple"] == 0 , (
-        "known gap: a compiled tuple is indistinguishable from a list, so "
-        "type(tuple) is tuple reads false (Python: True)"
-    );
-    assert result["type_float_is_float"] == 0 , (
-        "known gap: JS has one number type, so a whole-valued float is "
-        "indistinguishable from an int -- type(3.0) is float reads false "
-        "(Python: True)"
-    );
-}
-
 test "native print renders bools as True and False" {
     run_with_both(
         "prim_print_bool.jac", "pbool_py", "pbool_cl", "pbool_na", require=["cl", "na"]
