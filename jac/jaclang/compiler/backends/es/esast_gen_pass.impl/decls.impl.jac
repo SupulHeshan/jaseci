@@ -758,9 +758,6 @@ impl EsastGenPass.exit_archetype with uni.Archetype exit {
             body_stmts.insert(0, constructor_method);
         }
     }
-    # Stamped once here, not lazily in type(), so type() never has to
-    # write to the class it's inspecting -- that used to throw on a
-    # frozen constructor.
     body_stmts.append(
         self.sync_loc(
             es.PropertyDefinition(

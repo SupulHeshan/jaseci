@@ -304,9 +304,8 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       if (t === "boolean") return "bool";
       if (t === "number") return Number.isInteger(o) ? "int" : "float";
       if (t === "bigint") return "int";
-      // A builtin type object is a tagged function; without this it
-      // falls through to the JS `Function` constructor below.
-      if (t === "function" && o.__jac_type__ !== undefined) return "type";
+      if (t === "function" && (o.__jac_type__ !== undefined ||
+          Object.prototype.hasOwnProperty.call(o, "__name__"))) return "type";
       if (_jac.poly._isdict(o)) return "dict";
       if (t === "object") return (o.constructor && o.constructor.name) || "object";
       return t;
@@ -1185,8 +1184,7 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
   // roles, so it lowers to a single object here too: a callable whose body is
   // generated from the same emitters the direct-call path uses (so
   // `f = int; f(x)` can never drift from `int(x)`), carrying the
-  // `__jac_type__` tag that isinstance/issubclass -- and `type(x) is str` --
-  // compare against.
+  // `__jac_type__` tag that isinstance/issubclass compare against.
   types: __JAC_TYPES_RUNTIME__,
 
   builtin: {
@@ -1298,18 +1296,11 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       if (sup === "int" && sub === "bool") return true;
       return false;
     },
-    // `x`'s actual type object -- the same singleton a bare type name lowers
-    // to, so `type(x) is str` is a plain identity check. __name__ is set at
-    // declaration time, not here, so this never mutates what it inspects.
+    // Must return the object a bare type name lowers to: `is` compares identity.
     type(o) {
-      const tag = _jac.poly._typename(o); // own-property: skip inherited "constructor"
-      if (Object.prototype.hasOwnProperty.call(_jac.types, tag)) {
-        return _jac.types[tag];
-      }
-      if (o !== null && o !== undefined && o.constructor) {
-        return o.constructor;
-      }
-      return _jac.types.object;
+      const tag = _jac.poly._typename(o);
+      if (Object.prototype.hasOwnProperty.call(_jac.types, tag)) return _jac.types[tag];
+      return o.constructor || _jac.types.object;
     },
     isinstance(o, classinfo) {
       // isinstance(x, (A, B, ...)) -- the tuple of types lowers to a JS array;

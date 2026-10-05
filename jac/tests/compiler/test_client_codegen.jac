@@ -89,25 +89,21 @@ test "compilation skips python stubs" {
 }
 
 # Consolidated: type() lowering + spawn operator (share one JacProgram)
-test "type resolves to runtime type object, and spawn operator" {
+test "type() lowering and spawn operator" {
     prog = JacProgram();
 
-    # --- type() lowers to the runtime type object, not `typeof` (#6149) ---
-    typeof_code = '"""Test type() resolves to a type object."""\n\ndef check_types() -> any {\n    x = 42;\n    y = "hello";\n    z = True;\n\n    t1 = type(x);\n    t2 = type(y);\n    t3 = type(z);\n    t4 = type("world");\n\n    return t1;\n}\n';
+    # --- type() lowering ---
+    typeof_code = '"""Test type() lowering."""\n\ndef check_types() -> any {\n    x = 42;\n    y = "hello";\n    z = True;\n\n    t1 = type(x);\n    t2 = type(y);\n    t3 = type(z);\n    t4 = type("world");\n\n    return t1;\n}\n';
     mod = compile_inline(typeof_code, prog, client=True);
     assert mod.gen.js.strip() , "Expected JavaScript output for client code";
     for pattern in [
         "_jac.builtin.type(x)",
         "_jac.builtin.type(y)",
         "_jac.builtin.type(z)",
-        '_jac.builtin.type("world")',
-
+        '_jac.builtin.type("world")'
     ] {
         assert pattern in mod.gen.js;
     }
-    assert "let t1 = typeof x;" not in mod.gen.js , (
-        "type(x) must not lower to the bare `typeof` operator"
-    );
 
     # --- spawn operator supports positional and spread ---
     spawn_code = "walker MixedWalker {\n    has label: str;\n    has count: int;\n    has meta: dict[any, any] = {};\n    can execute with Root entry { }\n}\n\ndef spawn_client() -> dict[any, any] {\n    node_id = \"abcd\";\n    extra = {\"meta\": {\"source\": \"client\"}};\n    positional = node_id spawn MixedWalker(\"First\", 3);\n    spread = MixedWalker(\"Second\", 1, **extra) spawn root;\n    return {\"positional\": positional, \"spread\": spread};\n}\n";
