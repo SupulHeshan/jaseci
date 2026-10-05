@@ -149,15 +149,6 @@ test "a write over a stale read reports instead of vanishing" {
 }
 
 test "a pushed context does not shift a write onto the wrong session" {
-    # End to end over a real store, which the dirty-set tests in
-    # test_context_isolation cannot reach: a misattributed mark only becomes a
-    # stale write-back, a spurious conflict or a lost write once a flush runs.
-    # Both rows share one ambient layout (the caller is global, `bg` is pushed)
-    # and differ only in which session loaded the copy that gets written, so
-    # each pins one direction. For 'bg' the caller must stay clean and its
-    # later commit must be a no-op rather than a write-back of the copy it
-    # holds at the version it read. For 'caller' the pushed session must flush
-    # nothing, or it bumps the version under the caller's real write.
     for (writer, want) in [('bg', 1), ('caller', 5)] {
         with TemporaryDirectory() as td {
             old = JacRuntime.exec_ctx;
@@ -195,8 +186,6 @@ test "a pushed context does not shift a write onto the wrong session" {
                     bg.close();
                 }
 
-                # Reads flush what the session was told it owes, so a leaked mark
-                # fails work that only reads, on an anchor it never touched.
                 caller.mem.read_barrier();
                 caller.mem.commit();
             } finally {

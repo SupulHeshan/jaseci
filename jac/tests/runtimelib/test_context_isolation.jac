@@ -26,14 +26,6 @@ node RequestValue {
 }
 
 test "persistent field writes mark the active request memory dirty" {
-    # A write is charged to the session that holds the anchor, which is not
-    # always the ambient one. The ambient layout is fixed across the rows below
-    # (global is `outer`, pushed is `request`) and only the session that took
-    # the anchor varies, so each row pins one direction an ambient guess gets
-    # wrong: reading the pushed context misattributes the 'ambient' row, and
-    # reading the global one misattributes the 'pushed' row. The 'unrelated'
-    # row holds an owner that neither ambient slot references, which a walk of
-    # the context chain would not reach either.
     import from jaclang.runtime.memory { Memory }
     for (label, owner_key) in [
         ('pushed', 'the pushed session'),

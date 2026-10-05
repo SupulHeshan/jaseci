@@ -256,12 +256,6 @@ test "isolation: a read-tier unit that writes after its snapshot closed opens a 
             loaded = s.get(aid);
             assert loaded is not None;
             _as_any(loaded).archetype.label = 'changed';
-            # The guard below only bites while the heuristic still wants the
-            # read tier, which is where a real unit lands when a write leaves
-            # no mark: an in-place mutation of a container field never reaches
-            # __setattr__, so nothing marks it and the flush finds it by
-            # hashing. Dropping the mark pins that precondition itself rather
-            # than the tracking gap that happens to produce it.
             s._dirty.clear();
             assert s._txn_isolation() is TxnIsolation.SNAPSHOT_READ_ONLY , (
                 'the guard under test only bites while the isolation heuristic '
