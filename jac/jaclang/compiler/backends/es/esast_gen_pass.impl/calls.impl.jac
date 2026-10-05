@@ -1,7 +1,4 @@
-import from jaclang.compiler.backends.es.primitives_es {
-    ESEmitCtx,
-    builtin_kwarg_param_names
-}
+import from jaclang.compiler.backends.es.primitives_es { ESEmitCtx }
 
 import from jaclang.compiler.frontend.unparse { unparse_node }
 import from jaclang.compiler.symbol_utils { return_type_is_jsx }
@@ -404,6 +401,76 @@ impl EsastGenPass._param_type_map_from_ability(
         }
     }
     return type_map;
+}
+
+impl EsastGenPass._builtin_param_names(nd: uni.FuncCall) -> (list[str] | None) {
+    import from jaclang.compiler.types.types {
+        FunctionType,
+        OverloadedType,
+        ParameterCategory
+    }
+    import from jaclang.compiler.frontend.constant { ParamKind }
+
+    callee_type = nd.target.type;
+    signatures: list[FunctionType] = [];
+    if isinstance(callee_type, FunctionType) {
+        signatures = [callee_type];
+    } elif isinstance(callee_type, OverloadedType) {
+        signatures = [
+            o
+            for o in callee_type.overloads
+            if isinstance(o, FunctionType)
+        ];
+    } elif isinstance(callee_type, ClassType) and callee_type.is_instantiable_class() {
+        evaluator = self.prog.get_type_evaluator();
+        for ctor_name in ["__new__", "init"] {
+            member = evaluator._lookup_class_member(callee_type, ctor_name);
+            if member is None or member.class_type.shared.class_name == "object" {
+                continue;
+            }
+            ctor = evaluator._get_method_with_overloads(member, callee_type);
+            overloads = ctor.overloads if isinstance(ctor, OverloadedType) else [ctor];
+            signatures = [
+                evaluator._strip_implicit_self_cls(o)
+                for o in overloads
+                if isinstance(o, FunctionType)
+            ];
+            break;
+        }
+    }
+
+    keywords: list[str] = [];
+    n_positional = 0;
+    for param in nd.params or [] {
+        if isinstance(param, uni.KWPair) {
+            if param.key {
+                keywords.append(param.key.sym_name);
+            }
+        } else {
+            n_positional += 1;
+        }
+    }
+    for sig in signatures {
+        params = list(sig.parameters);
+        if any(p.category != ParameterCategory.Positional for p in params) {
+            continue;
+        }
+        positional_slots = [
+            p
+            for p in params
+            if p.param_kind in (ParamKind.POSONLY, ParamKind.NORMAL)
+        ];
+        nameable = {
+            p.name
+            for p in params
+            if p.param_kind != ParamKind.POSONLY
+        };
+        if n_positional <= len(positional_slots)
+            and all(k in nameable for k in keywords) {
+            return [p.name for p in params];
+        }
+    }
+    return None;
 }
 
 impl EsastGenPass._extract_return_type(
@@ -1260,14 +1327,15 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
             ];
 
             _call_args: list[(es.Expression | es.SpreadElement)] = args;
-            _call_props: list[(es.Property | es.SpreadElement)] = props;
-            _builtin_params = builtin_kwarg_param_names(_builtin_name);
+            _reordered = False;
             _use_kwargs_temp = False;
             _spread_arg: (es.Expression | None) = None;
-            # A positional spread's length is unknown at compile time, so the
-            # slots it fills are too; keep source order rather than guess.
+
             _has_pos_spread = any(isinstance(_a, es.SpreadElement) for _a in args);
-            if _builtin_params is not None and props and not _has_pos_spread {
+            _builtin_params = self._builtin_param_names(here)
+                if props and not _has_pos_spread
+                else None;
+            if _builtin_params is not None {
                 (_spread_arg, _spread_read_source) = self._make_kwargs_spread_context(
                     props, here
                 );
@@ -1284,7 +1352,7 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
                 );
                 if _ordered is not None {
                     _call_args = _ordered;
-                    _call_props = [];
+                    _reordered = True;
                 }
             }
 
@@ -1294,10 +1362,12 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
             }
 
             _kwargs: dict[str, str] = {};
-            for _p in _call_props {
+            for _p in props {
                 if isinstance(_p, es.Property) and _p.value {
                     _val_str = _unparser.generate(_p.value);
-                    _args_strs.append(_val_str);
+                    if not _reordered {
+                        _args_strs.append(_val_str);
+                    }
                     if isinstance(_p.key, es.Identifier) {
                         _kwargs[_p.key.name] = _val_str;
                     }

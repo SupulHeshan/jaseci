@@ -680,6 +680,7 @@ walker EsastGenPass(BaseAstGenPass[es.Statement]) {
     def _pos_params_from_ability(ability_node: uni.Ability) -> list[uni.ParamVar];
     def _param_names_from_ability(ability_node: uni.Ability) -> list[str];
     def _param_type_map_from_ability(ability_node: uni.Ability) -> dict[(str, str)];
+    def _builtin_param_names(nd: uni.FuncCall) -> (list[str] | None);
     def _wrap_to_wire_if_boundary(
         expr: es.Expression,
         type_name: str,

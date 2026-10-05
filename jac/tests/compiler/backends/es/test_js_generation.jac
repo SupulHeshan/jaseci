@@ -3005,6 +3005,7 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         ),
         "pow(base=, exp=)": (got["numeric"]["pow_base_exp"], 125),
         "pow(exp=, base=)": (got["numeric"]["pow_exp_base"], 125),
+        "complex(imag=, real=)": (got["numeric"]["complex_kwarg"], {"re": 1, "im": 2}),
         "sorted(reverse=, **spread)": (got["sorted_kwargs_spread"], ["ccc", "bb", "a"]),
         "round(*args, ndigits=)": (got["pos_spread_kwargs"][0], 3.14),
         "sum(*args, start=)": (got["pos_spread_kwargs"][1], 16)

@@ -1216,8 +1216,8 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       if (!found) throw new _jac.exc.ValueError("max() arg is an empty sequence");
       return best;
     },
-    // Parameter order is mirrored by BUILTIN_KWARG_PARAM_NAMES in
-    // primitives_es.jac (round, sum, sorted, enumerate, pow).
+    // Keep each helper's parameters in the Python builtin's order: keyword
+    // arguments are slotted by the stub signature's names, not by this list.
     sum(iterable, start) {
       let total = start || 0;
       for (const v of iterable) total += v;
