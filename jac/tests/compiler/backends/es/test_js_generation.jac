@@ -2555,6 +2555,104 @@ def truthy_probe() -> dict[any, any] {
 }
 
 
+test "cl bool() judges objects by the Python data model, not dict keys (#9667)" {
+    # `bool(x)` judged every value whose `typeof` is "object" by its own
+    # enumerable keys -- Python's dict rule applied to host objects too. A
+    # File, Blob, Date or URL keeps its data on prototype getters, so
+    # `Object.keys(file)` is `[]` and `bool(file)` came out false: an upload
+    # button gated on `bool(selected_file)` never enabled. Only jac's own
+    # containers are judged by emptiness now; anything else is truthy unless
+    # it answers for itself through `__bool__` or `__len__`.
+    jac_code = """
+obj Plain {}
+
+obj Sized {
+    has items: list[int] = [];
+    def __len__ -> int { return len(self.items); }
+}
+
+obj Falsy {
+    has tag: str = "t";
+    def __bool__ -> bool { return False; }
+}
+
+def probe() -> dict[any, any] {
+    ed: dict[str, int] = {};
+    fd: dict[str, int] = {"a": 1};
+    return {
+        "empty_dict": 1 if bool(ed) else 0,
+        "full_dict": 1 if bool(fd) else 0,
+        "empty_list": 1 if bool([]) else 0,
+        "full_list": 1 if bool([1]) else 0,
+        "empty_set": 1 if bool(set()) else 0,
+        "empty_str": 1 if bool("") else 0,
+        "zero": 1 if bool(0) else 0,
+        "plain_arch": 1 if bool(Plain()) else 0,
+        "sized_empty": 1 if bool(Sized()) else 0,
+        "sized_full": 1 if bool(Sized(items=[1])) else 0,
+        "bool_false": 1 if bool(Falsy()) else 0
+    };
+}
+
+def host_probe(f: any, d: any, u: any, e: any, z: any) -> dict[any, any] {
+    return {
+        "host_file": 1 if bool(f) else 0,
+        "host_date": 1 if bool(d) else 0,
+        "host_url": 1 if bool(u) else 0,
+        "host_error": 1 if bool(e) else 0,
+        "bigint_zero": 1 if bool(z) else 0
+    };
+}
+""";
+    temp_path = write_temp_jac(jac_code);
+    try {
+        js_code = compile_fixture_to_js(temp_path);
+        wrapper = js_code
+            + (
+                "\nconsole.log(JSON.stringify(Object.assign({}, probe(),"
+                " host_probe(new File([], \"a.txt\"), new Date(),"
+                " new URL(\"http://x/\"), new Error(\"e\"), 0n))));\n"
+            );
+        result = run_js_module(wrapper);
+        assert result.returncode == 0 , (
+            "object-truthiness run crashed in Node:\n"
+            f"stderr={result.stderr!r}\njs:\n{js_code}"
+        );
+        got = json.loads(result.stdout.strip());
+        expected = {
+            # Containers keep deciding on emptiness.
+            "empty_dict": 0,
+            "full_dict": 1,
+            "empty_list": 0,
+            "full_list": 1,
+            "empty_set": 0,
+            "empty_str": 0,
+            "zero": 0,
+            # An archetype with no fields is an object, not an empty dict.
+            "plain_arch": 1,
+            # `__len__` and `__bool__` answer for the instance, as in Python.
+            "sized_empty": 0,
+            "sized_full": 1,
+            "bool_false": 0,
+            # Host objects carry their data on prototype getters.
+            "host_file": 1,
+            "host_date": 1,
+            "host_url": 1,
+            "host_error": 1,
+            # A bigint is an int to this runtime, so zero is falsy.
+            "bigint_zero": 0
+        };
+        for (key, want) in expected.items() {
+            assert got[key] == want , (
+                f"bool({key}): got {got[key]!r}, expected {want!r}\njs:\n{js_code}"
+            );
+        }
+    } finally {
+        os.unlink(temp_path);
+    }
+}
+
+
 test "cl negative-index assignment and while-truthiness match Python (#6320)" {
     # Negative-index assignment must write the element counted from the end
     # (raw `xs[-1] = v` would create a bogus "-1" property), and a `while`
@@ -2789,6 +2887,52 @@ test "builtin type used as a value lowers to a callable (#7454)" {
     );
 
     assert_balanced_syntax(js_code, "builtin_type_as_value.jac");
+}
+
+"""`type`, `list`, `dict`, `str` and `set` lex as type keywords, so every read
+of a parameter, loop variable or local with one of those names parsed as a
+BuiltinType and lowered to `_jac.types.<name>`: a component prop named `type`
+called `.toUpperCase()` on the runtime's type object."""
+test "a binding named after a builtin type reads the binding, not the type (#9643)" {
+    js_code = compile_fixture_to_js("builtin_type_name_bindings.jac", FIXTURES);
+    fn_idx = js_code.find("function upper_type");
+    assert fn_idx >= 0 , "compiled function upper_type must be present";
+    user_js = js_code[fn_idx:];
+    for name in ["type", "list", "dict", "set"] {
+        assert f"_jac.types.{name}" not in user_js , (
+            f"a read of the binding `{name}` lowered to the runtime type:\n" + user_js
+        );
+    }
+
+    wrapper = (
+        js_code
+        + "\nconsole.log(JSON.stringify({"
+        + "  upper_type: upper_type(\"abc\"),"
+        + "  count_items: count_items([\"a\", \"b\", \"c\"]),"
+        + "  value_of: value_of({\"k\": 7}, \"k\"),"
+        + "  exclaim: exclaim(\"hi\"),"
+        + "  uppers: uppers([\"x\", \"y\"]),"
+        + "  still_types: still_types(5)"
+        + "}));\n"
+    );
+    result = run_js_module(wrapper);
+    assert result.returncode == 0 , (
+        "builtin-type-named bindings crashed in Node:\n"
+        f"stderr={result.stderr!r}\njs:\n{js_code}"
+    );
+    got = json.loads(result.stdout.strip());
+    assert got["upper_type"] == "ABC" , f"param `type`: {got['upper_type']}\njs:\n{js_code}";
+    assert got["count_items"] == 3 , f"param `list`: {got['count_items']}\njs:\n{js_code}";
+    assert got["value_of"] == 7 , f"param `dict`: {got['value_of']}\njs:\n{js_code}";
+    assert got["exclaim"] == "hi!" , f"param `str`: {got['exclaim']}\njs:\n{js_code}";
+    assert got["uppers"] == ["X", "Y", "done"] , (
+        f"loop variable `type` and local `set`: {got['uppers']}\njs:\n{js_code}"
+    );
+    assert got["still_types"] == ["5", False] , (
+        f"str(x) and isinstance(x, str): {got['still_types']}\njs:\n{js_code}"
+    );
+
+    assert_balanced_syntax(js_code, "builtin_type_name_bindings.jac");
 }
 
 test "imported JS/TS class constructs with new (#8017)" {
