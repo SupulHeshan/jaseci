@@ -79,13 +79,8 @@ test "_get_class returns None for truly unregistered class names" {
 
 # --- Persisted built-ins resolve by name, not by path (regression: #8747) ---
 #
-# A stored row carries whatever module the built-in lived in when it was
-# written, so resolution ignores the module for jaclang-internal paths -- by
-# path, every anchor written before a move is dropped, the root node first.
-# The never-existed module stands in for the next move: it must need no change
-# here. Base archetypes are excluded; no stored row names them. The negative
-# side (user-space and jaclang.scale names must not reach the index) extends
-# the unregistered-class test above.
+# The never-existed module stands in for the next relocation: it must keep
+# resolving with no change here. Negatives extend the unregistered-class test.
 glob _HISTORICAL_PATHS: list[str] = [
          'jaclang.jac0core.archetype',
          'jaclang.runtime.archetype',
