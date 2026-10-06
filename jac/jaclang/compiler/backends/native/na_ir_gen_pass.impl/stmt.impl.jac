@@ -426,6 +426,12 @@ impl NaIRGenPass._codegen_return(nd: uni.ReturnStmt) -> None {
     if nd.expr is not None {
         val = self._codegen_required(nd.expr);
         if val is not None {
+            if self._str_desc_ty is not None
+                and val.type == self._str_desc_ty
+                and func_ret_type != self._str_desc_ty
+                and not self._nogc_headerless() {
+                val = self._str_materialize(val);
+            }
             val = self._coerce_type(val, func_ret_type);
             _ret_root_local = False;
             if isinstance(nd.expr, uni.AtomTrailer)
@@ -4247,6 +4253,7 @@ impl NaIRGenPass._try_flow_for_parallel(nd: uni.InForStmt) -> bool {
     );
     _tp = self.builder.gep(_tid_arr, [_t_cur], name="ffor.tid.p");
     self.builder.store(ir.Constant(i64, 0), _tp);
+    self._emit_rc_mark_threaded();
     _crc = self.builder.call(
         _pcreate,
         [

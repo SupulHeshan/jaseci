@@ -11,11 +11,57 @@ impl module_bitcode(mod: ModuleRef) -> bytes {
 }
 
 impl emit_unit_object(bitcode: bytes, options: CompileOptions) -> bytes {
-    mod = llvm.parse_bitcode(bitcode);
+    mod = llvm.parse_bitcode(bitcode, llvm.create_context());
     tm = create_unit_target_machine(options);
     result = tm.emit_object(mod);
     assert isinstance(result, bytes);
     return result;
+}
+
+impl object_emit_jobs -> int {
+    import os;
+    for name in ("JAC_NATIVE_EMIT_JOBS", "JAC_JOBS") {
+        raw = os.environ.get(name, "").strip();
+        if raw.isdigit() {
+            return max(1, int(raw));
+        }
+    }
+    return min(os.cpu_count() or 1, 8);
+}
+
+impl emit_unit_objects(bitcodes: list[bytes], options: CompileOptions) -> list[bytes] {
+    workers = min(len(bitcodes), object_emit_jobs());
+    if workers < 2 {
+        return [emit_unit_object(bitcode, options) for bitcode in bitcodes];
+    }
+    import from concurrent.futures { ThreadPoolExecutor }
+    create_unit_target_machine(options);
+    def emit_one(bitcode: bytes) -> bytes {
+        return emit_unit_object(bitcode, options);
+    }
+    with ThreadPoolExecutor(max_workers=workers) as pool {
+        return list(pool.map(emit_one, bitcodes));
+    }
+}
+
+impl optimize_unit_texts(
+    texts: list[str], options: CompileOptions, opt_level: int
+) -> list[bytes] {
+    def optimize_one(text: str) -> bytes {
+        mod = llvm.parse_assembly(text, llvm.create_context());
+        mod.verify();
+        optimize_unit(mod, create_unit_target_machine(options), opt_level);
+        return module_bitcode(mod);
+    }
+    workers = min(len(texts), object_emit_jobs());
+    if workers < 2 {
+        return [optimize_one(text) for text in texts];
+    }
+    import from concurrent.futures { ThreadPoolExecutor }
+    create_unit_target_machine(options);
+    with ThreadPoolExecutor(max_workers=workers) as pool {
+        return list(pool.map(optimize_one, texts));
+    }
 }
 
 impl create_unit_target_machine(
@@ -115,12 +161,15 @@ impl NativeCompilePass._run_impl(ir_in: uni.Module) -> uni.Module {
         }
 
         manifest = module.gen.interop_manifest;
-        if manifest.native_imports {
+        if manifest.callable_native_imports {
             import from jaclang.runtime.interop_bridge { register_py_callbacks }
             py_func_table: dict[str, any] = {};
             callbacks_list: list[any] = [];
             register_py_callbacks(
-                manifest.native_imports, py_func_table, callbacks_list, llvm.add_symbol
+                manifest.callable_native_imports,
+                py_func_table,
+                callbacks_list,
+                llvm.add_symbol
             );
             module.gen.interop_py_funcs = py_func_table;
             module.gen._interop_callbacks = callbacks_list;
