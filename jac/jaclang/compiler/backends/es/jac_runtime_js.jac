@@ -1179,6 +1179,7 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
   types: __JAC_TYPES_RUNTIME__,
 
   builtin: {
+    // Helpers keep the Python builtin's parameter order; keyword args are slotted by it.
     bindFields(args, keywords, names) {
       if (args.length > names.length) {
         throw new _jac.exc.TypeError(`Expected at most ${names.length} positional arguments, got ${args.length}`);
@@ -1216,8 +1217,6 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       if (!found) throw new _jac.exc.ValueError("max() arg is an empty sequence");
       return best;
     },
-    // Keep each helper's parameters in the Python builtin's order: keyword
-    // arguments are slotted by the stub signature's names, not by this list.
     sum(iterable, start) {
       let total = start || 0;
       for (const v of iterable) total += v;
