@@ -1216,9 +1216,7 @@ impl TypeEvaluator._infer_type_args_from_method(
         return caller_type.private.type_args;
     }
 
-    init_method = self._find_matching_raw_constructor(
-        caller_type, expr, matched_method
-    );
+    init_method = self.find_matching_raw_constructor(caller_type, expr, matched_method);
     if not init_method {
         return [];
     }
@@ -1324,7 +1322,7 @@ impl TypeEvaluator.class_constructor_callables(
     return out;
 }
 
-impl TypeEvaluator._find_matching_raw_constructor(
+impl TypeEvaluator.find_matching_raw_constructor(
     caller_type: ClassType, expr: FuncCall, matched_method: FunctionType | None
 ) -> FunctionType | None {
     positional_arg_count = sum(

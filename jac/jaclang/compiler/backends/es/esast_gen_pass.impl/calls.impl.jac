@@ -409,64 +409,30 @@ impl EsastGenPass._builtin_param_names(nd: uni.FuncCall) -> (list[str] | None) {
         OverloadedType,
         ParameterCategory
     }
-    import from jaclang.compiler.frontend.constant { ParamKind }
 
-    callee_type = nd.target.type;
-    signatures: list[FunctionType] = [];
-    if isinstance(callee_type, FunctionType) {
-        signatures = [callee_type];
-    } elif isinstance(callee_type, OverloadedType) {
-        signatures = [
-            o
-            for o in callee_type.overloads
-            if isinstance(o, FunctionType)
-        ];
-    } elif isinstance(callee_type, ClassType) and callee_type.is_instantiable_class() {
-        evaluator = self.prog.get_type_evaluator();
-        for ctor_name in ["__new__", "init"] {
-            member = evaluator._lookup_class_member(callee_type, ctor_name);
-            if member is None or member.class_type.shared.class_name == "object" {
-                continue;
-            }
-            ctor = evaluator._get_method_with_overloads(member, callee_type);
-            overloads = ctor.overloads if isinstance(ctor, OverloadedType) else [ctor];
-            signatures = [
-                evaluator._strip_implicit_self_cls(o)
-                for o in overloads
-                if isinstance(o, FunctionType)
-            ];
-            break;
-        }
+    callee = nd.target.type;
+    if isinstance(callee, ClassType) {
+        callee = self.prog.get_type_evaluator().find_matching_raw_constructor(
+            callee, nd, None
+        );
     }
-
-    keywords: list[str] = [];
-    n_positional = 0;
-    for param in nd.params or [] {
-        if isinstance(param, uni.KWPair) {
-            if param.key {
-                keywords.append(param.key.sym_name);
-            }
-        } else {
-            n_positional += 1;
-        }
-    }
-    for sig in signatures {
-        params = list(sig.parameters);
-        if any(p.category != ParameterCategory.Positional for p in params) {
+    sigs = callee.overloads if isinstance(callee, OverloadedType) else [callee];
+    keywords = {
+        p.key.sym_name
+        for p in nd.params or []
+        if isinstance(p, uni.KWPair) and p.key
+    };
+    for sig in sigs {
+        if not isinstance(sig, FunctionType) {
             continue;
         }
-        positional_slots = [
+        params = [
             p
-            for p in params
-            if p.param_kind in (ParamKind.POSONLY, ParamKind.NORMAL)
+            for p in sig.parameters
+            if not p.is_self and not p.is_cls
         ];
-        nameable = {
-            p.name
-            for p in params
-            if p.param_kind != ParamKind.POSONLY
-        };
-        if n_positional <= len(positional_slots)
-            and all(k in nameable for k in keywords) {
+        if all(p.category == ParameterCategory.Positional for p in params)
+            and keywords <= {p.name for p in params} {
             return [p.name for p in params];
         }
     }
