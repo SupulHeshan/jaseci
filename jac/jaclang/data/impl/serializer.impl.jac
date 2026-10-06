@@ -423,18 +423,7 @@ impl Serializer.register(cls: type) -> None {
     register_type(cls);
     Serializer._registry[f"{cls.__module__}.{cls.__name__}"] = cls;
     if not Serializer.is_auto_registered_module(cls.__module__) {
-        prior = Serializer._builtins_by_name.get(cls.__name__);
-        if prior is None {
-            Serializer._builtins_by_name[cls.__name__] = cls;
-        } elif prior is not cls {
-            logger.warning(
-                "Serializer: two jaclang-internal persisted archetypes are "
-                f"both named {cls.__name__} ({prior.__module__} and "
-                f"{cls.__module__}); stored rows cannot tell them apart by "
-                f"name, so {cls.__module__} will not resolve from a stale "
-                "module path. Rename one of them."
-            );
-        }
+        Serializer._builtins_by_name[cls.__name__] = cls;
     }
     import from jaclang.runtime.typecache {
         invalidate as _invalidate_typecache,
