@@ -5262,6 +5262,41 @@ test "edge_endpoint_typing_narrows_neighbour_traversals" {
     }
 }
 
+test "call records the signature the checker matched" {
+    # #9120: the ES backend slots keyword arguments by the parameter names of
+    # the signature the checker matched, read from FuncCall.callee_signature.
+    import from jaclang.compiler.types.types { FunctionType }
+    program = JacProgram();
+    mod = program.compile(
+        os.path.join(CHECKER_FIXTURES, "checker_callee_signature.jac")
+    );
+    assert len(program.errors_had) == 0 , "Unexpected errors:\\n"
+        + "\\n---\\n".join(e.pretty_print() for e in program.errors_had);
+    expected = {
+        "plain": ["a", "b"],  # plain function
+        "sorted": ["iterable", "key", "reverse"],  # overload
+        "enumerate": ["iterable", "start"],  # class constructor
+        "Point": ["x", "y"],  # namedtuple
+        "Box": ["width", "height"]  # obj with synthesized init
+    };
+    seen: dict[str, list[str]] = {};
+    for call in mod.get_all_sub_nodes(uni.FuncCall) {
+        sig = call.callee_signature;
+        if isinstance(call.target, uni.Name) and isinstance(sig, FunctionType) {
+            seen[call.target.value] = [
+                p.name
+                for p in sig.parameters
+                if not p.is_self and not p.is_cls
+            ];
+        }
+    }
+    for (callee, want) in expected.items() {
+        assert seen.get(callee) == want , f"{callee}: expected {want}, got {seen.get(
+            callee
+        )}";
+    }
+}
+
 test "edge_endpoint_clause_rejected_on_non_edge" {
     # Issue #6657: the endpoint clause is edge-only; a node carrying one is an
     # E2027 rather than a silently-ignored declaration.

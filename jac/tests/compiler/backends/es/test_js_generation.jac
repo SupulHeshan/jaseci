@@ -3079,9 +3079,6 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
     assert got["summarize"]["enumerated"] == [[0, 3], [1, 1], [2, 2]] , (
         got["summarize"]
     );
-    assert got["summarize"]["enumerated_kwarg"] == [[5, 3], [6, 1], [7, 2]] , (
-        got["summarize"]
-    );
     assert got["summarize"]["ranged"] == [0, 1, 2] , got["summarize"];
     assert got["numeric"]["abs"] == 5 , got["numeric"];
     assert got["numeric"]["round"] == 3.14 , got["numeric"];
@@ -3109,6 +3106,10 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         "max(a, b, c)": (got["min_max_varargs"][1], 3),
         "sorted(xs, reverse=True)": (got["summarize"]["sorted_reverse"], [3, 2, 1]),
         "sum(xs, start=)": (got["summarize"]["sum_kwarg"], 16),
+        "enumerate(xs, start=)": (
+            got["summarize"]["enumerated_kwarg"],
+            [[5, 3], [6, 1], [7, 2]]
+        ),
         "round(x, ndigits=)": (got["numeric"]["round_kwarg"], 3.14),
         "sorted(key=, reverse=)": (
             got["sorted_kwargs_order"]["key_then_reverse"],
