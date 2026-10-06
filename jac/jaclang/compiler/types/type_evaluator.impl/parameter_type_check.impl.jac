@@ -451,6 +451,7 @@ impl TypeEvaluator._validate_call_type(
         );
         if not arg_param_match.argument_errors {
             self.validate_arg_types(arg_param_match);
+            expr.callee_signature = caller_type;
         }
 
         bindings = self._collect_type_var_bindings(
@@ -527,10 +528,12 @@ impl TypeEvaluator._validate_call_type(
                     }
 
                     if not _contains_unknown(ret_type or UnknownType()) {
+                        expr.callee_signature = overload;
                         return ret_type or UnknownType();
                     }
                     if _fallback_result is None {
                         _fallback_result = ret_type;
+                        expr.callee_signature = overload;
                     }
                 } elif mismatches {
                     rejections.append((overload_no, mismatches));
@@ -688,7 +691,7 @@ impl TypeEvaluator._validate_call_type(
         }
 
         if caller_type.is_namedtuple() {
-            self._validate_constructor_method(
+            expr.callee_signature = self._validate_constructor_method(
                 expr, self._create_namedtuple_new_method(caller_type)
             );
             return caller_type.clone_as_instance();
@@ -717,10 +720,13 @@ impl TypeEvaluator._validate_call_type(
                     }
                 }
             } elif caller_type.is_data_class() {
-                self._validate_constructor_method(
+                expr.callee_signature = self._validate_constructor_method(
                     expr, self._create_object_init_method(caller_type)
                 );
             }
+        }
+        if matched_method is not None {
+            expr.callee_signature = matched_method;
         }
 
         inferred_type_args = self._infer_type_args_from_method(
@@ -1216,7 +1222,9 @@ impl TypeEvaluator._infer_type_args_from_method(
         return caller_type.private.type_args;
     }
 
-    init_method = self.find_matching_raw_constructor(caller_type, expr, matched_method);
+    init_method = self._find_matching_raw_constructor(
+        caller_type, expr, matched_method
+    );
     if not init_method {
         return [];
     }
@@ -1322,7 +1330,7 @@ impl TypeEvaluator.class_constructor_callables(
     return out;
 }
 
-impl TypeEvaluator.find_matching_raw_constructor(
+impl TypeEvaluator._find_matching_raw_constructor(
     caller_type: ClassType, expr: FuncCall, matched_method: FunctionType | None
 ) -> FunctionType | None {
     positional_arg_count = sum(

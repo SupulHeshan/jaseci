@@ -907,7 +907,7 @@ walker TypeEvaluator {
         caller_type: ClassType, expr: FuncCall, matched_method: FunctionType | None
     ) -> list[TypeBase];
 
-    def find_matching_raw_constructor(
+    def _find_matching_raw_constructor(
         caller_type: ClassType, expr: FuncCall, matched_method: FunctionType | None
     ) -> FunctionType | None;
 

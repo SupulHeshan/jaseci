@@ -404,39 +404,21 @@ impl EsastGenPass._param_type_map_from_ability(
 }
 
 impl EsastGenPass._builtin_param_names(nd: uni.FuncCall) -> (list[str] | None) {
-    import from jaclang.compiler.types.types {
-        FunctionType,
-        OverloadedType,
-        ParameterCategory
-    }
+    import from jaclang.compiler.types.types { FunctionType, ParameterCategory }
 
-    callee = nd.target.type;
-    if isinstance(callee, ClassType) {
-        callee = self.prog.get_type_evaluator().find_matching_raw_constructor(
-            callee, nd, None
-        );
+    sig = nd.callee_signature;
+    if not isinstance(sig, FunctionType) {
+        return None;
     }
-    sigs = callee.overloads if isinstance(callee, OverloadedType) else [callee];
-    keywords = {
-        p.key.sym_name
-        for p in nd.params or []
-        if isinstance(p, uni.KWPair) and p.key
-    };
-    for sig in sigs {
-        if not isinstance(sig, FunctionType) {
-            continue;
-        }
-        params = [
-            p
-            for p in sig.parameters
-            if not p.is_self and not p.is_cls
-        ];
-        if all(p.category == ParameterCategory.Positional for p in params)
-            and keywords <= {p.name for p in params} {
-            return [p.name for p in params];
-        }
+    params = [
+        p
+        for p in sig.parameters
+        if not p.is_self and not p.is_cls
+    ];
+    if any(p.category != ParameterCategory.Positional for p in params) {
+        return None;
     }
-    return None;
+    return [p.name for p in params];
 }
 
 impl EsastGenPass._extract_return_type(
