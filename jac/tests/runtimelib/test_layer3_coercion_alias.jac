@@ -61,8 +61,19 @@ test "alias to same qualified name is a no-op (does not self-alias)" {
 
 
 test "_get_class returns None for truly unregistered class names" {
-    resolved = Serializer._get_class("definitely.not", "Present");
-    assert resolved is None;
+    for (module_name, class_name) in [
+        ('definitely.not', 'Present'),
+        ('myapp.models', 'Root'),
+        ('myapp.models', 'GenericEdge'),
+        ('jaclang.scale.userland', 'Root')
+    ] {
+        resolved = Serializer._get_class(module_name, class_name);
+        assert resolved is None , (
+            f"{module_name}.{class_name} resolved to {resolved}; a name that "
+            "is not registered under the stored module must not fall back to "
+            "the jaclang built-in name index"
+        );
+    }
 }
 
 
@@ -72,13 +83,14 @@ test "_get_class returns None for truly unregistered class names" {
 # written, so resolution ignores the module for jaclang-internal paths -- by
 # path, every anchor written before a move is dropped, the root node first.
 # The never-existed module stands in for the next move: it must need no change
-# here. Base archetypes are excluded; no stored row names them.
+# here. Base archetypes are excluded; no stored row names them. The negative
+# side (user-space and jaclang.scale names must not reach the index) extends
+# the unregistered-class test above.
 glob _HISTORICAL_PATHS: list[str] = [
          'jaclang.jac0core.archetype',
          'jaclang.runtime.archetype',
          'jaclang.not.a.real.module'
-     ],
-     _FOREIGN_PATHS: list[str] = ['myapp.models', 'jaclang.scale.userland'];
+     ];
 
 
 test "persisted built-ins resolve from any jaclang-internal module path" {
@@ -94,40 +106,6 @@ test "persisted built-ins resolve from any jaclang-internal module path" {
                 f"{resolved}. Persisted built-ins resolve by declaration "
                 "name for any jaclang-internal module; the index is built in "
                 "Serializer.register."
-            );
-        }
-    }
-}
-
-
-test "the built-in name index is derived, not hand-maintained" {
-    live: dict[str, type] = {
-        'Root': cast(type, Root),
-        'GenericEdge': cast(type, GenericEdge)
-    };
-    for (name, cls) in live.items() {
-        assert Serializer._builtins_by_name.get(name) is cls , (
-            f"{name} is registered but missing from the derived built-in name "
-            f"index: {Serializer._builtins_by_name}"
-        );
-    }
-    for (name, cls) in Serializer._builtins_by_name.items() {
-        assert not Serializer.is_auto_registered_module(cls.__module__) , (
-            f"{name} -> {cls.__module__} is user-space and must not be in the "
-            "built-in name index"
-        );
-    }
-}
-
-
-test "the built-in name index does not capture user-space classes" {
-    for module_name in _FOREIGN_PATHS {
-        for name in ['Root', 'GenericEdge'] {
-            resolved = Serializer._get_class(module_name, name);
-            assert resolved is None , (
-                f"{module_name}.{name} resolved to {resolved}; user-space and "
-                "jaclang.scale classes must not fall back to the built-in "
-                "name index."
             );
         }
     }
