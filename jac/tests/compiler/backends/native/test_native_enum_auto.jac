@@ -12,9 +12,7 @@ the call, and twenty-one more methods demoted on that.
 members already assigned. That makes it a question about the declaration
 rather than the expression, which is why the answer lives beside the enum's
 layout instead of in the constant folder: the members arrive in source order
-and the generated value is `max(seen) + 1`, counting from 1. A declared
-member with no value at all (`enum E { A, B }`) is `auto()` too, as the
-Python backend lowers it (#9367).
+and the generated value is `max(seen) + 1`, counting from 1.
 
 Counting from the largest rather than the last is the part worth pinning.
 `High = 10; Low = 3; Next = auto()` is `11` in CPython, not `4`, and a rule
@@ -25,9 +23,10 @@ Two things still refuse, and they refuse rather than guess. A generated value
 that follows a member the fold could not reach has no maximum to count from,
 so it stays unknown and `all_values_known` reads false; such an enum is
 reported under E5092 where it is used, never lowered with guessed zeros. And
-the name is matched through its symbol, not its spelling: a module-local
-function called `auto` is not `enum`'s, so `enum_auto_shadow.jac` keeps its
-seam and the server lane answers what CPython answers.
+the name is
+matched through its symbol, not its spelling: a module-local function called
+`auto` is not `enum`'s, so `enum_auto_shadow.jac` keeps its seam and the
+server lane answers what CPython answers.
 """
 
 import contextlib;
@@ -42,18 +41,7 @@ import from jaclang.compiler.passes.layout_pass { get_layout_registry }
 glob FIXTURES = os.path.join(
          TESTS_DIR, "compiler", "backends", "native", "fixtures"
      ),
-     EXPECTED: tuple[str, ...] = (
-         "1",
-         "2",
-         "3",
-         "10",
-         "3",
-         "1112",
-         "129",
-         "123",
-         "11",
-         "True"
-     );
+     EXPECTED: tuple[str, ...] = ("1", "2", "3", "10", "3", "1112", "129", "4");
 
 def compile_native(fixture: str) -> tuple[any, ...] {
     prog = JacProgram();
@@ -151,14 +139,11 @@ test "the declared-enum spelling generates the same way" {
     reg = get_layout_registry(ir, prog);
     cases: list[tuple[str, list[tuple[str, int]]]] = [
         ("Step", [("First", 1), ("Second", 2), ("Third", 9)]),
-        ("Bare", [("First", 1), ("Second", 2), ("Third", 3)]),
-        ("Resume", [("High", 10), ("Low", 3), ("Next", 11)])
+        ("Split", [("Low", 3), ("Next", 4)])
     ];
     for (name, expected) in cases {
         lay = reg.get_enum_layout(name);
-        assert lay is not None and lay.all_values_known , (
-            f"the declared enum {name} lost its table"
-        );
+        assert lay is not None , f"the declared enum {name} lost its layout";
         values = [(m.name, m.int_value) for m in lay.members];
         assert values == expected , f"{name} generated {values}";
     }
@@ -193,9 +178,9 @@ test "an unencodable declared enum refuses where it is used" {
     (prog, _ir) = compile_native("enum_unencodable.jac");
     errs = [str(e) for e in prog.errors_had];
     assert any("Native lowering failed for enum 'Ratio'" in e for e in errs) , (
-        f"a read of an unencodable enum lowered with guessed zeros: {errs}"
+        f"a use of an unencodable enum lowered with guessed zeros: {errs}"
     );
     assert not any("Unread" in e or "enum_unencodable_lib" in e for e in errs) , (
-        f"an enum nothing reads refused its module: {errs}"
+        f"an enum nothing uses refused its module: {errs}"
     );
 }

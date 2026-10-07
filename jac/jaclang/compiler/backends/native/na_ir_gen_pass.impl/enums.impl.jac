@@ -123,12 +123,10 @@ impl NaIRGenPass._codegen_enum_layout(
                 kind="enum",
                 name=enum_name,
                 help_text=(
-                    f"Native enums lower to a table of compile-time member "
-                    f"values. A member of '{enum_name}' has a value that is not "
-                    f"an int or str constant (a bare member or auto() counts up "
-                    f"from the highest earlier int), so its members could not be "
-                    f"told apart. Give every member such a value, or move the "
-                    f"enum to a @sv/Python context."
+                    f"A native enum is a table of int or str member values. A "
+                    f"member of '{enum_name}' has some other value, so its "
+                    f"members could not be told apart. Give every member an int "
+                    f"or str value, or move the enum to a @sv/Python context."
                 )
             );
         }
