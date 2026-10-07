@@ -3067,6 +3067,7 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         + "  sorted_kwargs_spread: sorted_kwargs_spread("
         + "[\"ccc\", \"a\", \"bb\"], {key: (s) => s.length}),"
         + "  pos_spread_kwargs: pos_spread_with_kwargs([3.14159], [[1, 2, 3]]),"
+        + "  method_kwargs: method_kwargs([\"ccc\", \"a\", \"bb\"], \"a b c\"),"
         + "  empty_error: _emptyErr"
         + "}));\n"
     );
@@ -3127,7 +3128,20 @@ test "builtin functions lower to runtime helpers without type-check (#7480, #858
         "complex(imag=, real=)": (got["numeric"]["complex_kwarg"], {"re": 1, "im": 2}),
         "sorted(reverse=, **spread)": (got["sorted_kwargs_spread"], ["ccc", "bb", "a"]),
         "round(*args, ndigits=)": (got["pos_spread_kwargs"][0], 3.14),
-        "sum(*args, start=)": (got["pos_spread_kwargs"][1], 16)
+        "sum(*args, start=)": (got["pos_spread_kwargs"][1], 16),
+        "list.sort(reverse=)": (
+            got["method_kwargs"]["sort_reverse"],
+            ["ccc", "bb", "a"]
+        ),
+        "list.sort(reverse=, key=)": (
+            got["method_kwargs"]["sort_reverse_key"],
+            ["ccc", "bb", "a"]
+        ),
+        "str.split(maxsplit=)": (got["method_kwargs"]["split_maxsplit"], ["a", "b c"]),
+        "str.split(maxsplit=, sep=)": (
+            got["method_kwargs"]["split_kw_order"],
+            ["a", "b c"]
+        )
     };
     for (label, (actual, expected)) in expected_scalars.items() {
         assert actual == expected , (

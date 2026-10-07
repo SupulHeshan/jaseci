@@ -637,7 +637,7 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       for (const item of arr) { if (item === val) c++; }
       return c;
     },
-    sort(arr, key) {
+    sort(arr, key, reverse) {
       if (key) {
         arr.sort((a, b) => {
           const ka = key(a), kb = key(b);
@@ -646,6 +646,7 @@ glob JAC_RUNTIME_JS_OBJECT: str = r"""{
       } else {
         arr.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
       }
+      if (reverse) arr.reverse();
     },
     repeat(arr, n) {
       const result = [];

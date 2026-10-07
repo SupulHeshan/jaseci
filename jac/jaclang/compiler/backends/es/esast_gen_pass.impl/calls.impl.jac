@@ -421,6 +421,33 @@ impl EsastGenPass._builtin_param_names(nd: uni.FuncCall) -> (list[str] | None) {
     return [p.name for p in params];
 }
 
+impl EsastGenPass._slot_builtin_kwargs(
+    nd: uni.FuncCall,
+    args: list[(es.Expression | es.SpreadElement)],
+    props: list[(es.Property | es.SpreadElement)],
+    func_name: str
+) -> (
+    tuple[(list[(es.Expression | es.SpreadElement)], (es.Expression | None))] | None
+) {
+    if not props or any(isinstance(a, es.SpreadElement) for a in args) {
+        return None;
+    }
+    param_names = self._builtin_param_names(nd);
+    if param_names is None {
+        return None;
+    }
+    (spread_arg, spread_read_source) = self._make_kwargs_spread_context(props, nd);
+    ordered = self._call_args_from_slots(
+        self._resolve_call_arg_slots(
+            nd, args, props, param_names, func_name, spread_read_source
+        )
+    );
+    if ordered is None {
+        return None;
+    }
+    return (ordered, spread_arg if spread_read_source is not None else None);
+}
+
 impl EsastGenPass._extract_return_type(
     ability_node: uni.Ability, func_name: str, manifest: any
 ) -> str {
@@ -1194,14 +1221,22 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
                 _unparser = JSCodeGenerator();
                 _ctx = ESEmitCtx(unparser=_unparser);
                 _target_str = _unparser.generate(callee.object);
+                _call_args: list[(es.Expression | es.SpreadElement)] = args;
+                _kwargs_temp: (es.Expression | None) = None;
+                _slotted = self._slot_builtin_kwargs(here, args, props, _method_name);
+                if _slotted is not None {
+                    (_call_args, _kwargs_temp) = _slotted;
+                }
                 _args_strs: list[str] = [];
-                for _a in args {
+                for _a in _call_args {
                     _args_strs.append(_unparser.generate(_a));
                 }
 
-                for _p in props {
-                    if isinstance(_p, es.Property) and _p.value {
-                        _args_strs.append(_unparser.generate(_p.value));
+                if _slotted is None {
+                    for _p in props {
+                        if isinstance(_p, es.Property) and _p.value {
+                            _args_strs.append(_unparser.generate(_p.value));
+                        }
                     }
                 }
 
@@ -1215,9 +1250,15 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
                 if _result is not None and "_jac." in str(_result) {
                     self.needs_jac_runtime = True;
                 }
-                here.gen.es_ast = self.sync_loc(
+                _method_expr: es.Expression = self.sync_loc(
                     es.RawCode(code=_result), jac_node=here
                 );
+                if _kwargs_temp is not None {
+                    _method_expr = self._wrap_with_kwargs_temp(
+                        _method_expr, _kwargs_temp, here
+                    );
+                }
+                here.gen.es_ast = _method_expr;
                 return;
             }
         }
@@ -1276,32 +1317,11 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
 
             _call_args: list[(es.Expression | es.SpreadElement)] = args;
             _reordered = False;
-            _use_kwargs_temp = False;
-            _spread_arg: (es.Expression | None) = None;
-
-            _has_pos_spread = any(isinstance(_a, es.SpreadElement) for _a in args);
-            _builtin_params = self._builtin_param_names(here)
-                if props and not _has_pos_spread
-                else None;
-            if _builtin_params is not None {
-                (_spread_arg, _spread_read_source) = self._make_kwargs_spread_context(
-                    props, here
-                );
-                _use_kwargs_temp = _spread_read_source is not None;
-                _ordered = self._call_args_from_slots(
-                    self._resolve_call_arg_slots(
-                        here,
-                        args,
-                        props,
-                        _builtin_params,
-                        _builtin_name,
-                        _spread_read_source
-                    )
-                );
-                if _ordered is not None {
-                    _call_args = _ordered;
-                    _reordered = True;
-                }
+            _kwargs_temp: (es.Expression | None) = None;
+            _slotted = self._slot_builtin_kwargs(here, args, props, _builtin_name);
+            if _slotted is not None {
+                (_call_args, _kwargs_temp) = _slotted;
+                _reordered = True;
             }
 
             _args_strs: list[str] = [];
@@ -1348,9 +1368,9 @@ impl EsastGenPass.exit_func_call with uni.FuncCall exit {
                 _raw_expr: es.Expression = self.sync_loc(
                     es.RawCode(code=_result), jac_node=here
                 );
-                if _use_kwargs_temp and _spread_arg is not None {
+                if _kwargs_temp is not None {
                     _raw_expr = self._wrap_with_kwargs_temp(
-                        _raw_expr, _spread_arg, here
+                        _raw_expr, _kwargs_temp, here
                     );
                 }
                 here.gen.es_ast = _raw_expr;

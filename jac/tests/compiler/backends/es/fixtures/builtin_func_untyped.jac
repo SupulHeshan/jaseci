@@ -46,6 +46,19 @@ def sorted_kwargs_order(items: list[any]) -> dict[any, any] {
     };
 }
 
+def method_kwargs(items: list[any], s: str) -> dict[any, any] {
+    by_rev: list[any] = list(items);
+    by_rev.sort(reverse=True);
+    by_key: list[any] = list(items);
+    by_key.sort(reverse=True, key=str_len);
+    return {
+        "sort_reverse": by_rev,
+        "sort_reverse_key": by_key,
+        "split_maxsplit": s.split(maxsplit=1),
+        "split_kw_order": s.split(maxsplit=1, sep=" ")
+    };
+}
+
 def sorted_kwargs_spread(items: list[any], opts: dict[str, any]) -> list[any] {
     return sorted(items, reverse=True, **opts);
 }
