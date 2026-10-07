@@ -113,10 +113,12 @@ impl NaIRGenPass._emit_os_call(name: str, nd: uni.FuncCall) -> (ir.Value | None)
         );
         close_fn = self._get_or_declare_extern("closedir", i32, [i8p]);
         errno_fn = self._get_or_declare_extern(
-            "__error" if darwin else "__errno_location", i32.as_pointer(), []
+            "__error" if darwin else "__errno_location", i64, []
         );
         directory = self.builder.call(open_fn, [path]);
-        errptr = self.builder.call(errno_fn, []);
+        errptr = self.builder.inttoptr(
+            self.builder.call(errno_fn, []), i32.as_pointer()
+        );
         err = self.builder.load(errptr);
         failed = self.builder.icmp_unsigned("==", directory, ir.Constant(i8p, None));
         self._emit_runtime_raise(
@@ -195,7 +197,7 @@ impl NaIRGenPass._emit_os_call(name: str, nd: uni.FuncCall) -> (ir.Value | None)
     }
 
     if name == "getcwd" {
-        buf = self.builder.alloca(ir.ArrayType(ir.IntType(8), 4096), name="os.cwd.buf");
+        buf = self._stack_entry_alloca(ir.ArrayType(ir.IntType(8), 4096), "os.cwd.buf");
         bufp = self.builder.gep(
             buf, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="os.cwd.bufp"
         );
@@ -316,7 +318,7 @@ impl NaIRGenPass._emit_os_call(name: str, nd: uni.FuncCall) -> (ir.Value | None)
         copy_n = self.builder.add(plen, ir.Constant(i64, 1), name="mkdirs.copyn");
         bufp = self.builder.call(malloc_fn, [copy_n], name="mkdirs.buf");
         self.builder.call(memcpy_fn, [bufp, p, copy_n]);
-        i_ptr = self.builder.alloca(i64, name="mkdirs.i");
+        i_ptr = self._stack_entry_alloca(i64, "mkdirs.i");
 
         self.builder.store(ir.Constant(i64, 1), i_ptr);
         func = self.builder.function;
@@ -486,7 +488,7 @@ impl NaIRGenPass._emit_ospath_call(name: str, nd: uni.FuncCall) -> (ir.Value | N
         if p is None {
             return None;
         }
-        buf = self.builder.alloca(ir.ArrayType(i8, 4096), name="rp.buf");
+        buf = self._stack_entry_alloca(ir.ArrayType(i8, 4096), "rp.buf");
         bufp = self.builder.gep(
             buf, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="rp.bufp"
         );
@@ -546,7 +548,7 @@ impl NaIRGenPass._emit_ospath_call(name: str, nd: uni.FuncCall) -> (ir.Value | N
         } elif ("aarch64" in triple) or ("arm64" in triple) {
             mode_off = 16;
         }
-        buf = self.builder.alloca(ir.ArrayType(i8, 144), name="stat.buf");
+        buf = self._stack_entry_alloca(ir.ArrayType(i8, 144), "stat.buf");
         bufp = self.builder.gep(
             buf, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="stat.bufp"
         );
@@ -596,7 +598,7 @@ impl NaIRGenPass._emit_ospath_call(name: str, nd: uni.FuncCall) -> (ir.Value | N
                 stat_sym = "stat$INODE64";
             }
         }
-        buf = self.builder.alloca(ir.ArrayType(i8, 144), name="gmt.buf");
+        buf = self._stack_entry_alloca(ir.ArrayType(i8, 144), "gmt.buf");
         bufp = self.builder.gep(
             buf, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="gmt.bufp"
         );
@@ -637,7 +639,7 @@ impl NaIRGenPass._emit_ospath_call(name: str, nd: uni.FuncCall) -> (ir.Value | N
                 stat_sym = "stat$INODE64";
             }
         }
-        buf = self.builder.alloca(ir.ArrayType(i8, 144), name="gsz.buf");
+        buf = self._stack_entry_alloca(ir.ArrayType(i8, 144), "gsz.buf");
         bufp = self.builder.gep(
             buf, [ir.Constant(i32, 0), ir.Constant(i32, 0)], name="gsz.bufp"
         );

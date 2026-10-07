@@ -52,7 +52,7 @@ import from jaclang.compiler.frontend.unitree {
     WithStmt,
     YieldExpr
 }
-import from jaclang.compiler.passes.context { CompileContext }
+import from jaclang.compiler.passes.context { CompileContext, TreePass }
 import keyword;
 import from jaclang.compiler.frontend.constant {
     CodeContext,
@@ -91,26 +91,17 @@ import from jaclang.compiler.frontend.diagnostics {
     E2021,
     E2022,
     E2024,
+    E2036,
     E2084,
     W2019,
     W2020,
     W2021
 }
 
-walker ASTValidationPass(TreeWalker) {
-    can enter_walk with UniNode entry {
-        self.ctx.enter_node(here);
-    }
-
-    can exit_walk with UniNode exit {
-        self.ctx.exit_node(here);
-    }
-
-    has ctx: CompileContext,
-        module: Module;
-
+walker ASTValidationPass(TreePass) {
     can enter_try_stmt with TryStmt entry;
     can enter_match_stmt with MatchStmt entry;
+    can enter_module with Module entry;
     can enter_module_code with ModuleCode entry;
     can enter_binary_expr with BinaryExpr entry;
     can enter_name with Name entry;

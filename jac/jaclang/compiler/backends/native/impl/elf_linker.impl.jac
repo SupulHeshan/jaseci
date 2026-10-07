@@ -1,3 +1,4 @@
+import from jaclang.jac0core.cache_paths { atomic_write }
 import struct;
 import os;
 import from jaclang.cli.console { console }
@@ -127,7 +128,7 @@ glob R_AARCH64_PREL32 = 261,
 def _elf_hash(name: str) -> int {
     h = 0;
     for c in name.encode("utf-8") {
-        h = (h << 4) + c;
+        h = ((h << 4) + c) & 0xFFFFFFFF;
         g = h & 0xF0000000;
         if g {
             h ^= g >> 24;
@@ -135,25 +136,6 @@ def _elf_hash(name: str) -> int {
         h &= ~g;
     }
     return h;
-}
-
-
-def _build_hash_table(num_symbols: int) -> bytes {
-    nbucket = 1;
-    nchain = num_symbols;
-    data = bytearray();
-    data.extend(struct.pack("<II", nbucket, nchain));
-    data.extend(struct.pack("<I", 1 if num_symbols > 1 else 0));
-    for i in range(nchain) {
-        if i == 0 {
-            data.extend(struct.pack("<I", 0));
-        } elif i == nchain - 1 {
-            data.extend(struct.pack("<I", 0));
-        } else {
-            data.extend(struct.pack("<I", i + 1));
-        }
-    }
-    return bytes(data);
 }
 
 
@@ -735,8 +717,8 @@ impl ElfLinker.build_executable -> bytes {
     code_align: int = 16;
     rodata_align: int = 16;
     data_align: int = 16;
-    sec_idx = 0;
-    for sec in self.sections {
+    for sec_idx in _section_order(self.sections) {
+        sec = self.sections[sec_idx];
         if sec.typ == SHT_PROGBITS and (sec.flags & SHF_EXECINSTR) {
             if len(sec.data) > 0 {
                 off = _append_to_blob(code_data, sec.data, sec.align, len(sec.data));
@@ -768,7 +750,6 @@ impl ElfLinker.build_executable -> bytes {
                 }
             }
         }
-        sec_idx += 1;
     }
 
     undefined_bindings = self._undefined_bindings();
@@ -838,6 +819,15 @@ impl ElfLinker.build_executable -> bytes {
         }
     }
 
+    data_got_syms: list[str] = [];
+    for rela in self.relocations {
+        if rela.rtype in arch.gotpcrel_rtypes
+            and rela.sym_name in extern_data_syms
+            and rela.sym_name not in data_got_syms {
+            data_got_syms.append(rela.sym_name);
+        }
+    }
+
     ehdr_size = 64;
     num_phdrs = 5;
     phdr_size = num_phdrs * 56;
@@ -874,7 +864,7 @@ impl ElfLinker.build_executable -> bytes {
         dynsym_data.extend(struct.pack("<IBBHQQ", st_name, st_info, 0, 0, 0, 0));
     }
 
-    hash_data = _build_hash_table(num_dynsyms);
+    hash_data = _build_sysv_hash_for_names([""] + extern_syms + exec_exports);
 
     plt0_size = arch.plt0_size;
     plt_entry_size = arch.plt_entry_size;
@@ -952,7 +942,8 @@ impl ElfLinker.build_executable -> bytes {
     cur_offset = _align(cur_offset, 8);
     data_got_foff = cur_offset;
 
-    data_got_size = (len(extern_data_syms) + len(local_got_syms)) * 8;
+    data_got_size = (len(extern_data_syms) + len(local_got_syms) + len(data_got_syms))
+        * 8;
     cur_offset += data_got_size;
     cur_offset = _align(cur_offset, 8);
     dynamic_foff = cur_offset;
@@ -1085,6 +1076,16 @@ impl ElfLinker.build_executable -> bytes {
         }
     }
 
+    data_got_slot: dict[str, int] = {};
+    _dg_base = _lg_base + len(local_got_syms);
+    for dg_idx in range(len(data_got_syms)) {
+        _dg_name = data_got_syms[dg_idx];
+        data_got_slot[_dg_name] = data_got_vaddr + (_dg_base + dg_idx) * 8;
+        struct.pack_into(
+            "<Q", data_got_data, (_dg_base + dg_idx) * 8, extern_got_addr[_dg_name]
+        );
+    }
+
     code_bytes = bytearray(code_data);
     rodata_bytes = bytearray(rodata_blob);
     data_bytes = bytearray(data_blob);
@@ -1096,7 +1097,7 @@ impl ElfLinker.build_executable -> bytes {
 
         if rela.rtype in arch.gotpcrel_rtypes {
             if is_data_extern {
-                sym_addr = extern_got_addr[rela.sym_name];
+                sym_addr = data_got_slot[rela.sym_name];
             } elif is_func_extern {
                 func_idx = extern_func_syms.index(rela.sym_name);
                 sym_addr = got_plt_vaddr + (3 + func_idx) * 8;
@@ -1153,9 +1154,15 @@ impl ElfLinker.build_executable -> bytes {
         }
     }
 
-    _ia = data_sections.get(".init_array");
-    _ia_vaddr = (data_vaddr + _ia[0]) if _ia is not None else 0;
-    _ia_count = (_ia[1] // 8) if _ia is not None else 0;
+    init_ranges = [
+        data_sections[sec.name]
+        for sec in self.sections
+        if sec.typ == SHT_INIT_ARRAY and sec.name in data_sections
+    ];
+    _ia_start = min([span[0] for span in init_ranges], `default=0);
+    _ia_end = max([span[0] + span[1] for span in init_ranges], `default=0);
+    _ia_vaddr = data_vaddr + _ia_start if init_ranges else 0;
+    _ia_count = (_ia_end - _ia_start) // 8;
     _ia_sym = local_sym_map.get("__jac_init_array");
     _ic_sym = local_sym_map.get("__jac_init_count");
     if _ia_sym is not None and _ia_sym[0] == "data" {
@@ -1689,8 +1696,8 @@ impl ElfLinker.build_shared_object -> bytes {
     data_sections: dict[str, tuple[int, int]] = {};
     section_placement: dict[int, tuple[str, int]] = {};
     data_align: int = 16;
-    sec_idx = 0;
-    for sec in self.sections {
+    for sec_idx in _section_order(self.sections) {
+        sec = self.sections[sec_idx];
         if sec.typ == SHT_PROGBITS and (sec.flags & SHF_EXECINSTR) {
             if len(sec.data) > 0 {
                 off = _append_to_blob(code_data, sec.data, sec.align, len(sec.data));
@@ -1716,7 +1723,6 @@ impl ElfLinker.build_shared_object -> bytes {
                 }
             }
         }
-        sec_idx += 1;
     }
 
     undefined_bindings = self._undefined_bindings();
@@ -1775,10 +1781,40 @@ impl ElfLinker.build_shared_object -> bytes {
         }
     }
 
-    inits: list[str] = [];
+    inits: list[tuple[str, int]] = [];
+    init_sections = {
+        sec.name: sec
+        for sec in self.sections
+        if sec.typ == SHT_INIT_ARRAY
+    };
+    init_relocs: list[ElfRela] = [
+        rela
+        for rela in self.relocations
+        if rela.target_sec in init_sections
+    ];
+    init_relocs.sort(
+        key=lambda (rela: ElfRela) { (
+            _init_priority(rela.target_sec),
+            rela.target_sec,
+            rela.offset
+        ); }
+    );
+    for rela in init_relocs {
+        target = local_sym_map.get(rela.sym_name) if rela.sym_name else None;
+        if target is None {
+            target = sym_idx_placement.get(rela.sym_idx);
+        }
+        if target is None or rela.rtype != arch.abs64_rtype {
+            raise ValueError(
+                f"ELF linker: unsupported constructor relocation in {rela.target_sec}"
+            );
+        }
+        inits.append((target[0], target[1] + rela.addend));
+    }
     for nm in self.init_funcs {
-        if nm in local_sym_map and nm not in inits {
-            inits.append(nm);
+        target = local_sym_map.get(nm);
+        if target is not None and target not in inits {
+            inits.append(target);
         }
     }
     _soname = self.soname or "lib.so";
@@ -1830,6 +1866,7 @@ impl ElfLinker.build_shared_object -> bytes {
     cur_offset = _align(cur_offset, 8);
 
     data_abs_relocs: list[tuple[ElfRela, tuple[str, int]]] = [];
+    data_abs_imports: list[ElfRela] = [];
     for rela in self.relocations {
         if rela.rtype == arch.abs64_rtype and rela.target_sec in data_sections {
             tgt = local_sym_map.get(rela.sym_name) if rela.sym_name else None;
@@ -1838,10 +1875,13 @@ impl ElfLinker.build_shared_object -> bytes {
             }
             if tgt is not None {
                 data_abs_relocs.append((rela, tgt));
+            } elif rela.sym_name in dynsym_index {
+                data_abs_imports.append(rela);
             }
         }
     }
     n_rela_dyn = len(data_abs_relocs)
+        + len(data_abs_imports)
         + len(local_got_syms)
         + len(inits)
         + len(extern_data_syms);
@@ -2307,8 +2347,7 @@ impl ElfLinker.build_shared_object -> bytes {
         );
     }
     init_arr_data = bytearray();
-    for nm in inits {
-        (seg, off) = local_sym_map[nm];
+    for (seg, off) in inits {
         va = _resolve_seg_vaddr(seg, off, text_vaddr, rodata_vaddr, data_vaddr);
         slot_va = init_arr_vaddr + len(init_arr_data);
         init_arr_data.extend(struct.pack("<Q", va));
@@ -2330,6 +2369,15 @@ impl ElfLinker.build_shared_object -> bytes {
         tva = _resolve_seg_vaddr(tgt[0], tgt[1], text_vaddr, rodata_vaddr, data_vaddr);
         rela_dyn_data.extend(
             struct.pack("<QQq", slot_vaddr, arch.relative_rtype, tva + rela.addend)
+        );
+    }
+    for rela in data_abs_imports {
+        _isec = data_sections[rela.target_sec];
+        r_info = (dynsym_index[rela.sym_name] << 32) | arch.abs64_rtype;
+        rela_dyn_data.extend(
+            struct.pack(
+                "<QQq", data_vaddr + _isec[0] + rela.offset, r_info, rela.addend
+            )
         );
     }
 
@@ -2882,8 +2930,8 @@ impl ElfLinker.build_static_executable -> bytes {
     rodata_align: int = 16;
     data_align: int = 16;
     tls_align: int = 1;
-    sec_idx = 0;
-    for sec in self.sections {
+    for sec_idx in _section_order(self.sections) {
+        sec = self.sections[sec_idx];
         if sec.flags & SHF_TLS {
             off = _append_to_blob(tls_blob, sec.data, sec.align, sec.mem_size);
             section_placement[sec_idx] = ("tls", off);
@@ -2921,7 +2969,6 @@ impl ElfLinker.build_static_executable -> bytes {
                 }
             }
         }
-        sec_idx += 1;
     }
     tls_file_size = len(tls_blob);
     tls_mem_size = len(tls_blob);
@@ -3146,9 +3193,15 @@ impl ElfLinker.build_static_executable -> bytes {
         );
     }
 
-    _ia = data_sections.get(".init_array");
-    _ia_vaddr = (data_vaddr + _ia[0]) if _ia is not None else 0;
-    _ia_count = (_ia[1] // 8) if _ia is not None else 0;
+    init_ranges = [
+        data_sections[sec.name]
+        for sec in self.sections
+        if sec.typ == SHT_INIT_ARRAY and sec.name in data_sections
+    ];
+    _ia_start = min([span[0] for span in init_ranges], `default=0);
+    _ia_end = max([span[0] + span[1] for span in init_ranges], `default=0);
+    _ia_vaddr = data_vaddr + _ia_start if init_ranges else 0;
+    _ia_count = (_ia_end - _ia_start) // 8;
     _ia_sym = local_sym_map.get("__jac_init_array");
     _ic_sym = local_sym_map.get("__jac_init_count");
     if _ia_sym is not None and _ia_sym[0] == "data" {
@@ -3278,7 +3331,7 @@ impl ElfLinker.build_static_executable -> bytes {
 
 
 impl ElfLinker.link(
-    obj_bytes: bytes,
+    objects: list[bytes],
     output_path: str,
     needed_libs: list[str] = [],
     crt_objects: list[bytes] = [],
@@ -3289,8 +3342,11 @@ impl ElfLinker.link(
     archive_members: list[bytes] = [],
     static_link: bool = False
 ) -> bool {
+    if not objects {
+        return False;
+    }
     linker = ElfLinker(
-        obj_data=obj_bytes,
+        obj_data=objects[0],
         sections=[],
         symbols=[],
         relocations=[],
@@ -3305,6 +3361,13 @@ impl ElfLinker.link(
     }
 
     merge_ns: int = 0;
+
+    for extra in objects[1:] {
+        merge_ns += 1;
+        if not _merge_crt_object(linker, extra, merge_ns) {
+            return False;
+        }
+    }
 
     for crt_bytes in crt_objects {
         merge_ns += 1;
@@ -3332,22 +3395,38 @@ impl ElfLinker.link(
     if not exe_bytes {
         return False;
     }
-    with open(output_path, "wb") as f {
-        f.write(exe_bytes);
-    }
-    os.chmod(output_path, 0o755);
+    atomic_write(output_path, exe_bytes, mode=0o755);
 
     import from jaclang.compiler.driver.compile_options { env_symmap_requested }
     if env_symmap_requested() {
         symmap_path = output_path + ".symmap";
-        with open(symmap_path, "w") as smf {
+        rows = [
+            f"{sname} 0x{va:016x}\n"
             for (sname, va) in sorted(
                 linker.sym_vaddrs.items(), key=lambda (kv) { kv[1]; }
-            ) {
-                smf.write(f"{sname} 0x{va:016x}\n");
-            }
-        }
+            )
+        ];
+        atomic_write(symmap_path, "".join(rows).encode("utf-8"));
     }
 
     return True;
+}
+
+
+def _init_priority(name: str) -> int {
+    suffix = name.removeprefix(".init_array.");
+    return int(suffix) if suffix.isdigit() else 65535;
+}
+
+
+def _section_order(sections: list[ElfSection]) -> list[int] {
+    indices: list[int] = list(range(len(sections)));
+    indices.sort(
+        key=lambda (idx: int) { (
+            1 if sections[idx].typ == SHT_INIT_ARRAY else 0,
+            _init_priority(sections[idx].name),
+            idx
+        ); }
+    );
+    return indices;
 }

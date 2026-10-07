@@ -4,6 +4,21 @@
 # helpers. It was shared with the removed Jac interpreter; retain its behavior
 # until compiler values can be separated from the remaining object slots.
 # Its only import is opcode_meta, which defines the NB_* operation kinds.
+
+import from jaclang.runtime.python.cpython_api {
+    NULL,
+    PyErr_SetFromErrnoWithFilenameObjects,
+    PyObject_IsTrue,
+    PyObject_RichCompare,
+    PyObject_RichCompareBool,
+    PySequence_Fast,
+    PySequence_GetItem,
+    PySequence_Tuple,
+    PySlice_AdjustIndices,
+    PyUnicode_Format,
+    _Py_c_pow,
+    _Py_c_quot
+}
 import from jaclang.runtime.python.opcode_meta {
     NB_ADD,
     NB_AND,
@@ -182,7 +197,6 @@ def int_true_divide(av: int, bv: int) -> PyObj {
     }
     return PyFloat(t="float", val=result);
 }
-
 
 obj PyInt(PyObj) {
     has val: int;
@@ -2538,7 +2552,7 @@ def _base_type_name(v: PyObj) -> str {
 # ``type_name_fn`` resolves each operand's type name so callers with richer
 # operand kinds (user classes, dict views) can supply their own namer.
 def py_ordering_type_error(
-    op_kind: int, v: PyObj, w: PyObj, type_name_fn: any
+    op_kind: int, v: PyObj, w: PyObj, type_name_fn: Callable[[PyObj], str]
 ) -> PyObj {
     ops = ["<", "<=", "", "", ">", ">="];
     if op_kind < 0 or op_kind >= len(ops) or ops[op_kind] == "" {
@@ -2549,9 +2563,9 @@ def py_ordering_type_error(
         "'"
             + ops[op_kind]
             + "' not supported between instances of '"
-            + (type_name_fn(v) as str)
+            + type_name_fn(v)
             + "' and '"
-            + (type_name_fn(w) as str)
+            + type_name_fn(w)
             + "'"
     );
 }
@@ -3226,7 +3240,6 @@ def _construct_exc_group(
 obj PyEgroupTypeMember(PyObj) {
     has name: str;
 }
-
 
 obj PyExceptionType(PyObj) {
     has name: str;

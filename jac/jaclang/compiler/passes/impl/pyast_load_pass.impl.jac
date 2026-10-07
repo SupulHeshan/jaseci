@@ -74,7 +74,9 @@ impl PyastBuildPass.proc_keyword(nd: py_ast.keyword) -> KWPair {
     }
     value = self.convert(nd.value);
     if isinstance(value, Expr) {
-        return KWPair(key=arg, value=value, kid=[arg, value] if arg else [value]);
+        return KWPair(
+            key=arg, value=value, kid=[arg, value] if arg is not None else [value]
+        );
     } else {
         raise RuntimeError(self.ctx.ice());
     }
@@ -2036,7 +2038,9 @@ impl PyastBuildPass.proc_interpolation(nd: py_ast.AST) -> UniNode {
 
 impl PyastBuildPass.proc_module(nd: py_ast.Module) -> Module {
     if not nd.body {
-        return Module.make_stub(inject_src=self.orig_src);
+        stub = Module.make_stub(inject_src=self.orig_src);
+        stub.set_kids(nodes=[EmptyToken(orig_src=self.orig_src)]);
+        return stub;
     }
     elements: list[UniNode] = [self.convert(i) for i in nd.body];
     elements[0] = elements[0].expr

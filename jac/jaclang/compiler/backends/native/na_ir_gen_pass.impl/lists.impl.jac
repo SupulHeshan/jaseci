@@ -257,7 +257,7 @@ impl NaIRGenPass._empty_list_dest_spec(nd: uni.ListVal) -> (str | None) {
     if isinstance(_dp, uni.KWPair) and _dp.value is _child {
         _fc = _dp.parent;
         if isinstance(_fc, uni.FuncCall) {
-            _cn = self._get_name(_fc.target);
+            _cn = self._arch_ref_key(_fc.target) or self._get_name(_fc.target);
             if _cn is None or _cn not in self.struct_types {
                 _cn = self._struct_name_of(_fc);
             }
@@ -374,7 +374,7 @@ impl NaIRGenPass._codegen_list_val(nd: uni.ListVal) -> (ir.Value | None) {
             self._str_norm_optional(self._codegen_expr(_first_spread))
         );
         if _first_src_info is None {
-            self.ctx.emit(
+            self.emit(
                 E5092,
                 node_override=nd.values[0],
                 kind="expression",
@@ -388,6 +388,7 @@ impl NaIRGenPass._codegen_list_val(nd: uni.ListVal) -> (ir.Value | None) {
         if first_val is None {
             return None;
         }
+        first_val = self._wrap_fn_as_closure_value(first_val);
         first_val = self._box_value_tuple(
             first_val,
             loc=f"{os.path.basename(self.module.loc.mod_path)}:{nd.loc.first_line
@@ -399,6 +400,7 @@ impl NaIRGenPass._codegen_list_val(nd: uni.ListVal) -> (ir.Value | None) {
             and first_val.type != _decl_elem {
             first_val = self._coerce_type(first_val, _decl_elem);
         }
+        first_val = self._variadic_elem_coerce(first_val, nd);
     }
     _lit_spec = self._elem_spec_of(nd);
     _aos_lit = self._aos_elem_of(nd);
@@ -501,7 +503,7 @@ impl NaIRGenPass._codegen_list_val(nd: uni.ListVal) -> (ir.Value | None) {
                 self._str_norm_optional(self._codegen_expr(_spread_op))
             );
             if _src_info is None {
-                self.ctx.emit(
+                self.emit(
                     E5092,
                     node_override=nd.values[i],
                     kind="expression",
@@ -530,7 +532,7 @@ impl NaIRGenPass._codegen_list_val(nd: uni.ListVal) -> (ir.Value | None) {
         }
         val = self._str_norm_optional(self._codegen_expr(nd.values[i]));
         if val is None {
-            self.ctx.emit(
+            self.emit(
                 E5092,
                 node_override=nd.values[i],
                 kind="expression",
@@ -548,12 +550,14 @@ impl NaIRGenPass._codegen_list_val(nd: uni.ListVal) -> (ir.Value | None) {
                 val, self._pending_list_elem_struct.pointee
             );
         }
+        val = self._wrap_fn_as_closure_value(val);
         val = self._box_value_tuple(val, loc=_linit_loc);
         if _clos_elem is not None
             and _decl_elem is not None
             and val.type != _decl_elem {
             val = self._coerce_type(val, _decl_elem);
         }
+        val = self._variadic_elem_coerce(val, nd);
         val = self._nogc_elem_prep(nd.values[i], val);
         if val is None {
             return None;
@@ -578,6 +582,44 @@ impl NaIRGenPass._codegen_list_val(nd: uni.ListVal) -> (ir.Value | None) {
     return list_val;
 }
 
+impl NaIRGenPass._emit_list_index_check(
+    index_val: ir.Value,
+    len_val: ir.Value,
+    msg: str,
+    release_on_error: list[ir.Value],
+    tag: str
+) -> ir.Value {
+    i64 = ir.IntType(64);
+    func = self.builder.function;
+    in_range = self.builder.icmp_unsigned(
+        "<", index_val, len_val, name=f"{tag}.inrange"
+    );
+    entry_bb = self.builder.block;
+    wrap_bb = func.append_basic_block(name=f"{tag}.wrap");
+    use_bb = func.append_basic_block(name=f"{tag}.use");
+
+    _br = self.builder.cbranch(in_range, use_bb, wrap_bb);
+    _br.set_weights([2000, 1]);
+    self.builder.position_at_end(wrap_bb);
+    adjusted = self.builder.add(index_val, len_val, name=f"{tag}.adj");
+    is_neg = self.builder.icmp_signed(
+        "<", index_val, ir.Constant(i64, 0), name=f"{tag}.neg"
+    );
+    adj_ok = self.builder.icmp_signed(
+        ">=", adjusted, ir.Constant(i64, 0), name=f"{tag}.adjok"
+    );
+    is_valid = self.builder.and_(is_neg, adj_ok, name=f"{tag}.valid");
+    is_oob = self.builder.not_(is_valid, name=f"{tag}.oob");
+    self._emit_runtime_raise(is_oob, "IndexError", msg, release_on_error);
+    wrap_end = self.builder.block;
+    self.builder.branch(use_bb);
+    self.builder.position_at_end(use_bb);
+    idx = self.builder.phi(i64, name=f"{tag}.norm");
+    idx.add_incoming(index_val, entry_bb);
+    idx.add_incoming(adjusted, wrap_end);
+    return idx;
+}
+
 impl NaIRGenPass._codegen_index(
     target_val: ir.Value, index_val: ir.Value, elem_type_name: str
 ) -> (ir.Value | None) {
@@ -589,18 +631,8 @@ impl NaIRGenPass._codegen_index(
     index_val = self._coerce_type(index_val, i64);
 
     len_val = self.builder.call(helpers["len"], [target_val], name="list.len.chk");
-    is_neg = self.builder.icmp_signed(
-        "<", index_val, ir.Constant(i64, 0), name="idx.neg.chk"
-    );
-    adjusted = self.builder.add(index_val, len_val, name="idx.adj");
-    index_val = self.builder.select(is_neg, adjusted, index_val, name="idx.norm");
-    below = self.builder.icmp_signed(
-        "<", index_val, ir.Constant(i64, 0), name="idx.below"
-    );
-    above = self.builder.icmp_signed(">=", index_val, len_val, name="idx.oob.chk");
-    is_oob = self.builder.or_(below, above, name="idx.range.chk");
-    self._emit_runtime_raise(
-        is_oob, "IndexError", "list index out of range", [target_val]
+    index_val = self._emit_list_index_check(
+        index_val, len_val, "list index out of range", [target_val], "idx"
     );
     _got = self.builder.call(helpers["get"], [target_val, index_val], name="list.get");
     if elem_type_name == "u8" {
@@ -660,8 +692,10 @@ impl NaIRGenPass._codegen_any_len(jacval: ir.Value) -> ir.Value {
 impl NaIRGenPass._codegen_index_set(
     target_val: ir.Value, index_val: ir.Value, value: ir.Value, elem_type_name: str
 ) -> None {
-    _normed = self._str_norm(value);
-    value = _normed;
+    _normed = self._str_materialize(value)
+        if self._elem_kind(value.type) == "str" and self._is_owned(value)
+        else self._str_norm(value);
+    value = self._wrap_fn_as_closure_value(_normed);
     helpers = self.list_helpers.get(elem_type_name);
     if helpers is None {
         return;
@@ -670,18 +704,8 @@ impl NaIRGenPass._codegen_index_set(
     index_val = self._coerce_type(index_val, i64);
 
     len_val = self.builder.call(helpers["len"], [target_val], name="list.setlen.chk");
-    is_neg = self.builder.icmp_signed(
-        "<", index_val, ir.Constant(i64, 0), name="setidx.neg.chk"
-    );
-    adjusted = self.builder.add(index_val, len_val, name="setidx.adj");
-    index_val = self.builder.select(is_neg, adjusted, index_val, name="setidx.norm");
-    below = self.builder.icmp_signed(
-        "<", index_val, ir.Constant(i64, 0), name="setidx.below"
-    );
-    above = self.builder.icmp_signed(">=", index_val, len_val, name="setidx.oob.chk");
-    is_oob = self.builder.or_(below, above, name="setidx.range.chk");
-    self._emit_runtime_raise(
-        is_oob, "IndexError", "list assignment index out of range"
+    index_val = self._emit_list_index_check(
+        index_val, len_val, "list assignment index out of range", [], "setidx"
     );
     elem_type = helpers["elem_type"];
 

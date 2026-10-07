@@ -33,6 +33,7 @@ obj ServerExtension {
 
     def register(server: JacAPIServer) -> None abst;
     def on_worker_start(server: JacAPIServer) {}
+    def on_worker_exit(server: JacAPIServer, pid: int) {}
 }
 
 
@@ -58,6 +59,15 @@ def observe_read_tier_retry(metrics: any, unit_key: str) -> None;
 
 def target_restspec(target: any) -> any {
     return target.restspec if target?.restspec else None;
+}
+
+
+def target_protocol(target: any) -> APIProtocol {
+    restspec: any = target_restspec(target);
+    if restspec?.protocol {
+        return APIProtocol(restspec.protocol);
+    }
+    return APIProtocol.HTTP;
 }
 
 
@@ -128,6 +138,7 @@ obj ModuleIntrospector {
         _bundle_builder: any = None,
         _bundle_lock: threading.Lock postinit,
         _surface: dict[(str, any)] = {},
+        _served_walkers: int = 0,
         _manifest_root: str = "",
         _spa_routes_loaded: bool = False,
         discover_endpoints: bool = True,
@@ -250,6 +261,7 @@ obj JacAPIServer(EndpointHost) {
         port_retries: int = 0
     ) -> int;
 
+    def _on_worker_exit(pid: int) -> None;
     def request_stop -> None;
 }
 

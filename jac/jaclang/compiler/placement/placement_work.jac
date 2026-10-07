@@ -1,5 +1,6 @@
 import os;
 import jaclang.compiler.frontend.unitree as uni;
+import type from jaclang.compiler.driver.program { JacProgram }
 
 
 obj PlacementWork {
@@ -15,7 +16,8 @@ obj PlacementWork {
         queue: list[int] = [],
         cursor: int = 0,
         current: int | None = None,
-        solving: bool = False;
+        solving: bool = False,
+        seeded: set[int] = set();
 
     def enqueue(edge_id: int) {
         if edge_id in self.edges and edge_id not in self.pending {
@@ -136,7 +138,7 @@ obj PlacementWork {
         return cached;
     }
 
-    def drain(prog: any) {
+    def drain(prog: JacProgram) {
         import from jaclang.compiler.placement.placement_solver {
             _pull_boundary_import
         }

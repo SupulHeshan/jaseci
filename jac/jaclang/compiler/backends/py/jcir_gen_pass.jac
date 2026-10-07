@@ -8,6 +8,7 @@ import from jaclang.compiler.frontend.unitree {
     Archetype,
     AssertStmt,
     AssignCompr,
+    AstAccessNode,
     Assignment,
     AstSymbolNode,
     AtomTrailer,
@@ -138,15 +139,19 @@ import from jaclang.compiler.frontend.constant {
 import from jaclang.runtime.constants { Constants as Con }
 import from jaclang.compiler.frontend.constant { Tokens as Tok }
 import from jaclang.runtime.scalars { shape_of }
+import type from jaclang.compiler.types.ct_value { CtInt, CtRecord, CtValue }
 
-import from jaclang.compiler.backends.py.codegen_ir { CodegenIrWriter }
+import from jaclang.compiler.backends.py.codegen_ir {
+    CodegenIrWriter,
+    int_literal_magnitude
+}
 import from jaclang.compiler.frontend.codeinfo { BoundaryTypeInfo, InteropBinding }
 import from jaclang.compiler.backends.py.jcir_facts {
     JCIR_AMBIENT_TYPING_NAMES,
     JCIR_BUILTIN_NAMES,
     jcir_is_test_path
 }
-import from jaclang.compiler.backends.common.ast_gen_base { BaseAstGenPass }
+import from jaclang.compiler.passes.context { TreePass }
 import from jaclang.compiler.frontend.module_facts { ModuleFacts }
 import from jaclang.compiler.frontend.diagnostics {
     E5001,
@@ -235,7 +240,8 @@ glob EDGE_DIR_NAMES: dict[(int, str)] = {
          int(EdgeDir.IN): 'IN',
          int(EdgeDir.OUT): 'OUT',
          int(EdgeDir.ANY): 'ANY'
-     };
+     },
+     SHORT_INT_LITERAL: int = 17;
 
 obj CgItem {}
 
@@ -276,6 +282,24 @@ obj CgNode(CgItem) {
     def hasf(key: str) -> bool {
         return key in self.keys;
     }
+
+    def items(key: str) -> list[any] {
+        value: list[any] = self.get(key);
+        return value;
+    }
+
+    def push(key: str, item: any) {
+        value = self.items(key);
+        value.append(item);
+        self.setf(key, value);
+    }
+}
+
+obj PlacePath {
+    has kind: str,
+        name: str = "",
+        target: (CgNode | None) = None,
+        key: (CgNode | None) = None;
 }
 
 obj CgSplice(CgItem) {
@@ -285,6 +309,11 @@ obj CgSplice(CgItem) {
 }
 
 obj CgEllipsis(CgItem) {}
+
+obj CgWideInt(CgItem) {
+    has negative: bool,
+        magnitude: bytes;
+}
 
 def write_ir_value(w: CodegenIrWriter, v: object) {
     if v is None {
@@ -299,6 +328,8 @@ def write_ir_value(w: CodegenIrWriter, v: object) {
         w.emit_node(v.cls, v.keys);
     } elif isinstance(v, CgSplice) {
         w.emit_parse_splice(v.src, v.offset);
+    } elif isinstance(v, CgWideInt) {
+        w.emit_int_wide(v.negative, v.magnitude);
     } elif isinstance(v, bool) {
         if v {
             w.emit_true();
@@ -338,7 +369,7 @@ def module_container_bytes(mod_path: str, root_node: CgNode) -> bytes {
     return w.to_bytes();
 }
 
-walker JcirGenPass(BaseAstGenPass[CgItem]) {
+walker JcirGenPass(TreePass) {
     has already_added: list[str] = [],
         _ct_only_names: (set[str] | None) = None,
         jaclib_imports: set[str] postinit,
@@ -358,7 +389,8 @@ walker JcirGenPass(BaseAstGenPass[CgItem]) {
         _interop_stub_node: (UniNode | None) = None,
         _sv_boundary_names: dict[str, str] = {},
         _sv_boundary_registry: str = "",
-        _sv_serializer: str = "";
+        _sv_serializer: str = "",
+        _c_temp_count: int = 0;
 
     with entry {}
 
@@ -418,14 +450,21 @@ walker JcirGenPass(BaseAstGenPass[CgItem]) {
     def _fw_as_load(item: any) -> any;
     def _fw_aug_assign(nd: Assignment, target: any, value: any) -> (CgNode | None);
     def val(nd: UniNode) -> CgNode;
+    def _clib_block_desc(imp: Import) -> dict[str, any];
+    def _gen_clib_binding(imp: Import) -> list[CgNode];
+    def _c_temp_name(role: str) -> str;
+    def _c_named(name: str, value: CgNode) -> CgNode;
+    def _c_interop_call_rewrite(nd: FuncCall) -> None;
+    def _c_copy_rewrite(nd: AtomTrailer) -> None;
     def const_of(value: any, jac_node: (UniNode | None) = None) -> CgNode;
-    def _ct_kind(v: any) -> str;
-    def _ct_order_key(v: any) -> str;
-    def _ct_materializable(v: any) -> bool;
+    def int_const_of(value: CtInt, jac_node: (UniNode | None) = None) -> CgNode;
+    def _ct_kind(v: CtValue) -> str;
+    def _ct_order_key(v: CtValue) -> str;
+    def _ct_materializable(v: CtValue) -> bool;
     def _ct_concrete(nd: Expr) -> bool;
     def _is_comptime_only_name(nd: Name) -> bool;
     def _comptime_only_names -> set[str];
-    def _record_bypasses_init(v: any) -> bool;
+    def _record_bypasses_init(v: CtRecord) -> bool;
     def _is_ct_type_param(nd: Name) -> bool;
     def _ct_param_decls(cls_expr: Expr) -> (list[TypeParam] | None);
     def _ct_ctor_slots(nd: AtomTrailer) -> (list[tuple[str, UniNode]] | None);
@@ -433,7 +472,8 @@ walker JcirGenPass(BaseAstGenPass[CgItem]) {
     def _ct_param_fields(nd: Archetype) -> list[CgNode];
     def _import_ref(module: str, name: str, jac_node: UniNode) -> CgNode;
     def _class_ref(module: str, name: str, jac_node: UniNode) -> CgNode;
-    def _materialize(v: any, jac_node: UniNode) -> (CgNode | None);
+    def _ct_ordered(items: list[CtValue]) -> list[CtValue];
+    def _materialize(v: CtValue, jac_node: UniNode) -> (CgNode | None);
     def _comptime_if_out(nd: IfStmt) -> bool;
     def _if_out(nd: IfStmt) -> None;
     def name_load(name_id: str, jac_node: (UniNode | None) = None) -> CgNode;
@@ -509,7 +549,7 @@ walker JcirGenPass(BaseAstGenPass[CgItem]) {
         order_out: list[CgNode]
     ) -> tuple[list[CgNode], bool];
 
-    def _recipe_contains_root(v: any) -> bool;
+    def _recipe_ambient_names(v: any) -> list[str];
     def resolve_switch_pattern(pattern: MatchPattern, target: Expr) -> CgNode;
     def resolve_switch_stmt(nd: SwitchStmt) -> list[CgItem];
     def resolve_stmt_block(
@@ -603,6 +643,9 @@ walker JcirGenPass(BaseAstGenPass[CgItem]) {
     can exit_unary_expr with UnaryExpr exit;
     def _emit_jobj_ref(nd: UnaryExpr) -> None;
     can exit_if_else_expr with IfElseExpr exit;
+    def _multi_string_text(piece: (str | bytes | CgNode)) -> (str | None);
+    def _flush_text_run(merged: list[CgNode], run: list[str]) -> None;
+    def _flush_byte_run(merged: list[CgNode], run: list[bytes]) -> None;
     def _multi_string_pieces(str_seq: Sequence[UniNode]) -> list[str | bytes | CgNode];
     can exit_multi_string with MultiString exit;
     can exit_f_string with FString exit;
@@ -623,10 +666,11 @@ walker JcirGenPass(BaseAstGenPass[CgItem]) {
     can exit_atom_trailer with AtomTrailer exit;
     can exit_atom_unit with AtomUnit exit;
     can exit_func_call with FuncCall exit;
-    def _place_parts(arg: UniNode) -> (tuple[str, any, any] | None);
+    def _place_parts(arg: UniNode) -> (PlacePath | None);
     def _name_take_expr(owner: str) -> CgNode;
     def _name_swap_expr(store_id: str, value: CgNode) -> CgNode;
     def _lower_take(nd: FuncCall) -> (CgNode | None);
+    def _second_of_pair(first: CgNode) -> CgNode;
     def _lower_swap(nd: FuncCall) -> (CgNode | None);
     def _exit_func_call_impl(nd: FuncCall) -> None;
     def _fold_sorted_traversal(nd: FuncCall) -> bool;

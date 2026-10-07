@@ -1,6 +1,7 @@
 import from jaclang.scale.runtime.context.util { GATEWAY_NAME, k8s_safe_name }
 import from jaclang.server { sv_client }
-import from jaclang.server.settings { ServeSettings }
+import from jaclang.project.config { JacConfig, ServeConfig }
+import from jaclang.server.settings { resolve_count }
 import from jaclang.scale.config.app_config { AppConfig }
 import from jaclang.scale.config.config_loader {
     GATEWAY_POD_KEYS,
@@ -9,6 +10,7 @@ import from jaclang.scale.config.config_loader {
 }
 import from jaclang.scale.runtime.fleet { FleetSpec, fleet_from_config, solo_fleet }
 import from jaclang.scale.models.deploy_context { DATABASE_URL_ENV, DeployContext }
+import from jaclang.scale.models.resource_status { REPLICA_FLOOR_ANNOTATION }
 import from jaclang.scale.deploy.target.kubernetes.kubernetes_config {
     KubernetesConfig
 }
@@ -263,8 +265,7 @@ obj ManifestBuilder {
         client_entry: (str | None) = None,
         dry_run: bool = False,
         _bundle_files_cache: (dict[str, str] | None) = None,
-        _serve_settings_cache: (ServeSettings | None) = None,
-        _minted_secret: str = "";
+        _serve_config_cache: (ServeConfig | None) = None;
 
     def _gateway_cfg -> dict[str, any] {
         if self.gateway_config is not None {
@@ -381,9 +382,9 @@ obj ManifestBuilder {
             _stage_app,
             release_binary_env,
             remove_stage_root,
-            sanitized_jac_toml,
             source_filter_for
         }
+        import from jaclang.dist.sanitize { sanitized_jac_toml }
         import from jaclang.scale.runtime.context.util { jac_executable }
         client_entry = self._client_entry();
         if client_entry
@@ -629,6 +630,9 @@ obj ManifestBuilder {
             scaling[svc_name] = self._resolve_scaling(
                 svc_name, deployments[svc_name], services[svc_name]
             );
+            deployments[svc_name]["metadata"].setdefault("annotations", {})[
+                REPLICA_FLOOR_ANNOTATION
+            ] = str(scaling[svc_name]["replica_floor"]);
             pdb = self._build_pdb_manifest(svc_name, scaling[svc_name].get("mode"));
             if pdb is not None {
                 pdbs[svc_name] = pdb;
@@ -745,10 +749,10 @@ obj ManifestBuilder {
         import from pathlib { Path }
         import from jaclang.scale.injector.bundle {
             nested_sanitized_tomls,
-            sanitized_jac_toml,
             source_filter_for,
             unresolved_toml_references
         }
+        import from jaclang.dist.sanitize { sanitized_jac_toml }
         base = Path(self.project_dir);
         self._check_deploy_settings_resolve();
         base_toml = sanitized_jac_toml(base);
@@ -886,41 +890,55 @@ obj ManifestBuilder {
         return specs;
     }
 
-    def _serve_settings -> ServeSettings {
-        if self._serve_settings_cache is None {
-            project = get_scale_config().get_jac_config();
-            self._serve_settings_cache = ServeSettings.load(
-                str(project.project_root or self.project_dir or '.'), config=project
-            );
+    def _serve_config -> ServeConfig {
+        cached = self._serve_config_cache;
+        if cached is not None {
+            return cached;
         }
-        return self._serve_settings_cache;
+        project = self._shipped_config()
+            if self.project_dir
+            else get_scale_config().get_jac_config();
+        serve: ServeConfig = project.serve if project is not None else ServeConfig();
+        self._serve_config_cache = serve;
+        return serve;
+    }
+
+    def _shipped_config -> (JacConfig | None) {
+        import from pathlib { Path }
+        app_dir = Path(self.project_dir);
+        if not (app_dir / "jac.toml").is_file() {
+            return None;
+        }
+        return JacConfig.resolve(start_path=app_dir);
     }
 
     def _drain_timeout -> int {
-        return int(self._serve_settings().timeouts.drain);
+        return int(self._serve_config().timeouts.drain);
     }
 
     def _signing_secret -> str {
-        import secrets;
+        import from jaclang.server.serving.authcrypt { PLACEHOLDER_JWT_SECRET }
         configured = str(self.secrets.get("JAC_SERVE_AUTH_SECRET") or "").strip();
         if configured {
             return configured;
         }
-        from_project = self._serve_settings().auth.secret.strip();
+        from_project = self._serve_config().auth.secret.strip();
         if from_project {
             return from_project;
         }
-        if not self._minted_secret {
-            self._minted_secret = secrets.token_urlsafe(48);
-        }
-        return self._minted_secret;
+        return PLACEHOLDER_JWT_SECRET;
+    }
+
+    def _worker_count_env(svc_cfg: dict[str, any]) -> str {
+        raw = str(svc_cfg.get("workers") or self._serve_config().workers.count).strip();
+        resolve_count(raw, 1, '[serve.workers] count');
+        return raw;
     }
 
     def _serve_env(svc_name: str, svc_cfg: dict[str, any]) -> list[dict[str, any]] {
-        settings = self._serve_settings();
-        workers = str(svc_cfg.get("workers") or settings.workers.count);
+        serve = self._serve_config();
         env: list[dict[str, any]] = [
-            {"name": "JAC_SERVE_WORKERS", "value": workers},
+            {"name": "JAC_SERVE_WORKERS", "value": self._worker_count_env(svc_cfg)},
             {"name": "JAC_SERVE_ACCESS_LOG_FORMAT", "value": "json"},
             {"name": "JAC_SERVE_ACCESS_LOG_SUPPRESS_HEALTH", "value": "1"},
             {"name": "JAC_SERVE_DRAIN_TIMEOUT", "value": str(self._drain_timeout())}
@@ -929,7 +947,7 @@ obj ManifestBuilder {
         if threads is not None {
             env.append({"name": "JAC_SERVE_THREADS", "value": str(threads)});
         }
-        trusted = list(settings.proxy.trusted);
+        trusted = list(serve.proxy.trusted);
         if svc_name != GATEWAY_NAME {
             trusted = trusted or ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"];
         }
@@ -1477,17 +1495,36 @@ obj ManifestBuilder {
                 "scale_target_name": scale_target,
                 "service_name": service_name,
                 "autoscaler": {},
-                "http_activation": http
+                "http_activation": http,
+                "replica_floor": int(http.get("min_replicas", 0))
             };
         }
         metric: dict[str, any] | None = self._get_autoscaler_config(svc_name);
         if metric is not None {
+            idle = self.k8s_config.idle_replicas;
+            if idle is not None and int(idle) == 0 and svc_name == GATEWAY_NAME {
+                if self.logger {
+                    self.logger.warn(
+                        "Ignoring idle_replicas=0 for the gateway: it is the "
+                        "ingress entry point and must stay warm, and nothing "
+                        "wakes it once it is idle. Set idle_replicas per "
+                        "service, or use http_activation on the services that "
+                        "should sleep."
+                    );
+                }
+                idle = None;
+            }
+            keda = self.k8s_config.autoscaler_engine == "keda";
             return {
                 "mode": ScalingMode.METRIC,
                 "scale_target_name": scale_target,
                 "service_name": service_name,
                 "autoscaler": metric,
-                "http_activation": {}
+                "http_activation": {},
+                "idle_replicas": idle if keda else None,
+                "replica_floor": int(idle)
+                    if idle is not None and keda
+                    else int(metric["min"])
             };
         }
         return {
@@ -1495,7 +1532,8 @@ obj ManifestBuilder {
             "scale_target_name": scale_target,
             "service_name": service_name,
             "autoscaler": {},
-            "http_activation": {}
+            "http_activation": {},
+            "replica_floor": int(deployment["spec"].get("replicas", 1))
         };
     }
 

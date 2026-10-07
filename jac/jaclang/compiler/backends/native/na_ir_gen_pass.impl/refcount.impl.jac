@@ -1,15 +1,15 @@
 glob _NOGC_OSP_ENGINE_STRUCTS: tuple[str, ...] = (
-         "Slot",
-         "Plan",
-         "WalkerDesc",
-         "NodeDesc",
-         "WalkScope",
+         "OspSlot",
+         "OspPlan",
+         "OspWalkerDesc",
+         "OspNodeDesc",
+         "OspWalkScope",
          "OspRuntime",
-         "Frame",
+         "OspFrame",
          "OspEngine",
          "OspGraph",
-         "Adj",
-         "EdgeRow"
+         "OspAdj",
+         "OspEdgeRow"
      ),
      _NOGC_CONTAINER_DROP_OPS: tuple[str, ...] = (
          "scope_exit",
@@ -40,6 +40,69 @@ impl NaIRGenPass._gc_mode -> str {
         return "cycles";
     }
     return _mode;
+}
+
+impl NaIRGenPass._emit_rc_count_update(
+    fn: ir.Function,
+    b: ir.IRBuilder,
+    cnt_ptr: ir.Value,
+    old_cnt: (ir.Value | None),
+    op: str,
+    ordering: str,
+    tag: str
+) -> tuple[ir.IRBuilder, ir.Value] {
+    """Add or subtract 1 at `cnt_ptr` and return (builder, count before the update).
+
+    Until a program starts its first thread, `__jac_rc_threaded` is 0, only one
+    thread exists, and a plain load/add/store is enough; a `lock`-prefixed RMW
+    there costs roughly an order of magnitude more per retain/release. Every
+    thread spawn the compiler emits sets the flag before `pthread_create` (see
+    `_emit_rc_mark_threaded`) and nothing clears it, so from then on every unit
+    takes the atomic RMW with the ordering the caller passes. pthread_create
+    orders the flag store and all earlier plain updates before the new thread's
+    first instruction. `old_cnt`, when given, is the count the caller already
+    loaded on this path; the single-threaded branch reuses it.
+    """;
+    i8 = ir.IntType(8);
+    one = ir.Constant(ir.IntType(64), 1);
+    st_bb = fn.append_basic_block(f"{tag}.st");
+    mt_bb = fn.append_basic_block(f"{tag}.mt");
+    join_bb = fn.append_basic_block(f"{tag}.join");
+    mt_flag = b.load_atomic(self.rc_threaded_gv, "monotonic", 1, name=f"{tag}.mt.flag");
+    b.cbranch(
+        b.icmp_unsigned("!=", mt_flag, ir.Constant(i8, 0), name=f"{tag}.mt.on"),
+        mt_bb,
+        st_bb
+    );
+    sb = ir.IRBuilder(st_bb);
+    st_old = old_cnt if old_cnt is not None else sb.load(cnt_ptr, name=f"{tag}.st.old");
+    st_new = sb.add(st_old, one, name=f"{tag}.st.new")
+        if op == "add"
+        else sb.sub(st_old, one, name=f"{tag}.st.new");
+    sb.store(st_new, cnt_ptr);
+    sb.branch(join_bb);
+    mb = ir.IRBuilder(mt_bb);
+    mt_old = mb.atomic_rmw(op, cnt_ptr, one, ordering=ordering, name=f"{tag}.mt.old");
+    mb.branch(join_bb);
+    jb = ir.IRBuilder(join_bb);
+    old = jb.phi(ir.IntType(64), name=f"{tag}.old");
+    old.add_incoming(st_old, st_bb);
+    old.add_incoming(mt_old, mt_bb);
+    return (jb, old);
+}
+
+impl NaIRGenPass._emit_rc_mark_threaded -> None {
+    """Switch every refcount update to atomic RMW; call right before a thread spawn.
+
+    The store goes before `pthread_create` so the new thread starts with the
+    flag already set. It is sticky: joining the threads does not switch back.
+    """;
+    if self.rc_threaded_gv is None {
+        return;
+    }
+    self.builder.store_atomic(
+        ir.Constant(ir.IntType(8), 1), self.rc_threaded_gv, "monotonic", 1
+    );
 }
 
 impl NaIRGenPass._emit_rc_helpers -> None {
@@ -86,6 +149,11 @@ impl NaIRGenPass._emit_rc_helpers -> None {
     rc_gc_disabled_gv.linkage = "weak";
     rc_gc_disabled_gv.initializer = ir.Constant(i8, 0);
     self.rc_gc_disabled_gv = rc_gc_disabled_gv;
+
+    rc_threaded_gv = ir.GlobalVariable(self.llvm_module, i8, name="__jac_rc_threaded");
+    rc_threaded_gv.linkage = "weak";
+    rc_threaded_gv.initializer = ir.Constant(i8, 0);
+    self.rc_threaded_gv = rc_threaded_gv;
 
     dis_gc_fnty = ir.FunctionType(ir.VoidType(), []);
     dis_gc_fn = self._define_function("__rc_gc_disable", dis_gc_fnty);
@@ -172,8 +240,8 @@ impl NaIRGenPass._emit_rc_helpers -> None {
     total = b.and_(total, ir.Constant(i64, -16), name="total.align");
     raw = b.call(self.malloc_fn, [total], name="raw");
 
-    _aid_old = b.atomic_rmw(
-        "add", alloc_id_gv, ir.Constant(i64, 1), ordering="monotonic"
+    (b, _aid_old) = self._emit_rc_count_update(
+        alloc_fn, b, alloc_id_gv, None, "add", "monotonic", "aid"
     );
     _aid_ptr = b.bitcast(raw, i64_ptr, name="aid.ptr");
     _magic_base = ir.Constant(i64, HDR_MAGIC_SHIFT_BASE);
@@ -313,7 +381,12 @@ impl NaIRGenPass._emit_rc_helpers -> None {
     );
 
     gc_dis_check_bb = retain_fn.append_basic_block("gc_dis_check");
-    b.cbranch(is_null, done_bb, gc_dis_check_bb);
+
+    if self._gc_mode() == "none" {
+        b.branch(done_bb);
+    } else {
+        b.cbranch(is_null, done_bb, gc_dis_check_bb);
+    }
 
     b = ir.IRBuilder(gc_dis_check_bb);
     gc_dis_flag_r = b.load(self.rc_gc_disabled_gv, name="gc.dis.r");
@@ -338,8 +411,8 @@ impl NaIRGenPass._emit_rc_helpers -> None {
     b.cbranch(_mc_ok_r, do_bb, done_bb);
     b = ir.IRBuilder(do_bb);
 
-    _rmw_old_r = b.atomic_rmw(
-        "add", rc_ptr, ir.Constant(i64, 1), ordering="monotonic", name="rmw.old"
+    (b, _rmw_old_r) = self._emit_rc_count_update(
+        retain_fn, b, rc_ptr, old_rc, "add", "monotonic", "rc.r"
     );
     new_rc = b.add(_rmw_old_r, ir.Constant(i64, 1), name="new.rc");
     if self._rc_debug_codegen {
@@ -373,7 +446,11 @@ impl NaIRGenPass._emit_rc_helpers -> None {
         "==", release_fn.args[0], ir.Constant(i8_ptr, None), name="is.null"
     );
     gc_dis_check_bb_rel = release_fn.append_basic_block("gc_dis_check");
-    b.cbranch(is_null, done_bb, gc_dis_check_bb_rel);
+    if self._gc_mode() == "none" {
+        b.branch(done_bb);
+    } else {
+        b.cbranch(is_null, done_bb, gc_dis_check_bb_rel);
+    }
     b = ir.IRBuilder(gc_dis_check_bb_rel);
     gc_dis_flag_rel = b.load(self.rc_gc_disabled_gv, name="gc.dis.rel");
     magic_check_bb_rel = release_fn.append_basic_block("magic_check");
@@ -414,8 +491,8 @@ impl NaIRGenPass._emit_rc_helpers -> None {
     b.cbranch(is_dbl, log_dbl_free_bb, do_bb);
     b = ir.IRBuilder(do_bb);
 
-    _rmw_old = b.atomic_rmw(
-        "sub", rc_ptr, ir.Constant(i64, 1), ordering="acq_rel", name="rmw.old"
+    (b, _rmw_old) = self._emit_rc_count_update(
+        release_fn, b, rc_ptr, old_rc, "sub", "acq_rel", "rc.rel"
     );
     new_rc = b.sub(_rmw_old, ir.Constant(i64, 1), name="new.rc");
     is_zero = b.icmp_unsigned("==", _rmw_old, ir.Constant(i64, 1), name="is.zero");
@@ -465,8 +542,19 @@ impl NaIRGenPass._emit_rc_helpers -> None {
         _cy_is_purple = b.icmp_unsigned(
             "==", _cy_color, ir.Constant(i8, RC_COLOR_PURPLE), name="cy.is.purple"
         );
+
+        _cy_untraced = b.icmp_unsigned(
+            "!=",
+            b.and_(_cy_cb, ir.Constant(i8, RC_UNTRACED_BIT), name="cy.unt.bit"),
+            ir.Constant(i8, 0),
+            name="cy.untraced"
+        );
         set_root_bb = release_fn.append_basic_block("set_root");
-        b.cbranch(_cy_is_purple, dbg_rel_bb, set_root_bb);
+        b.cbranch(
+            b.or_(_cy_is_purple, _cy_untraced, name="cy.not.root"),
+            dbg_rel_bb,
+            set_root_bb
+        );
 
         b = ir.IRBuilder(set_root_bb);
         _cy_word = b.load(_cy_csp, name="cy.word");
@@ -506,32 +594,38 @@ impl NaIRGenPass._emit_rc_helpers -> None {
             name="cd.in.coll"
         );
         b.cbranch(_cd_in_coll, dbg_rel_bb, unbuf_pre);
+
+        unbuf_hit = release_fn.append_basic_block("unbuf.hit");
         b = ir.IRBuilder(unbuf_pre);
         _ub_buf = b.load(self.rc_roots_buf_gv, name="ub.buf");
         _ub_count = b.load(self.rc_roots_count_gv, name="ub.count");
         b.branch(unbuf_hdr);
         b = ir.IRBuilder(unbuf_hdr);
         _ub_i = b.phi(i64, name="ub.i");
-        _ub_i.add_incoming(ir.Constant(i64, 0), unbuf_pre);
+        _ub_i.add_incoming(_ub_count, unbuf_pre);
         b.cbranch(
-            b.icmp_unsigned(">=", _ub_i, _ub_count, name="ub.end"),
+            b.icmp_unsigned("==", _ub_i, ir.Constant(i64, 0), name="ub.end"),
             unbuf_clear,
             unbuf_body
         );
         b = ir.IRBuilder(unbuf_body);
+        _ub_prev = b.sub(_ub_i, ir.Constant(i64, 1), name="ub.prev");
         _ub_slot = b.gep(
-            _ub_buf, [b.mul(_ub_i, ir.Constant(i64, 8), name="ub.off")], name="ub.slot"
+            _ub_buf,
+            [b.mul(_ub_prev, ir.Constant(i64, 8), name="ub.off")],
+            name="ub.slot"
         );
         _ub_pp = b.bitcast(_ub_slot, i8_ptr.as_pointer(), name="ub.pp");
         _ub_obj = b.load(_ub_pp, name="ub.obj");
-        _ub_match = b.icmp_unsigned("==", _ub_obj, release_fn.args[0], name="ub.match");
-        b.store(
-            b.select(_ub_match, ir.Constant(i8_ptr, None), _ub_obj, name="ub.new"),
-            _ub_pp
+        _ub_i.add_incoming(_ub_prev, unbuf_body);
+        b.cbranch(
+            b.icmp_unsigned("==", _ub_obj, release_fn.args[0], name="ub.match"),
+            unbuf_hit,
+            unbuf_hdr
         );
-        _ub_next = b.add(_ub_i, ir.Constant(i64, 1), name="ub.next");
-        _ub_i.add_incoming(_ub_next, unbuf_body);
-        b.branch(unbuf_hdr);
+        b = ir.IRBuilder(unbuf_hit);
+        b.store(ir.Constant(i8_ptr, None), _ub_pp);
+        b.branch(unbuf_clear);
         b = ir.IRBuilder(unbuf_clear);
         (_ub_csp, _ub_cb) = self._emit_rc_color_load(b, release_fn.args[0]);
         self._emit_rc_clear_buffered(b, _ub_csp);
@@ -561,7 +655,19 @@ impl NaIRGenPass._emit_rc_helpers -> None {
     dtor_fnty = ir.FunctionType(ir.VoidType(), [i8_ptr]);
     dtor_fn_i8 = b.inttoptr(dtor_val, i8_ptr, name="dtor.i8");
     dtor_fn_ptr = b.bitcast(dtor_fn_i8, dtor_fnty.as_pointer(), name="dtor.fn");
+    _depth_gv = self.rc_release_depth_gv;
+    if _depth_gv is not None {
+        b.store(
+            b.add(b.load(_depth_gv, name="rel.depth"), ir.Constant(i64, 1)), _depth_gv
+        );
+    }
     b.call(dtor_fn_ptr, [release_fn.args[0]]);
+    if _depth_gv is not None {
+        b.store(
+            b.sub(b.load(_depth_gv, name="rel.depth.after"), ir.Constant(i64, 1)),
+            _depth_gv
+        );
+    }
     post_dtor_live_rm_bb = release_fn.append_basic_block("post_dtor_live_rm");
     b.branch(post_dtor_live_rm_bb);
 
@@ -581,6 +687,17 @@ impl NaIRGenPass._emit_rc_helpers -> None {
     _pub_b.call(release_fn, [_pub_fn.args[0], ir.Constant(ir.IntType(1), 1)]);
     _pub_b.ret_void();
     self.rc_release_simple_fn = _pub_fn;
+
+    for (_abi_name, _target) in (("jac_retain", retain_fn), ("jac_release", _pub_fn)) {
+        _shim = ir.Function(
+            self.llvm_module, _pub_fnty, name=self._symbol_for(_abi_name)
+        );
+        _shim.args[0].name = "ptr";
+        _shim_b = ir.IRBuilder(_shim.append_basic_block("entry"));
+        _shim_b.call(_target, [_shim.args[0]]);
+        _shim_b.ret_void();
+        self._record_export(_abi_name, _shim.name, "abi");
+    }
 }
 
 impl NaIRGenPass._rc_call_with_ctx(
@@ -639,7 +756,13 @@ impl NaIRGenPass._opt_result_owned(val: ir.Value, expr: object) -> bool {
 }
 
 impl NaIRGenPass._can_native_move_lower(nd: object) -> bool {
-    if not isinstance(nd, uni.Assignment) or not nd.na_move_lowerable {
+    if not isinstance(nd, uni.Assignment) {
+        return False;
+    }
+    if self._nogc_consume_assigned_local(nd) {
+        return True;
+    }
+    if not nd.na_move_lowerable {
         return False;
     }
     rhs = nd.value;
@@ -667,6 +790,34 @@ impl NaIRGenPass._can_native_move_lower(nd: object) -> bool {
         return False;
     }
     self.builder.store(ir.Constant(src_alloca.pointee_type, None), src_alloca);
+    self.rc_ops_elided += 1;
+    return True;
+}
+
+impl NaIRGenPass._nogc_consume_assigned_local(nd: uni.Assignment) -> bool {
+    import from jaclang.compiler.frontend.constant { OwnershipKind, is_borrow_kind }
+    if nd.aug_op is not None
+        or len(nd.target) != 1
+        or not isinstance(nd.target[0], uni.Name)
+        or self._nogc_borrow_local_assign(nd) {
+        return False;
+    }
+    if nd.type_tag is not None
+        and (
+            is_borrow_kind(nd.type_tag.ownership)
+            or nd.type_tag.ownership == OwnershipKind.IMM
+        ) {
+        return False;
+    }
+    rhs = nd.value;
+    if not isinstance(rhs, uni.Name)
+        or rhs.value in self.closure_cell_handles
+        or rhs.value in self.borrowed_vars {
+        return False;
+    }
+    if not self._nogc_consume_local(rhs) {
+        return False;
+    }
     self.rc_ops_elided += 1;
     return True;
 }
@@ -964,9 +1115,9 @@ impl NaIRGenPass._emit_str_stamp_and_new -> None {
 
     memcpy_fn = self._get_or_declare_extern("memcpy", i8_ptr, [i8_ptr, i8_ptr, i64]);
     new_fn = self._define_function(
-        "__jac_str_new", ir.FunctionType(i8_ptr, [i8_ptr, i64])
+        self._symbol_for("__jac_str_new"), ir.FunctionType(i8_ptr, [i8_ptr, i64])
     );
-    new_fn.linkage = "weak_odr";
+    self._record_export("__jac_str_new", new_fn.name, "abi");
     new_fn.args[0].name = "data";
     new_fn.args[1].name = "n";
     _n_entry = new_fn.append_basic_block("entry");
@@ -1259,11 +1410,20 @@ impl NaIRGenPass._emit_str_desc_helpers -> None {
     ub.ret(ir.Constant(i8p, None));
     ub = ir.IRBuilder(_u_probe);
     _u_end = ub.load(ub.gep(_u_data, [_u_len], name="u.endp"), name="u.end");
-    ub.cbranch(
-        ub.icmp_unsigned("==", _u_end, ir.Constant(i8, 0), name="u.hasnul"),
-        _u_pass,
-        _u_copy
-    );
+    _u_whole = ub.icmp_unsigned("==", _u_end, ir.Constant(i8, 0), name="u.hasnul");
+    if not _hl {
+        _u_whole = ub.and_(
+            _u_whole,
+            ub.icmp_unsigned(
+                "==",
+                _u_data,
+                ub.extract_value(uf.args[0], 0, name="u.root"),
+                name="u.isroot"
+            ),
+            name="u.whole"
+        );
+    }
+    ub.cbranch(_u_whole, _u_pass, _u_copy);
     ub = ir.IRBuilder(_u_pass);
     ub.ret(_u_data);
     ub = ir.IRBuilder(_u_copy);
@@ -1328,6 +1488,9 @@ impl NaIRGenPass._str_norm(val: ir.Value) -> ir.Value {
     if self._str_desc_ty is None or val.type != self._str_desc_ty {
         return val;
     }
+    if not self._is_owned(val) and not self._nogc_headerless() {
+        return self._str_view(val);
+    }
     if self.str_unwrap_fn is None {
         self._emit_str_desc_helpers();
     }
@@ -1365,6 +1528,25 @@ impl NaIRGenPass._str_view(val: ir.Value) -> ir.Value {
         self.builder.select(copied, view, previous, name="s.view.hold"), slot
     );
     return view;
+}
+
+impl NaIRGenPass._str_borrow(val: ir.Value) -> ir.Value {
+    if self._str_desc_ty is None or val.type != self._str_desc_ty {
+        return val;
+    }
+    return self._str_view(val);
+}
+
+impl NaIRGenPass._consume_str_args(values: list[ir.Value]) -> None {
+    if self._str_desc_ty is None or self._nogc_headerless() {
+        return;
+    }
+    for value in values {
+        if value.type == self._str_desc_ty and self._is_owned(value) {
+            self._release_owned_args([value], op="str_arg");
+            value.is_owned = False;
+        }
+    }
 }
 
 impl NaIRGenPass._str_materialize(val: ir.Value) -> ir.Value {
@@ -1434,6 +1616,10 @@ impl NaIRGenPass._emit_set_type_tag(
         return;
     }
     _i32 = ir.IntType(32);
+    if self._arch_display(type_name) != type_name {
+        b.call(self.rc_set_type_fn, [ptr_i8, self._emit_class_name_const(type_name)]);
+        return;
+    }
     _tag_gv = self._get_snprintf_fmt(type_name);
     _tag_gep = b.gep(
         _tag_gv, [ir.Constant(_i32, 0), ir.Constant(_i32, 0)], name="tag.gep"
@@ -1484,9 +1670,6 @@ impl NaIRGenPass._nogc_owned_world -> bool {
         return False;
     }
     _opts = self.prog.options;
-    if bool(getattr(_opts, "kernel_unit", False)) {
-        return False;
-    }
     try {
         return bool(_opts.nogc_enforced_for(self.module.name));
     } except Exception {
@@ -1754,25 +1937,40 @@ impl NaIRGenPass._drop_hook_for(type_name: str) -> (ir.Function | None) {
         return cached;
     }
     for owner in self._mro_of(type_name) {
+        member = self._drop_member_of(owner);
+        if member is not None and not member.is_def {
+            return None;
+        }
         hook = self.func_symtab.get(f"{owner}.drop");
-        if hook is None {
-            arch = self.arch_ast_map.get(owner);
-            if arch is not None and arch.body is not None {
-                for ability in arch.get_all_sub_nodes(uni.Ability) {
-                    if ability.find_parent_of_type(uni.Archetype) is not arch
-                        or ability.name_ref is None
-                        or ability.name_ref.sym_name != "drop" {
-                        continue;
-                    }
-                    self._forward_declare_method(owner, ability);
-                    hook = self.func_symtab.get(f"{owner}.drop");
-                    break;
-                }
-            }
+        if hook is None and member is not None {
+            self._forward_declare_method(owner, member);
+            hook = self.func_symtab.get(f"{owner}.drop");
         }
         if hook is not None {
             self.struct_drop_hooks[type_name] = hook;
             return hook;
+        }
+    }
+    return None;
+}
+
+impl NaIRGenPass._drop_member_of(owner: str) -> (uni.Ability | None) {
+    arch = self.arch_ast_map.get(owner);
+    if arch is None or arch.body is None {
+        return None;
+    }
+    for ability in arch.get_all_sub_nodes(uni.Ability) {
+        if ability.find_parent_of_type(uni.Archetype) is arch
+            and ability.name_ref is not None
+            and ability.name_ref.sym_name == "drop" {
+            return ability;
+        }
+    }
+    for stmt in arch._get_impl_resolved_body() {
+        if isinstance(stmt, uni.Ability)
+            and stmt.name_ref is not None
+            and stmt.name_ref.sym_name == "drop" {
+            return stmt;
         }
     }
     return None;
@@ -1949,7 +2147,8 @@ impl NaIRGenPass._nogc_type_arg_mangles(expr: uni.UniNode | None) -> list[str] {
     if not isinstance(expr, uni.Expr) or expr.type is None {
         return [];
     }
-    return self._nogc_type_arg_mangles_of_str(expr.type.mangle());
+    import from jaclang.compiler.passes.layout_pass { native_type_key }
+    return self._nogc_type_arg_mangles_of_str(native_type_key(expr.type));
 }
 
 impl NaIRGenPass._drop_spec_for_mangle(mangle: str) -> (tuple[str, ir.Type] | None) {
@@ -2421,6 +2620,14 @@ impl NaIRGenPass._emit_scope_cleanup(
         if var_name in self.closure_cell_handles {
             continue;
         }
+        if var_name in self.owned_tuple_vars {
+            if var_name == skip_var {
+                self.builder.store(ir.Constant(alloca.pointee_type, None), alloca);
+            } else {
+                self._release_tuple_slot(alloca, op="scope_exit");
+            }
+            continue;
+        }
 
         if self.jacval_type is not None
             and isinstance(alloca.type, ir.PointerType)
@@ -2517,6 +2724,10 @@ impl NaIRGenPass._emit_loop_iter_cleanup(
         if alloca is None {
             continue;
         }
+        if var_name in self.owned_tuple_vars {
+            self._release_tuple_slot(alloca, op="iter_end");
+            continue;
+        }
         if self.jacval_type is not None
             and isinstance(alloca.type, ir.PointerType)
             and alloca.pointee_type == self.jacval_type {
@@ -2527,9 +2738,7 @@ impl NaIRGenPass._emit_loop_iter_cleanup(
             and isinstance(alloca.type, ir.PointerType)
             and alloca.pointee_type == self._str_desc_ty {
             if not self._nogc_headerless() {
-                val = self.builder.load(alloca, name=f"iter.cleanup.{var_name}");
-                self._emit_rc_release_typed(val, op="iter_end", loc=loc);
-                self.builder.store(ir.Constant(alloca.pointee_type, None), alloca);
+                self._emit_iter_slot_release(alloca, var_name, loc);
             } elif var_name in self.nogc_owned_str_vars {
                 val = self.builder.load(alloca, name=f"iter.cleanup.{var_name}");
                 self._nogc_str_free_owned(val);
@@ -2562,14 +2771,38 @@ impl NaIRGenPass._emit_loop_iter_cleanup(
                 _region_handles.append((var_name, alloca));
                 continue;
             }
-            val = self.builder.load(alloca, name=f"iter.cleanup.{var_name}");
-            self._emit_rc_release_typed(val, op="iter_end", loc=loc);
-            self.builder.store(ir.Constant(alloca.pointee_type, None), alloca);
+            self._emit_iter_slot_release(alloca, var_name, loc);
         }
     }
     for (var_name, alloca) in _region_handles {
         self._emit_region_handle_drop(alloca, var_name);
     }
+}
+
+impl NaIRGenPass._emit_iter_slot_release(
+    alloca: ir.Value, var_name: str, loc: str
+) -> None {
+    val = self.builder.load(alloca, name=f"iter.cleanup.{var_name}");
+
+    held = val;
+    if self._str_desc_ty is not None and val.type == self._str_desc_ty {
+        held = self.builder.extract_value(val, 0, name=f"iter.root.{var_name}");
+    }
+    func = self.builder.function;
+    rel_bb = func.append_basic_block(name=f"iter.rel.{var_name}");
+    cont_bb = func.append_basic_block(name=f"iter.cont.{var_name}");
+    self.builder.cbranch(
+        self.builder.icmp_unsigned(
+            "!=", held, ir.Constant(held.type, None), name=f"iter.set.{var_name}"
+        ),
+        rel_bb,
+        cont_bb
+    );
+    self.builder.position_at_end(rel_bb);
+    self._emit_rc_release_typed(val, op="iter_end", loc=loc);
+    self.builder.store(ir.Constant(alloca.pointee_type, None), alloca);
+    self.builder.branch(cont_bb);
+    self.builder.position_at_end(cont_bb);
 }
 
 impl NaIRGenPass._bind_loop_coll_slot(val: ir.Value) -> (str | None) {
@@ -2656,6 +2889,16 @@ impl NaIRGenPass._emit_struct_release_fn(arch_name: str) -> None {
     _hook = self._drop_hook_for(arch_name);
     if _hook is not None {
         b.call(_hook, [b.bitcast(release_fn.args[0], _hook.args[0].type)]);
+    }
+
+    _node_lay = self._arch_layout(arch_name);
+    if self._osp_pins_refs()
+        and _node_lay is not None
+        and _node_lay.arch_type == "node" {
+        b.call(
+            self._osp_reclaim_hook(),
+            [b.ptrtoint(release_fn.args[0], i64, name="osp.forget.h")]
+        );
     }
 
     if self._pyb_base_of(arch_name) is not None {

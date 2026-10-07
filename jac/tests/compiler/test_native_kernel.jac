@@ -161,6 +161,7 @@ test "kernel materialization releases every borrowed input reference" {
             == 0;
         mod = kernel.take_module();
         assert mod is not None;
+        assert mod.persistence == [] , "persistence facts are stamped after parsing";
         assert not kernel.take_diags();
         assert not kernel.take_lexdiags();
         kernel.take_comments();
@@ -220,5 +221,43 @@ test "kernel parses retain no native memory once the tree is handed over" {
                 "the parse region is not being dropped at the end of jc_run"
             );
         }
+    }
+}
+
+
+test "only a kernel build parses with the store parser" {
+    # `JAC_COMPILER_LIB=off` is the first step of `resolve_kernel`'s precedence
+    # (`kernel_resolve.jac`), honored only beside the kernel-build marker that
+    # a kernel build's own processes carry; anywhere else it is refused, since
+    # the kernel compiles and analyzes every program.
+    import from jaclang.compiler.backends.native.kernel_resolve {
+        KERNEL_BUILDING_ENV,
+        KERNEL_LIB_ENV,
+        KernelUnavailable,
+        kernel_build_env,
+        resolve_kernel
+    }
+    import from jaclang.compiler.native_compiler { ensure_loaded, reset_loaded }
+    saved = {key: os.environ.get(key) for key in kernel_build_env()};
+    reset_loaded();
+    try {
+        os.environ[KERNEL_LIB_ENV] = "off";
+        os.environ.pop(KERNEL_BUILDING_ENV, None);
+        try {
+            resolve_kernel();
+            assert False , "JAC_COMPILER_LIB=off outside a kernel build must be refused";
+        } except KernelUnavailable {}
+        os.environ.update(kernel_build_env());
+        assert resolve_kernel() is None , "a kernel build must resolve no kernel";
+        assert ensure_loaded() is None , "a kernel build must parse with the store parser";
+    } finally {
+        for (key, value) in saved.items() {
+            if value is None {
+                os.environ.pop(key, None);
+            } else {
+                os.environ[key] = value;
+            }
+        }
+        reset_loaded();
     }
 }

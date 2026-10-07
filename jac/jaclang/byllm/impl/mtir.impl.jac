@@ -155,12 +155,17 @@ impl MTRuntime.factory(mtir: MTIR) -> MTRuntime {
     if isinstance(conv_arg, list) {
         conv_list_ref = conv_arg;
         for item in conv_arg {
+            if _is_system_message(item) {
+                continue;
+            }
             m: any = item;
             if isinstance(m, Message) {
                 conv_msgs.append(m);
             } elif isinstance(m, dict) {
                 reconstructed: any = Message.from_dict(m);
                 conv_msgs.append(reconstructed);
+            } elif hasattr(m, "model_dump") {
+                conv_msgs.append(Message.from_dict(m.model_dump(exclude_none=True)));
             } else {
                 conv_msgs.append(m);
             }
@@ -216,7 +221,6 @@ impl MTRuntime.factory(mtir: MTIR) -> MTRuntime {
     );
 
     if conv_list_ref is not None {
-        mt_run._scaffolding_ids.append(id(sys_msg));
         mt_run._conversation_list = conv_list_ref;
     }
 
@@ -266,6 +270,12 @@ impl MTRuntime.write_back_conversation -> None {
 }
 
 
+def _is_system_message(msg: any) -> bool {
+    role = msg.get("role") if isinstance(msg, dict) else msg?.role;
+    return role == MessageRole.SYSTEM;
+}
+
+
 def _is_finish_tool_call(tc: any) -> bool {
     if tc?.function and hasattr(tc.function, "name") {
         return tc.function.name == "finish_tool";
@@ -281,7 +291,7 @@ impl MTRuntime.get_history_for_persist -> list[MessageType] {
     scaff_ids = set(self._scaffolding_ids);
     out: list[any] = [];
     for msg in self.messages {
-        if id(msg) in scaff_ids {
+        if id(msg) in scaff_ids or _is_system_message(msg) {
             continue;
         }
 
@@ -296,7 +306,7 @@ impl MTRuntime.get_history_for_persist -> list[MessageType] {
         if isinstance(msg, ToolCallResultMsg) and msg.name == "finish_tool" {
             continue;
         }
-        tool_calls = msg?.tool_calls;
+        tool_calls: any = msg?.tool_calls;
         if tool_calls is None and isinstance(msg, dict) {
             tool_calls = msg.get("tool_calls");
         }

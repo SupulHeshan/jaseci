@@ -173,7 +173,7 @@ impl RcFactsPass._borrow_arg_callee_ok(bx: UnaryExpr) -> bool {
 }
 
 impl RcFactsPass._asn_makes_region_handle(nd: Assignment) -> bool {
-    import from jaclang.compiler.expr_keys { expr_is_builtin_region }
+    import from jaclang.compiler.types.type_utils { expr_is_builtin_region }
     import from jaclang.compiler.frontend.constant { OwnershipKind }
     if isinstance(nd.value, FuncCall) and expr_is_builtin_region(nd.value) {
         return True;
@@ -296,9 +296,7 @@ impl RcFactsPass._stamp_move_in(ir_in: Module) -> None {
         if id(sym) in seen {
             continue;
         }
-        if sym.storage != SymbolStorage.LOCAL
-            or self._is_param_sym(sym)
-            or nm.sym_name == "self" {
+        if sym.storage != SymbolStorage.LOCAL or self._is_param_sym(sym) {
             continue;
         }
         seen.add(id(sym));

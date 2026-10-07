@@ -1,5 +1,4 @@
-import from jaclang.compiler.passes.context { CompileContext }
-import from typing { TypeAlias }
+import from jaclang.compiler.passes.context { CompileContext, CompilerPass }
 import from jaclang.compiler.frontend.unitree {
     Ability,
     Assignment,
@@ -41,7 +40,7 @@ import from jaclang.compiler.frontend.unitree {
     UniNode,
     WhileStmt
 }
-import from jaclang.compiler.passes.dataflow { solve_backward_gen_kill }
+import from jaclang.compiler.passes.dataflow { SymId, solve_backward_gen_kill }
 import from jaclang.compiler.frontend.constant {
     ExprCtx,
     OwnershipKind,
@@ -49,8 +48,6 @@ import from jaclang.compiler.frontend.constant {
     Tokens as Tok,
     is_borrow_kind
 }
-
-glob SymId: TypeAlias = int;
 
 enum Ownership {
     OWNED = "owned",
@@ -64,6 +61,11 @@ def result_ownership(expr: (Expr | None)) -> Ownership {
         return Ownership.UNKNOWN;
     }
     if isinstance(expr, FuncCall) {
+        import from jaclang.compiler.erased_imports { erased_identity_call_arg }
+        erased_to = erased_identity_call_arg(expr);
+        if erased_to is not None {
+            return result_ownership(erased_to);
+        }
         return Ownership.OWNED;
     }
     if isinstance(expr, BinaryExpr)
@@ -85,6 +87,12 @@ def result_ownership(expr: (Expr | None)) -> Ownership {
     }
     if isinstance(expr, String) {
         return Ownership.STATIC;
+    }
+    if isinstance(expr, AtomTrailer) {
+        import from jaclang.compiler.c_interop { foreign_read_copies }
+        if foreign_read_copies(expr) {
+            return Ownership.OWNED;
+        }
     }
     if isinstance(expr, (Name, AtomTrailer)) {
         return Ownership.BORROWED;
@@ -120,10 +128,8 @@ def loop_body_locals(body: (Sequence[UniNode] | None)) -> list[str] {
     return out;
 }
 
-walker RcFactsPass {
-    has ctx: CompileContext,
-        module: Module,
-        _node_use: dict[int, set[SymId]] = {},
+walker RcFactsPass(CompilerPass) {
+    has _node_use: dict[int, set[SymId]] = {},
         _node_def: dict[int, set[SymId]] = {};
 
     def _run_impl(ir_in: Module) -> Module;

@@ -39,7 +39,9 @@ import from jaclang.compiler.frontend.unitree {
     ListVal,
     Literal,
     MatchAs,
+    MatchArch,
     ModuleCode,
+    ImportRule,
     ModuleItem,
     ModulePath,
     MultiString,
@@ -65,14 +67,22 @@ import from jaclang.compiler.frontend.unitree {
     WhileStmt,
     WithStmt,
     YieldExpr,
-    find_python_scope_node_of
+    find_python_scope_node_of,
+    WireItem
 }
-import from jaclang.compiler.passes.context { CompileContext }
+import from jaclang.compiler.passes.context { CompileContext, TreePass }
 
 import from jaclang.compiler.symbol_utils { return_type_is_jsx }
 import from jaclang.compiler.frontend.constant { ImmutabilityKind, Tokens as Tok }
 import from jaclang.compiler.frontend.diagnostics { E0033, E0108, E0109 }
-import from jaclang.compiler.types.ct_value { CT_DEFERRED, CtValue }
+import from jaclang.compiler.types.ct_value {
+    CT_DEFERRED,
+    CtValue,
+    ct_is_iterable,
+    ct_str,
+    ct_truthy,
+    ct_type_name
+}
 import from jaclang.compiler.types.types {
     AnyType,
     ClassType,
@@ -96,12 +106,13 @@ import from jaclang.compiler.types.operations {
     AUG_TO_BINARY_MAP,
     BINARY_OPERATOR_MAP,
     BITWISE_OPERATORS,
+    COMPLEX_ARITH_OPS,
     SHIFT_OPERATORS,
+    get_complex_arith_result_type,
     get_numeric_promotion_type,
     get_pow_result_type
 }
 import type from jaclang.compiler.types.type_evaluator { TypeEvaluator }
-import type from jaclang.compiler.driver.program { JacProgram }
 import from jaclang.compiler.frontend.diagnostics {
     Category,
     DiagnosticInfo,
@@ -136,6 +147,9 @@ import from jaclang.compiler.frontend.diagnostics {
     E1132,
     E1133,
     E1135,
+    E1150,
+    E1151,
+    E1152,
     E1036,
     W1036,
     W1037,
@@ -151,27 +165,17 @@ glob FW_INTERVAL_OPS: dict[str, str] = {
          "STAR_MUL": "*"
      };
 
-walker TypeCheckPass(TreeWalker) {
-    can enter_walk with UniNode entry {
-        self.ctx.enter_node(here);
-    }
-
-    can exit_walk with UniNode exit {
-        self.ctx.exit_node(here);
-    }
-
-    has ctx: CompileContext,
-        module: Module,
-        prog: JacProgram,
-        evaluator: TypeEvaluator postinit,
+walker TypeCheckPass(TreePass) {
+    has evaluator: TypeEvaluator postinit,
         _deferred_writes: list[tuple[Expr, (UniNode | None)]] postinit,
-        _lambda_depth: int = 0;
+        _lambda_depth: int = 0,
+        _restores_evaluator: bool = False,
+        _outer_pass: (CompileContext | None) = None,
+        _outer_ct_quiet: bool = False;
 
     def postinit -> None;
     can initialize with entry;
-
-    static has HOST_PASS: bool = True;
-
+    override def release -> None;
     can prepare with entry;
     can finish with exit;
     def _stamp_fixed_width -> None;
@@ -193,6 +197,14 @@ walker TypeCheckPass(TreeWalker) {
     can exit_compare_expr with CompareExpr exit;
     def _diag_erased_membership(nd: CompareExpr, hay: Expr, op_text: str) -> None;
     can exit_func_call with FuncCall exit;
+    def _c_instance_of(ann_node: (UniNode | None)) -> (TypeBase | None);
+    def _c_plain_data(t: (TypeBase | None), allow_callable: bool = False) -> bool;
+    def _opaque_member(t: (TypeBase | None)) -> (Archetype | None);
+    def _check_c_type_use(ann_node: (UniNode | None)) -> None;
+    def _check_c_interop_import(imp: Import) -> None;
+    def _foreign_struct_contains(t: (TypeBase | None), target: Archetype) -> bool;
+    def _check_c_interop_call(nd: FuncCall) -> None;
+    def _c_arg_instance(t: (TypeBase | None)) -> (TypeBase | None);
     can exit_gen_compr with GenCompr exit;
     def _check_intrinsic_collision(nd: Ability) -> None;
     can exit_jsx_element with JsxElement exit;
@@ -208,6 +220,7 @@ walker TypeCheckPass(TreeWalker) {
     can exit_raise_stmt with RaiseStmt exit;
     can exit_except with Except exit;
     can exit_match_as with MatchAs exit;
+    can exit_match_arch with MatchArch exit;
     can enter_with_stmt with WithStmt entry;
     can exit_with_stmt with WithStmt exit;
     can enter_if_stmt with IfStmt entry;
