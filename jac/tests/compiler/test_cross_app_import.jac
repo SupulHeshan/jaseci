@@ -15,7 +15,9 @@ import re;
 import from tests.support { JAC_ROOT }
 import jaclang.compiler.frontend.unitree as uni;
 import from jaclang.compiler.driver.boundary_classify {
+    ClientImportVerdict,
     CrossAppKind,
+    classify_client_import_item,
     classify_cross_app_import,
     import_crosses_apps,
     import_provider_app,
@@ -23,6 +25,7 @@ import from jaclang.compiler.driver.boundary_classify {
     is_client_boundary_import
 }
 import from jaclang.compiler.driver.program { JacProgram }
+import from jaclang.compiler.symbol_utils { resolve_import_source_module }
 import from jaclang.compiler.frontend.codeinfo {
     InteropBinding,
     InteropContext,
@@ -157,6 +160,49 @@ test "direct and aliased client RPC calls retain the service route" {
         assert '"contract":' in call , call;
     }
     assert '__jacCallFunction("hello"' not in mod.gen.js;
+}
+
+test "a client import of names the provider entry re-imports bridges to their declarations" {
+    (prog, mod) = compile_fixture(
+        fixture("web", "reexport_panel.jac"), cgen=True, app="web"
+    );
+    assert not prog.errors_had , [str(e) for e in prog.errors_had];
+    imp = import_of(mod, "social_app");
+    provider = resolve_import_source_module(prog, imp);
+    assert provider is not None;
+    for item in imp.items {
+        assert classify_client_import_item(provider, item)
+            == ClientImportVerdict.BRIDGED , (
+            f"'{item.name.value}' is declared exposed in social_ops; the entry's "
+            "re-import must not hide that"
+        );
+    }
+    js = mod.gen.js;
+    social_path = os.path.realpath(fixture("social_app.jac"));
+    assert not any(
+        os.path.realpath(path) == social_path
+        for path in mod.gen.client_manifest.runtime_imports
+    ) , (
+        "bridged names never become runtime imports of the provider entry; got "
+        + str(mod.gen.client_manifest.runtime_imports)
+    );
+    calls = re.findall(r'__jacCallFunction\("relay",[^\n]+', js);
+    assert calls , js;
+    for call in calls {
+        assert '"app": "social"' in call , call;
+        assert '"route": "/api/social"' in call , call;
+    }
+    at = js.find('__jacSpawn("Relay"');
+    assert at >= 0 , js;
+    assert '"app": "social"' in js[at:at + 400] , js[at:at + 400];
+}
+
+test "bridging to a private walker the provider entry re-imports is E5106" {
+    (prog, mod) = compile_fixture(fixture("web", "bad_reexport_bridge.jac"));
+    found = codes(prog);
+    assert "E5106" in found , (
+        f"expected E5106, got {[str(e) for e in prog.errors_had]}"
+    );
 }
 
 test "NATIVE_BIND wins for a client import recorded as a client-native edge" {
