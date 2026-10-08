@@ -12,6 +12,7 @@ import from jaclang.compiler.frontend.srcloc { CodeLocInfo }
 import from jaclang.compiler.kernel_target {
     active_kernel_target,
     is_target_package_path,
+    target_package_rel,
     kernel_target_active,
     kernel_target_generation,
     target_pkg_root
@@ -52,7 +53,8 @@ obj ClientArtifact {
         source_map: list[tuple[int, int, int, int, str]] = [],
         dep_digests: dict[str, str] = {},
         boundary_contracts: dict[str, any] = {},
-        framework: str = "";
+        framework: str = "",
+        pulled: list[int] = [];
 }
 
 enum InteropContext { SERVER = 'server', NATIVE = 'native', CLIENT = 'client' }
@@ -266,7 +268,7 @@ def native_arch_scope(mod_path: str) -> str {
     }
     source = os.path.realpath(mod_path);
     out = "";
-    if not is_target_package_path(source) {
+    if source.endswith(".jac") and not toolchain_runtime_unit(source) {
         stem = os.path.basename(source);
         dot = stem.find(".");
         if dot > 0 {
@@ -281,6 +283,19 @@ def native_arch_scope(mod_path: str) -> str {
     }
     _native_arch_scope_memo[mod_path] = out;
     return out;
+}
+
+def toolchain_runtime_unit(source: str) -> bool {
+    rel = target_package_rel(source) if is_target_package_path(source) else None;
+    if rel is None {
+        return False;
+    }
+    if rel in kernel_unit_rels() {
+        return True;
+    }
+    import from jaclang.compiler.frontend.host { active_host }
+    host = active_host();
+    return host.is_native_only_source(rel) or host.is_native_lowered_source(rel);
 }
 
 def native_arch_name(mod_path: str, name: str) -> str {
@@ -778,6 +793,16 @@ def is_client_by_location(file_path: str) -> bool {
 def is_shared_runtime_module(file_path: str) -> bool {
     import os;
     if not file_path {
+        return False;
+    }
+    stem = os.path.basename(file_path);
+    named = False;
+    for module in SHARED_RUNTIME_MODULES {
+        if stem == module.rpartition('.')[2] + '.jac' {
+            named = True;
+        }
+    }
+    if not named {
         return False;
     }
     path = os.path.realpath(file_path);
