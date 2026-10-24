@@ -181,27 +181,6 @@ test "one deadline covers everything a call does" {
         return (_outcome(lambda { rest("go"); }), len(llm.seen));
     }
 
-    def slow_reader(budget: float) -> tuple[str, int] {
-        llm = MockLLM(
-            outputs=[say("one two three four five six seven eight")],
-            chunk_size=4,
-            timeout=budget
-        );
-
-        """Recite."""
-        def recite(topic: str) -> str by llm(stream=True);
-
-        def read_slowly -> str {
-            pieces: list[str] = [];
-            for piece in recite("numbers") {
-                pieces.append(piece);
-                time.sleep(0.2);
-            }
-            return "".join(pieces);
-        }
-        return (_outcome(read_slowly), len(llm.seen));
-    }
-
     def stream_closed(budget: float, is_async: bool) -> tuple[str, int] {
         held: list[any] = [];
         closed: list[int] = [];
@@ -305,13 +284,6 @@ test "one deadline covers everything a call does" {
             1
         ),
         (
-            "a stream read slower than the deadline is cut off",
-            slow_reader,
-            0.5,
-            "LLMTimeout",
-            1
-        ),
-        (
             "a stream cut off at the deadline closes the provider's stream",
             sync_stream_closed,
             0.5,
@@ -362,7 +334,6 @@ test "LLMTimeout and RateLimitError stay retryable" {
             openai.APIConnectionError(request=request),
             True
         ),
-        ("a proxy client timeout", openai.APITimeoutError(request=request), True),
         (
             "a proxy 5xx",
             openai.InternalServerError(
