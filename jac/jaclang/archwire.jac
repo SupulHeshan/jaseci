@@ -8444,10 +8444,12 @@ graph import compiler {
             AstSymbolNode,
             AtomTrailer,
             BinaryExpr,
+            ExprAsItem,
             FuncSignature,
             HasVar,
             ImplDef,
             Import,
+            InForStmt,
             Module,
             Name,
             NameAtom,
@@ -8457,7 +8459,9 @@ graph import compiler {
             UniNode,
             UniScopeNode,
             bind_assignment_targets,
+            bind_for_target,
             bind_walrus_target,
+            bind_with_alias,
             binding_sites_in,
             is_identifier_slot,
             typed_rebind_names
@@ -8930,7 +8934,9 @@ graph import compiler {
             WhileStmt,
             WithStmt,
             bind_assignment_targets,
+            bind_for_target,
             bind_walrus_target,
+            bind_with_alias,
             def_insert_unpacking,
             find_python_scope_node_of,
             is_walrus,
@@ -14254,9 +14260,7 @@ graph import compiler.types {
         type_evaluator.TypeEvaluator._extern_field_type { numeric_name_of },
         type_evaluator.TypeEvaluator._literal_type_from_expr { folded_number },
     ]
-    fixed_width --> type_evaluator.TypeEvaluator._get_type_from_flow_node {
-        numeric_name_of
-    }
+    fixed_width --> type_evaluator.TypeEvaluator._narrow_on_store { numeric_name_of }
     operations ++> type_evaluator {
         BINARY_OPERATOR_MAP,
         get_type_of_binary_operation,

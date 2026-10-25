@@ -1152,10 +1152,12 @@ impl TypeEvaluator._stored_in_same_function(symbol: Symbol, nd: UniNode) -> bool
 impl TypeEvaluator._get_enclosing_return_scope(
     nd: UniNode
 ) -> Ability | LambdaExpr | None {
-    while nd := nd.decl_parent {
-        if isinstance(nd, (LambdaExpr, Ability)) {
-            return nd;
+    scope = nd.decl_parent;
+    while scope is not None {
+        if isinstance(scope, (LambdaExpr, Ability)) {
+            return scope;
         }
+        scope = scope.decl_parent;
     }
     return None;
 }
@@ -2503,8 +2505,8 @@ impl TypeEvaluator._collect_return_types(
         if isinstance(stmt, MatchStmt) {
             if stmt.cases {
                 all_return = True;
-                for `case in stmt.cases {
-                    mc: MatchCase = `case;
+                for match_case in stmt.cases {
+                    mc: MatchCase = match_case;
                     if not self._collect_return_types(list(mc.body), out) {
                         all_return = False;
                     }
@@ -2520,8 +2522,8 @@ impl TypeEvaluator._collect_return_types(
             if stmt.cases {
                 has_default = False;
                 all_return = True;
-                for `case in stmt.cases {
-                    sc: SwitchCase = `case;
+                for switch_case in stmt.cases {
+                    sc: SwitchCase = switch_case;
                     if sc.pattern is None {
                         has_default = True;
                     }

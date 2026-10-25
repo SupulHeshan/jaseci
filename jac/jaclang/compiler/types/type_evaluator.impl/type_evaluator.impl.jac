@@ -349,10 +349,12 @@ impl TypeEvaluator._get_type_of_expression_core(
                 tuple_inst = self._convert_to_instance(self.prefetch.tuple_class);
                 if isinstance(tuple_inst, ClassType) and expr.values {
                     elem_types_t: list[TypeBase] = [];
-                    for _val in expr.values {
+                    for tuple_part in expr.values {
                         et = self._container_value_type(
                             self.get_type_of_expression(
-                                _val.value if isinstance(_val, KWPair) else _val
+                                tuple_part.value
+                                    if isinstance(tuple_part, KWPair)
+                                    else tuple_part
                             ),
                             expr
                         );
@@ -2057,10 +2059,10 @@ impl TypeEvaluator._get_type_of_expression_core(
                             if arch := method.signature.arch_tag_info {
                                 if isinstance(arch, TupleVal) {
                                     member_insts: list[TypeBase] = [];
-                                    for member in self._annotation_args(arch) {
+                                    for arch_member in self._annotation_args(arch) {
                                         member_insts.append(
                                             self._convert_to_instance(
-                                                self.get_type_of_expression(member)
+                                                self.get_type_of_expression(arch_member)
                                             )
                                         );
                                     }
@@ -2687,289 +2689,7 @@ impl TypeEvaluator._get_type_of_symbol_decl(
             if node_.type is not None {
                 return node_.type;
             }
-
-            context_item = node_.parent;
-            if isinstance(context_item, ExprAsItem) and context_item.alias is node_ {
-                context_stmt = context_item.parent;
-                if isinstance(context_stmt, WithStmt) {
-                    return self.get_type_of_with_alias(context_item);
-                }
-            }
-
-            if enum_member_type := self._get_enum_member_type_for_decl(node_) {
-                return enum_member_type;
-            }
-
-            if (
-                isinstance(node_.parent, UnaryExpr)
-                and isinstance(node_.parent.op, Token)
-                and node_.parent.op.name == Tok.STAR_MUL
-                and isinstance(node_.parent.parent, (TupleVal, ListVal))
-            ) {
-                star_container = node_.parent.parent;
-                while isinstance(star_container.parent, (TupleVal, ListVal)) {
-                    star_container = star_container.parent;
-                }
-                star_assignment = star_container.parent;
-                if (
-                    isinstance(star_assignment, Assignment)
-                    and star_assignment.value is not None
-                ) {
-                    rhs_type = self.get_type_of_expression(star_assignment.value);
-                    if elem
-                        := self._get_iterable_element_type(
-                            rhs_type, star_assignment.value
-                        ) {
-                        if self.prefetch.list_class is None {
-                            return UnknownType();
-                        }
-                        star_type = self.prefetch.list_class.clone_as_instance();
-                        star_type.private.type_args = [elem];
-                        return star_type;
-                    }
-                }
-            }
-
-            if isinstance(node_.parent, (TupleVal, ListVal)) {
-                unpack_container = node_.parent;
-                while isinstance(unpack_container.parent, (TupleVal, ListVal)) {
-                    unpack_container = unpack_container.parent;
-                }
-                unpack_assignment = unpack_container.parent;
-                if (
-                    isinstance(unpack_assignment, Assignment)
-                    and unpack_assignment.value is not None
-                ) {
-                    idx = -1;
-                    for (vi, v) in enumerate(unpack_container.values) {
-                        if v is node_ {
-                            idx = vi;
-                            break;
-                        }
-                    }
-                    if idx >= 0 {
-                        rhs_type = self.get_type_of_expression(unpack_assignment.value);
-                        extracted = self._extract_tuple_element_type(rhs_type, idx);
-                        if (
-                            extracted is not None
-                            and not isinstance(extracted, UnknownType)
-                        ) {
-                            return extracted;
-                        }
-
-                        if elem
-                            := self._get_iterable_element_type(
-                                rhs_type, unpack_assignment.value
-                            ) {
-                            return elem;
-                        }
-                        if extracted is not None {
-                            return extracted;
-                        }
-                    }
-                } elif isinstance(unpack_assignment, (InForStmt, InnerCompr)) {
-                    collection_type = self.get_type_of_expression(
-                        unpack_assignment.collection
-                    );
-                    elem_type = self._get_iterable_element_type(
-                        collection_type,
-                        unpack_assignment,
-                        is_async=unpack_assignment.is_async
-                    );
-                    if elem_type is not None {
-                        unpack_path: list[int] = [];
-                        path_cur: UniNode = node_;
-                        path_parent = path_cur.parent;
-                        path_ok = True;
-                        while path_parent is not None {
-                            if not isinstance(path_parent, (TupleVal, ListVal)) {
-                                path_ok = False;
-                                break;
-                            }
-                            found = -1;
-                            for (vi, v) in enumerate(path_parent.values) {
-                                if v is path_cur {
-                                    found = vi;
-                                    break;
-                                }
-                            }
-                            if found < 0 {
-                                path_ok = False;
-                                break;
-                            }
-                            unpack_path.insert(0, found);
-                            if path_parent is unpack_container {
-                                break;
-                            }
-                            path_cur = path_parent;
-                            path_parent = path_cur.parent;
-                        }
-                        if path_ok and unpack_path {
-                            if elem
-                                := self._extract_tuple_element_type_path(
-                                    elem_type, unpack_path
-                                ) {
-                                return elem;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if isinstance(node_.parent, Assignment) {
-                if node_.parent.type_tag is not None {
-                    annotation_type = self.get_type_of_expression(
-                        node_.parent.type_tag.tag
-                    );
-
-                    if final_type
-                        := self._final_declared_type(
-                            annotation_type, symbol, node_.parent.value
-                        ) {
-                        return final_type;
-                    }
-
-                    if (
-                        self._is_type_alias_annotation(
-                            annotation_type, node_.parent.type_tag.tag
-                        )
-                        and node_.parent.value is not None
-                    ) {
-                        return self._resolve_type_alias_rhs(node_.parent.value);
-                    }
-                    declared_inst = self._convert_to_instance(annotation_type);
-
-                    empty_value = node_.parent.value;
-                    if (
-                        isinstance(declared_inst, ClassType)
-                        and declared_inst.is_builtin(["list", "set"])
-                        and not declared_inst.private.type_args
-                        and isinstance(empty_value, (ListVal, FuncCall))
-                        and (
-                            (
-                                isinstance(empty_value, ListVal)
-                                and not empty_value.values
-                            )
-                            or (
-                                isinstance(empty_value, FuncCall)
-                                and not empty_value.params
-                                and isinstance(empty_value.target, Name)
-                                and empty_value.target.value in ("list", "set")
-                            )
-                        )
-                    ) {
-                        value_type = self.get_type_of_expression(
-                            empty_value, expected_type=declared_inst
-                        );
-                        if (
-                            isinstance(value_type, ClassType)
-                            and value_type.shared.same_class(declared_inst.shared)
-                            and value_type.private.type_args
-                        ) {
-                            return value_type;
-                        }
-                    }
-                    return declared_inst;
-                } else {
-                    if node_.parent.value is not None {
-                        return self._widen_literal_for_declaration(
-                            self.get_type_of_expression(node_.parent.value)
-                        );
-                    }
-                }
-            }
-
-            if (
-                isinstance(node_.parent, AtomTrailer)
-                and node_.parent.parent
-                and isinstance(node_.parent.parent, Assignment)
-            ) {
-                if node_.parent.parent.type_tag is not None {
-                    annotation_type = self.get_type_of_expression(
-                        node_.parent.parent.type_tag.tag
-                    );
-                    if final_type
-                        := self._final_declared_type(
-                            annotation_type, symbol, node_.parent.parent.value
-                        ) {
-                        return final_type;
-                    }
-                    return self._convert_to_instance(annotation_type);
-                } else {
-                    if node_.parent.parent.value is not None {
-                        return self._widen_literal_for_declaration(
-                            self.get_type_of_expression(node_.parent.parent.value)
-                        );
-                    }
-                }
-            }
-
-            if (
-                isinstance(node_.parent, BinaryExpr)
-                and isinstance(node_.parent.op, Token)
-                and node_.parent.op.name == "WALRUS_EQ"
-                and node_.parent.left is node_
-            ) {
-                return self.get_type_of_expression(node_.parent.right);
-            }
-
-            if isinstance(node_.parent, ExprAsItem) and node_.parent.alias is node_ {
-                return self.get_type_of_with_alias(node_.parent);
-            }
-
-            if isinstance(node_.parent, (InForStmt, InnerCompr)) {
-                collection_type = self.get_type_of_expression(node_.parent.collection);
-
-                if self.is_any_type(collection_type)
-                    and self.prefetch.any_class is not None {
-                    node_.type = self.prefetch.any_class;
-                    return self.prefetch.any_class;
-                }
-
-                if isinstance(collection_type, AnyType) {
-                    elem_any = AnyType(is_foreign=collection_type.is_foreign);
-                    node_.type = elem_any;
-                    return elem_any;
-                }
-                if isinstance(collection_type, UnknownType) {
-                    elem_unknown = UnknownType(
-                        is_diagnosed=collection_type.is_diagnosed,
-                        is_incomplete=collection_type.is_incomplete
-                    );
-                    node_.type = elem_unknown;
-                    return elem_unknown;
-                }
-
-                if isinstance(collection_type, ClassType)
-                    and collection_type.is_instantiable_class()
-                    and collection_type.is_enum_class() {
-                    instance_type = collection_type.clone_as_instance();
-                    node_.type = instance_type;
-                    return instance_type;
-                }
-
-                element_type = self._get_iterable_element_type(
-                    collection_type, node_.parent, is_async=node_.parent.is_async
-                );
-                if element_type is not None {
-                    node_.type = element_type;
-                    return element_type;
-                }
-                return UnknownType();
-            }
-
-            if isinstance(node_.parent, Except) and node_.parent.ex_type {
-                ex_type = self.get_type_of_expression(node_.parent.ex_type);
-                return self._convert_to_instance(ex_type);
-            }
-
-            if isinstance(node_.parent, ModulePath) {
-                mod_path_type = self.get_type_of_module(node_.parent);
-                return node_.type or mod_path_type;
-            }
-            if isinstance(node_.parent, ModuleItem) {
-                return self.get_type_of_module_item(node_.parent);
-            }
+            return self._get_type_of_name_binding(symbol, node_);
 
         case HasVar():
             if node_.type_tag is not None {
@@ -2989,6 +2709,277 @@ impl TypeEvaluator._get_type_of_symbol_decl(
 
     }
 
+    return UnknownType();
+}
+
+impl TypeEvaluator._get_type_of_name_binding(symbol: Symbol, node_: Name) -> TypeBase {
+    context_item = node_.parent;
+    if isinstance(context_item, ExprAsItem) and context_item.alias is node_ {
+        context_stmt = context_item.parent;
+        if isinstance(context_stmt, WithStmt) {
+            return self.get_type_of_with_alias(context_item);
+        }
+    }
+
+    if enum_member_type := self._get_enum_member_type_for_decl(node_) {
+        return enum_member_type;
+    }
+
+    if (
+        isinstance(node_.parent, UnaryExpr)
+        and isinstance(node_.parent.op, Token)
+        and node_.parent.op.name == Tok.STAR_MUL
+        and isinstance(node_.parent.parent, (TupleVal, ListVal))
+    ) {
+        star_container = node_.parent.parent;
+        while isinstance(star_container.parent, (TupleVal, ListVal)) {
+            star_container = star_container.parent;
+        }
+        star_assignment = star_container.parent;
+        if (
+            isinstance(star_assignment, Assignment)
+            and star_assignment.value is not None
+        ) {
+            rhs_type = self.get_type_of_expression(star_assignment.value);
+            if elem
+                := self._get_iterable_element_type(rhs_type, star_assignment.value) {
+                if self.prefetch.list_class is None {
+                    return UnknownType();
+                }
+                star_type = self.prefetch.list_class.clone_as_instance();
+                star_type.private.type_args = [elem];
+                return star_type;
+            }
+        }
+    }
+
+    if isinstance(node_.parent, (TupleVal, ListVal)) {
+        unpack_container = node_.parent;
+        while isinstance(unpack_container.parent, (TupleVal, ListVal)) {
+            unpack_container = unpack_container.parent;
+        }
+        unpack_assignment = unpack_container.parent;
+        if (
+            isinstance(unpack_assignment, Assignment)
+            and unpack_assignment.value is not None
+        ) {
+            idx = -1;
+            for (vi, v) in enumerate(unpack_container.values) {
+                if v is node_ {
+                    idx = vi;
+                    break;
+                }
+            }
+            if idx >= 0 {
+                rhs_type = self.get_type_of_expression(unpack_assignment.value);
+                extracted = self._extract_tuple_element_type(rhs_type, idx);
+                if (extracted is not None and not isinstance(extracted, UnknownType)) {
+                    return extracted;
+                }
+
+                if elem
+                    := self._get_iterable_element_type(
+                        rhs_type, unpack_assignment.value
+                    ) {
+                    return elem;
+                }
+                if extracted is not None {
+                    return extracted;
+                }
+            }
+        } elif isinstance(unpack_assignment, (InForStmt, InnerCompr)) {
+            collection_type = self.get_type_of_expression(unpack_assignment.collection);
+            elem_type = self._get_iterable_element_type(
+                collection_type, unpack_assignment, is_async=unpack_assignment.is_async
+            );
+            if elem_type is not None {
+                unpack_path: list[int] = [];
+                path_cur: UniNode = node_;
+                path_parent = path_cur.parent;
+                path_ok = True;
+                while path_parent is not None {
+                    if not isinstance(path_parent, (TupleVal, ListVal)) {
+                        path_ok = False;
+                        break;
+                    }
+                    found = -1;
+                    for (vi, v) in enumerate(path_parent.values) {
+                        if v is path_cur {
+                            found = vi;
+                            break;
+                        }
+                    }
+                    if found < 0 {
+                        path_ok = False;
+                        break;
+                    }
+                    unpack_path.insert(0, found);
+                    if path_parent is unpack_container {
+                        break;
+                    }
+                    path_cur = path_parent;
+                    path_parent = path_cur.parent;
+                }
+                if path_ok and unpack_path {
+                    if elem
+                        := self._extract_tuple_element_type_path(
+                            elem_type, unpack_path
+                        ) {
+                        return elem;
+                    }
+                }
+            }
+        }
+    }
+
+    if isinstance(node_.parent, Assignment) {
+        if node_.parent.type_tag is not None {
+            annotation_type = self.get_type_of_expression(node_.parent.type_tag.tag);
+
+            if final_type
+                := self._final_declared_type(
+                    annotation_type, symbol, node_.parent.value
+                ) {
+                return final_type;
+            }
+
+            if (
+                self._is_type_alias_annotation(
+                    annotation_type, node_.parent.type_tag.tag
+                )
+                and node_.parent.value is not None
+            ) {
+                return self._resolve_type_alias_rhs(node_.parent.value);
+            }
+            declared_inst = self._convert_to_instance(annotation_type);
+
+            empty_value = node_.parent.value;
+            if (
+                isinstance(declared_inst, ClassType)
+                and declared_inst.is_builtin(["list", "set"])
+                and not declared_inst.private.type_args
+                and isinstance(empty_value, (ListVal, FuncCall))
+                and (
+                    (isinstance(empty_value, ListVal) and not empty_value.values)
+                    or (
+                        isinstance(empty_value, FuncCall)
+                        and not empty_value.params
+                        and isinstance(empty_value.target, Name)
+                        and empty_value.target.value in ("list", "set")
+                    )
+                )
+            ) {
+                value_type = self.get_type_of_expression(
+                    empty_value, expected_type=declared_inst
+                );
+                if (
+                    isinstance(value_type, ClassType)
+                    and value_type.shared.same_class(declared_inst.shared)
+                    and value_type.private.type_args
+                ) {
+                    return value_type;
+                }
+            }
+            return declared_inst;
+        } else {
+            if node_.parent.value is not None {
+                return self._widen_literal_for_declaration(
+                    self.get_type_of_expression(node_.parent.value)
+                );
+            }
+        }
+    }
+
+    if (
+        isinstance(node_.parent, AtomTrailer)
+        and node_.parent.parent
+        and isinstance(node_.parent.parent, Assignment)
+    ) {
+        if node_.parent.parent.type_tag is not None {
+            annotation_type = self.get_type_of_expression(
+                node_.parent.parent.type_tag.tag
+            );
+            if final_type
+                := self._final_declared_type(
+                    annotation_type, symbol, node_.parent.parent.value
+                ) {
+                return final_type;
+            }
+            return self._convert_to_instance(annotation_type);
+        } else {
+            if node_.parent.parent.value is not None {
+                return self._widen_literal_for_declaration(
+                    self.get_type_of_expression(node_.parent.parent.value)
+                );
+            }
+        }
+    }
+
+    if (
+        isinstance(node_.parent, BinaryExpr)
+        and isinstance(node_.parent.op, Token)
+        and node_.parent.op.name == "WALRUS_EQ"
+        and node_.parent.left is node_
+    ) {
+        return self.get_type_of_expression(node_.parent.right);
+    }
+
+    if isinstance(node_.parent, ExprAsItem) and node_.parent.alias is node_ {
+        return self.get_type_of_with_alias(node_.parent);
+    }
+
+    if isinstance(node_.parent, (InForStmt, InnerCompr)) {
+        collection_type = self.get_type_of_expression(node_.parent.collection);
+
+        if self.is_any_type(collection_type) and self.prefetch.any_class is not None {
+            node_.type = self.prefetch.any_class;
+            return self.prefetch.any_class;
+        }
+
+        if isinstance(collection_type, AnyType) {
+            elem_any = AnyType(is_foreign=collection_type.is_foreign);
+            node_.type = elem_any;
+            return elem_any;
+        }
+        if isinstance(collection_type, UnknownType) {
+            elem_unknown = UnknownType(
+                is_diagnosed=collection_type.is_diagnosed,
+                is_incomplete=collection_type.is_incomplete
+            );
+            node_.type = elem_unknown;
+            return elem_unknown;
+        }
+
+        if isinstance(collection_type, ClassType)
+            and collection_type.is_instantiable_class()
+            and collection_type.is_enum_class() {
+            instance_type = collection_type.clone_as_instance();
+            node_.type = instance_type;
+            return instance_type;
+        }
+
+        element_type = self._get_iterable_element_type(
+            collection_type, node_.parent, is_async=node_.parent.is_async
+        );
+        if element_type is not None {
+            node_.type = element_type;
+            return element_type;
+        }
+        return UnknownType();
+    }
+
+    if isinstance(node_.parent, Except) and node_.parent.ex_type {
+        ex_type = self.get_type_of_expression(node_.parent.ex_type);
+        return self._convert_to_instance(ex_type);
+    }
+
+    if isinstance(node_.parent, ModulePath) {
+        mod_path_type = self.get_type_of_module(node_.parent);
+        return node_.type or mod_path_type;
+    }
+    if isinstance(node_.parent, ModuleItem) {
+        return self.get_type_of_module_item(node_.parent);
+    }
     return UnknownType();
 }
 
@@ -4938,6 +4929,21 @@ impl TypeEvaluator._get_type_from_flow_node(
             continue;
         }
 
+        if isinstance(pred, InForStmt) and pred.body and flow_node is pred.body[0] {
+            bound = self._for_target_store_type(pred, key);
+            if bound is not None {
+                narrowed = None
+                    if isinstance(bound, UnknownType)
+                    else self._narrow_on_store(target.declared_type, bound, True);
+                if narrowed is not None {
+                    incoming_types.append(narrowed);
+                } else {
+                    has_unnarrowed_pred = True;
+                }
+                continue;
+            }
+        }
+
         if isinstance(pred, (WhileStmt, ForeverStmt, InForStmt, IterForStmt))
             and self._loop_body_writes_target(pred, target) {
             if (
@@ -5084,44 +5090,9 @@ impl TypeEvaluator._get_type_from_flow_node(
                     assigned_type is not None
                     and not isinstance(assigned_type, UnknownType)
                 ) {
-                    declared_type = target.declared_type;
-                    assigned_type = self._widen_literal_for_declaration(assigned_type);
-
-                    _decl_extern = (
-                        isinstance(declared_type, ClassType)
-                        and declared_type.is_class_instance()
-                        and isinstance(declared_type.shared.symbol_table, Archetype)
-                        and declared_type.shared.symbol_table.find_parent_of_type(
-                            Import
-                        )
-                            is not None
+                    narrowed_from_assignment = self._narrow_on_store(
+                        target.declared_type, assigned_type, flat_target_matched
                     );
-                    import from jaclang.compiler.types.fixed_width { numeric_name_of }
-                    _decl_num = numeric_name_of(declared_type);
-                    _assigned_num = numeric_name_of(assigned_type);
-                    if _decl_extern {
-                        narrowed_from_assignment = None;
-                    } elif _decl_num is not None and _assigned_num is not None {
-                        narrowed_from_assignment = None;
-                    } elif self.is_none_type(declared_type) {
-                        narrowed_from_assignment = assigned_type;
-                    } elif (
-                        self.assign_type(assigned_type, declared_type)
-                        and not self.assign_type(declared_type, assigned_type)
-                    ) {
-                        narrowed_from_assignment = assigned_type;
-                    } elif (
-                        flat_target_matched
-                        and self.is_explicit_any(assigned_type)
-                        and self._union_contains_none(declared_type)
-                    ) {
-                        none_cls = self.prefetch.none_type_class;
-                        if none_cls is not None {
-                            narrowed_from_assignment = self.exclude_type_from_union(
-                                declared_type, self._convert_to_instance(none_cls)
-                            );
-                        }
-                    }
                 }
                 if narrowed_from_assignment is not None {
                     incoming_types.append(narrowed_from_assignment);
@@ -5257,6 +5228,58 @@ impl TypeEvaluator._if_exit_type(
         return arm_types[0];
     }
     return self._union_narrowed_types(arm_types);
+}
+
+impl TypeEvaluator._narrow_on_store(
+    declared_type: TypeBase, assigned_type: TypeBase, flat: bool
+) -> (TypeBase | None) {
+    assigned_type = self._widen_literal_for_declaration(assigned_type);
+    if isinstance(declared_type, ClassType)
+        and declared_type.is_class_instance()
+        and isinstance(declared_type.shared.symbol_table, Archetype)
+        and declared_type.shared.symbol_table.find_parent_of_type(Import) is not None {
+        return None;
+    }
+    import from jaclang.compiler.types.fixed_width { numeric_name_of }
+    if numeric_name_of(declared_type) is not None
+        and numeric_name_of(assigned_type) is not None {
+        return None;
+    }
+    if self.is_none_type(declared_type) {
+        return assigned_type;
+    }
+    if self.assign_type(assigned_type, declared_type)
+        and not self.assign_type(declared_type, assigned_type) {
+        return assigned_type;
+    }
+    if flat
+        and self.is_explicit_any(assigned_type)
+        and self._union_contains_none(declared_type) {
+        none_cls = self.prefetch.none_type_class;
+        if none_cls is not None {
+            return self.exclude_type_from_union(
+                declared_type, self._convert_to_instance(none_cls)
+            );
+        }
+    }
+    return None;
+}
+
+impl TypeEvaluator._for_target_store_type(
+    loop: InForStmt, key: str
+) -> (TypeBase | None) {
+    pending: list[UniNode] = [loop.target];
+    while pending {
+        cur = pending.pop();
+        if isinstance(cur, Name) {
+            if cur.value == key and cur.sym is not None {
+                return self._get_type_of_name_binding(cur.sym, cur);
+            }
+        } elif isinstance(cur, (TupleVal, ListVal)) {
+            pending.extend(cur.values);
+        }
+    }
+    return None;
 }
 
 impl TypeEvaluator._loop_body_writes_target(

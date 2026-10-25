@@ -341,6 +341,7 @@ impl TypeCheckPass.exit_binary_expr with BinaryExpr exit {
     self.evaluator.get_type_of_expression(here);
     if isinstance(here.op, Token) and here.op.name == Tok.WALRUS_EQ {
         self._check_immutable_write(here.left);
+        self._check_rebinds(here.left);
     }
 }
 
@@ -392,6 +393,78 @@ impl TypeCheckPass._write_leaves(target: (Expr | None)) -> list[Expr] {
         return self._write_leaves(target.operand);
     }
     return [target] if target is not None else [];
+}
+
+impl TypeCheckPass._is_inferred_rebind(target: Name) -> bool {
+    decl = target.sym.decl if target.sym is not None else None;
+    if decl is None or decl.name_of is target {
+        return False;
+    }
+    leaf: UniNode = decl.name_of;
+    site = leaf.parent;
+    while isinstance(site, (TupleVal, ListVal))
+        or (isinstance(site, UnaryExpr) and site.op.name == Tok.STAR_MUL) {
+        leaf = site;
+        site = site.parent;
+    }
+    if isinstance(site, Assignment) {
+        return site.type_tag is None;
+    }
+    if isinstance(site, InForStmt) {
+        return site.target is leaf;
+    }
+    if isinstance(site, ExprAsItem) {
+        return site.alias is leaf;
+    }
+    return isinstance(site, BinaryExpr)
+        and isinstance(site.op, Token)
+        and site.op.name == Tok.WALRUS_EQ
+        and site.left is leaf;
+}
+
+impl TypeCheckPass._is_exempt_rebind(target: Name, declared: TypeBase) -> bool {
+    if self._is_inferred_rebind(target)
+        and (self.evaluator.is_none_type(declared) or target.value == "_") {
+        return True;
+    }
+    return isinstance(declared, ModuleType)
+        and target.sym is not None
+        and any(
+            d.name_of.find_parent_of_type(Import) is not None for d in target.sym.defn
+        );
+}
+
+impl TypeCheckPass._check_rebind(target: Name) -> None {
+    sym = target.sym;
+    if sym is None or sym.decl is None or sym.decl.name_of is target {
+        return;
+    }
+    declared = self.evaluator.get_type_of_symbol(sym);
+    if self._is_inferred_rebind(target) {
+        declared = self.evaluator._widen_literal_for_declaration(declared);
+    }
+    if isinstance(declared, UnknownType) or self._is_exempt_rebind(target, declared) {
+        return;
+    }
+    bound = self.evaluator._get_type_of_name_binding(sym, target);
+    if isinstance(bound, UnknownType) {
+        return;
+    }
+    if not self.evaluator.assign_type(
+        bound, declared, strict=self.evaluator._is_strict_site(target)
+    ) {
+        self.ctx.emit(
+            E1001, node_override=target, actual=str(bound), expected=str(declared)
+        );
+    }
+}
+
+impl TypeCheckPass._check_rebinds(target: (Expr | None)) -> None {
+    for leaf in self._write_leaves(target) {
+        if isinstance(leaf, Name) {
+            self._check_rebind(leaf);
+        }
+    }
 }
 
 impl TypeCheckPass._check_immutable_write(
@@ -515,16 +588,7 @@ impl TypeCheckPass.exit_assignment with Assignment exit {
         if isinstance(target, Name) and target.sym {
             left_type = self.evaluator.get_type_of_symbol(target.sym);
 
-            if (
-                target.sym.decl.name_of is not target
-                and (
-                    (
-                        isinstance(target.sym.decl.name_of.parent, Assignment)
-                        and target.sym.decl.name_of.parent.type_tag is None
-                    )
-                    or isinstance(target.sym.decl.name_of.parent, InForStmt)
-                )
-            ) {
+            if self._is_inferred_rebind(target) {
                 is_unannotated_reassign = True;
 
                 left_type = self.evaluator._widen_literal_for_declaration(left_type);
@@ -547,6 +611,7 @@ impl TypeCheckPass.exit_assignment with Assignment exit {
             }
         } elif isinstance(target, (TupleVal, ListVal)) {
             self._eval_unpacking_names(target);
+            self._check_rebinds(target);
             right_type = self.evaluator.get_type_of_expression(here.value);
             if not isinstance(right_type, UnknownType)
                 and not right_type.is_any_instance() {
@@ -718,25 +783,12 @@ impl TypeCheckPass.exit_assignment with Assignment exit {
                 );
             }
         } else {
-            is_evolving_reassign = is_unannotated_reassign
-                and (
-                    self.evaluator.is_none_type(left_type)
-                    or (isinstance(target, Name) and target.value == "_")
-                );
-            is_module_fallback_rebind = (
-                isinstance(target, Name)
-                and target.sym is not None
-                and isinstance(left_type, ModuleType)
-                and any(
-                    d.name_of.find_parent_of_type(Import) is not None
-                    for d in target.sym.defn
-                )
-            );
+            is_exempt_rebind = isinstance(target, Name)
+                and self._is_exempt_rebind(target, left_type);
             import from jaclang.compiler.c_interop { c_bytes_array_definition }
             if (
                 here.aug_op is None
-                and not is_evolving_reassign
-                and not is_module_fallback_rebind
+                and not is_exempt_rebind
                 and not c_bytes_array_definition(here, left_type)
             ) {
                 verdict = self.evaluator.assign_expr(
@@ -1663,6 +1715,7 @@ impl TypeCheckPass.exit_in_for_stmt with InForStmt exit {
         self.evaluator.get_type_of_expression(here.target);
     }
     self._check_immutable_write(here.target, rebind_scope=here);
+    self._check_rebinds(here.target);
 
     collection_type = self.evaluator.get_type_of_expression(here.collection);
 
@@ -1764,6 +1817,7 @@ impl TypeCheckPass.enter_with_stmt with WithStmt entry {
         if not isinstance(alias_type, UnknownType) {
             ctx_item.alias.type = alias_type;
         }
+        self._check_rebind(ctx_item.alias);
     }
 }
 

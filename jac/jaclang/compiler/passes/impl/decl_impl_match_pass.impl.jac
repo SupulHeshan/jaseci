@@ -235,10 +235,14 @@ impl DeclImplMatchPass._connect_one_impl(
     for site in binding_sites_in(impl_node) {
         if isinstance(site, Assignment) {
             import from jaclang.compiler.frontend.diagnostics { E0064 }
-            for name in typed_rebind_names(site) {
-                self.ctx.emit(E0064, node_override=name, name=name.sym_name);
+            for rebound in typed_rebind_names(site) {
+                self.ctx.emit(E0064, node_override=rebound, name=rebound.sym_name);
             }
             bind_assignment_targets(site);
+        } elif isinstance(site, InForStmt) {
+            bind_for_target(site);
+        } elif isinstance(site, ExprAsItem) {
+            bind_with_alias(site);
         } elif isinstance(site, BinaryExpr) {
             bind_walrus_target(site);
         }

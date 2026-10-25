@@ -63,9 +63,9 @@ impl UniNode._link(kid: Sequence[UniNode], roles: dict[type, any]) -> None {
     for k in kid {
         if k is not None {
             self +>:Kid:+> k;
-            role = role_of.get(id(k));
-            if role is not None and id(k) not in attached {
-                self._attach(k, role);
+            kid_role = role_of.get(id(k));
+            if kid_role is not None and id(k) not in attached {
+                self._attach(k, kid_role);
                 attached.add(id(k));
                 if extra_roles {
                     for extra in extra_roles.get(id(k), []) {
@@ -4023,6 +4023,16 @@ impl bind_walrus_target(nd: BinaryExpr) -> None {
     }
 }
 
+impl bind_for_target(nd: InForStmt) -> None {
+    def_insert_unpacking(nd.target, nd.sym_tab, rebind_in_python_scope=True);
+}
+
+impl bind_with_alias(nd: ExprAsItem) -> None {
+    if isinstance(nd.alias, Name) {
+        def_insert_unpacking(nd.alias, nd.alias.sym_tab, rebind_in_python_scope=True);
+    }
+}
+
 impl is_walrus(nd: UniNode) -> bool {
     return isinstance(nd, BinaryExpr)
         and isinstance(nd.op, Token)
@@ -4032,20 +4042,24 @@ impl is_walrus(nd: UniNode) -> bool {
 impl binding_sites_in(scope_root: UniNode) -> list[UniNode] {
     sites: list[UniNode] = [];
     sites.extend(scope_root.get_all_sub_nodes(Assignment));
+    sites.extend(scope_root.get_all_sub_nodes(InForStmt));
+    for item in scope_root.get_all_sub_nodes(ExprAsItem) {
+        if isinstance(item.alias, Name) {
+            sites.append(item);
+        }
+    }
     for expr in scope_root.get_all_sub_nodes(BinaryExpr) {
         if is_walrus(expr) {
             sites.append(expr);
         }
     }
-    sites.sort(
-        key=lambda (nd: UniNode) -> tuple[int, int, int, int] { return (
-            nd.loc.last_line,
-            nd.loc.col_end,
-            -nd.loc.first_line,
-            -nd.loc.col_start
-        ); }
-    );
+    sites.sort(key=binding_site_order);
     return sites;
+}
+
+impl binding_site_order(nd: UniNode) -> tuple[int, int, int, int] {
+    at = nd.collection if isinstance(nd, InForStmt) else nd;
+    return (at.loc.last_line, at.loc.col_end, -at.loc.first_line, -at.loc.col_start);
 }
 
 impl typed_rebind_names(nd: Assignment) -> list[Name] {

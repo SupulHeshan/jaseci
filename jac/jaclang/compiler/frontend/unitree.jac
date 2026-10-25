@@ -2566,8 +2566,11 @@ def def_insert_unpacking(
 
 def bind_assignment_targets(nd: Assignment) -> None;
 def bind_walrus_target(nd: BinaryExpr) -> None;
+def bind_for_target(nd: InForStmt) -> None;
+def bind_with_alias(nd: ExprAsItem) -> None;
 def is_walrus(nd: UniNode) -> bool;
 def binding_sites_in(scope_root: UniNode) -> list[UniNode];
+def binding_site_order(nd: UniNode) -> tuple[int, int, int, int];
 def typed_rebind_names(nd: Assignment) -> list[Name];
 def definition_qualname(decl: UniNode) -> str;
 
