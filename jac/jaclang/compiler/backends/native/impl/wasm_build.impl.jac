@@ -29,16 +29,16 @@ impl _load_libc_module(libc_dir: str, triple: str) -> (ModuleRef | None) {
     merged_path = os.path.join(libc_dir, "_merged.bc");
     newest = max(( os.path.getmtime(os.path.join(libc_dir, f)) for f in parts ));
     if os.path.isfile(merged_path) and os.path.getmtime(merged_path) >= newest {
-        with open(merged_path, "rb") as f {
-            cached = llvm.parse_bitcode(f.read());
+        with open(merged_path, "rb") as cached_fh {
+            cached = llvm.parse_bitcode(cached_fh.read());
         }
         assert isinstance(cached, llvm.ModuleRef);
         cached.triple = triple;
         return cached;
     }
     merged: (ModuleRef | None) = None;
-    for f in parts {
-        with open(os.path.join(libc_dir, f), "rb") as fh {
+    for part_name in parts {
+        with open(os.path.join(libc_dir, part_name), "rb") as fh {
             part = llvm.parse_bitcode(fh.read());
         }
         assert isinstance(part, llvm.ModuleRef);
@@ -54,10 +54,10 @@ impl _load_libc_module(libc_dir: str, triple: str) -> (ModuleRef | None) {
         import tempfile;
         (tmp_fd, tmp_path) = tempfile.mkstemp(dir=libc_dir, suffix=".merged.tmp");
         try {
-            with os.fdopen(tmp_fd, "wb") as f {
+            with os.fdopen(tmp_fd, "wb") as out_fh {
                 bitcode = merged.as_bitcode();
                 assert isinstance(bitcode, bytes);
-                f.write(bitcode);
+                out_fh.write(bitcode);
             }
             os.replace(tmp_path, merged_path);
         } except OSError {

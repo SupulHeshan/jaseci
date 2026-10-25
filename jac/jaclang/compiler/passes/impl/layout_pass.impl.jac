@@ -506,13 +506,13 @@ impl LayoutPass._build_enum_layouts(module: Module) -> None {
             members=members
         );
     }
-    for nd in class_form_enum_decls(module) {
-        ename = nd.name.value;
+    for arch_nd in class_form_enum_decls(module) {
+        ename = arch_nd.name.value;
         if ename in self.registry.enums {
             continue;
         }
-        _scalar = class_form_enum_scalar(nd.name.type);
-        _cf_raw = class_form_enum_members(nd);
+        _scalar = class_form_enum_scalar(arch_nd.name.type);
+        _cf_raw = class_form_enum_members(arch_nd);
         _cf_values = resolve_enum_member_values(_cf_raw);
         _cf_members: list[EnumMemberLayout] = [];
         _cf_declared = len(_cf_raw);
@@ -1451,12 +1451,12 @@ impl adopt_imported_bases(module: Module, header_identity: bool = True) -> list[
     order = reg.dependency_order(list(layouts));
     adopted: list[str] = [];
     for name in order {
-        lay = reg.layouts.get(name);
-        if lay is None {
+        found_lay = reg.layouts.get(name);
+        if found_lay is None {
             continue;
         }
         ancestors: list[ArchetypeLayout] = [];
-        for anc in (lay.mro or [])[1:] {
+        for anc in (found_lay.mro or [])[1:] {
             anc_lay = reg.layouts.get(anc);
             if anc_lay is not None {
                 ancestors.append(anc_lay);
@@ -1468,12 +1468,12 @@ impl adopt_imported_bases(module: Module, header_identity: bool = True) -> list[
         absent = False;
         for anc_lay in ancestors {
             for finfo in anc_lay.fields {
-                if finfo.name not in lay.field_index {
+                if finfo.name not in found_lay.field_index {
                     absent = True;
                 }
             }
             for mslot in anc_lay.methods {
-                if mslot.name not in lay.method_index {
+                if mslot.name not in found_lay.method_index {
                     absent = True;
                 }
             }
@@ -1487,7 +1487,7 @@ impl adopt_imported_bases(module: Module, header_identity: bool = True) -> list[
                     continue;
                 }
                 inherited_methods.add(mslot.name);
-                if lay.method_index.get(mslot.name, -1) != inherited_index {
+                if found_lay.method_index.get(mslot.name, -1) != inherited_index {
                     absent = True;
                 }
                 inherited_index += 1;
@@ -1496,11 +1496,11 @@ impl adopt_imported_bases(module: Module, header_identity: bool = True) -> list[
         if not absent {
             continue;
         }
-        if not headers_agree(lay, ancestors[0])
-            and not relax_vtable_header(lay, ancestors, header_identity) {
+        if not headers_agree(found_lay, ancestors[0])
+            and not relax_vtable_header(found_lay, ancestors, header_identity) {
             continue;
         }
-        adopt_ancestor_slots(lay, ancestors);
+        adopt_ancestor_slots(found_lay, ancestors);
         adopted.append(name);
     }
     return adopted;

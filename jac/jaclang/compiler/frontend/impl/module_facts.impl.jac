@@ -262,12 +262,12 @@ impl ModuleFacts.shared_archetypes_for_context(
             continue;
         }
         visited.add(name);
-        arch = shared.get(name);
-        if arch is None {
+        shared_arch = shared.get(name);
+        if shared_arch is None {
             continue;
         }
-        result[name] = arch;
-        worklist.extend(ModuleFacts.archetype_refs(arch));
+        result[name] = shared_arch;
+        worklist.extend(ModuleFacts.archetype_refs(shared_arch));
     }
     return list(result.values());
 }

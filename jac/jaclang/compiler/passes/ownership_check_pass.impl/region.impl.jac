@@ -122,9 +122,9 @@ impl OwnershipCheckPass._places_reachable(nd: Expr | None) -> list[Name] {
             out.extend(self._places_reachable(v));
         }
     } elif isinstance(nd, TupleVal) {
-        for v in nd.values {
-            if isinstance(v, Expr) {
-                out.extend(self._places_reachable(v));
+        for item in nd.values {
+            if isinstance(item, Expr) {
+                out.extend(self._places_reachable(item));
             }
         }
     } elif isinstance(nd, DictVal) {

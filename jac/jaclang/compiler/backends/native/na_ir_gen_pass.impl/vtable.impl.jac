@@ -995,14 +995,14 @@ impl NaIRGenPass._emit_isa_hashed_fn -> ir.Function {
     spans: dict[str, tuple[int, int]] = {};
     for cls in classes {
         first = len(ancestors);
-        for anc in self._mro_of(cls) {
-            if anc != cls {
+        for ancestor in self._mro_of(cls) {
+            if ancestor != cls {
                 ancestors.append(
                     ir.Constant(
                         anc_ty,
                         [
-                            ir.Constant(i64, self._static_str_hash(anc)),
-                            self._emit_class_name_const(anc)
+                            ir.Constant(i64, self._static_str_hash(ancestor)),
+                            self._emit_class_name_const(ancestor)
                         ]
                     )
                 );

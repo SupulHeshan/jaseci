@@ -5110,8 +5110,8 @@ impl NaIRGenPass._emit_class_routed_call(
     if _given_recv is not None {
         _sargs.append(_given_recv);
     }
-    for _p in _spos {
-        _pv = self._codegen_expr(_p);
+    for _sp in _spos {
+        _pv = self._codegen_expr(_sp);
         if _pv is None {
             return None;
         }

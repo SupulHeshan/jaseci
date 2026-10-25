@@ -321,9 +321,9 @@ impl add_shadcn_components(config: any, component_names: list[str]) -> bool {
     }
     existing: set = set();
     if ui_dir.exists() {
-        for f in ui_dir.iterdir() {
-            if f.name.endswith(".jac") {
-                existing.add(f.name.replace(".jac", "").replace("_", "-"));
+        for ui_file in ui_dir.iterdir() {
+            if ui_file.name.endswith(".jac") {
+                existing.add(ui_file.name.replace(".jac", "").replace("_", "-"));
             }
         }
     }

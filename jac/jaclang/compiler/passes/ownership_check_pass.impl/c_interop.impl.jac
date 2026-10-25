@@ -102,9 +102,9 @@ impl OwnershipCheckPass._emit_c_view_diagnostics -> None {
     }
     for dct in mod.get_all_sub_nodes(DictVal) {
         for kv in (dct.kv_pairs or []) {
-            for elem in (kv.key, kv.value) {
-                if elem is not None and self._is_c_view(elem) {
-                    self._c_view_escape(elem, "a C memory view in a container");
+            for kv_part in (kv.key, kv.value) {
+                if kv_part is not None and self._is_c_view(kv_part) {
+                    self._c_view_escape(kv_part, "a C memory view in a container");
                 }
             }
         }

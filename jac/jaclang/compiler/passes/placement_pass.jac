@@ -352,15 +352,17 @@ impl build_native_legality(
                 NativeRefusal(kind="module", name=scan.module, site=mod)
             );
         }
-        for (site, why) in scan.sites {
-            legality.blockers.append(NativeRefusal(kind="module", name=why, site=site));
+        for (site, site_why) in scan.sites {
+            legality.blockers.append(
+                NativeRefusal(kind="module", name=site_why, site=site)
+            );
         }
-        for (blocked_test, why) in scan.tests {
+        for (blocked_test, test_why) in scan.tests {
             legality.refuse_unit(
                 blocked_test,
                 NativeRefusal(
                     kind="test",
-                    name=why,
+                    name=test_why,
                     site=blocked_test,
                     help="A test does not decide where its module runs, so this "
                     "test is placed on the server and the module it tests is not."
@@ -425,17 +427,18 @@ impl build_native_legality(
                 )
             );
         }
-        for note in capability_notes_of(judging, mod_path, TARGET_NATIVE) {
+        for cap_note in capability_notes_of(judging, mod_path, TARGET_NATIVE) {
             noted = NativeRefusal(
                 kind="construct",
-                name=note.text,
-                site=note.site,
-                code=note.code,
+                name=cap_note.text,
+                site=cap_note.site,
+                code=cap_note.code,
                 noted=True,
-                text=f"error[{note.code}]: {note.text}"
+                text=f"error[{cap_note.code}]: {cap_note.text}"
             );
-            if note.requires {
-                unit = native_enclosing_unit(note.site) or note.site.element_in(mod);
+            if cap_note.requires {
+                unit = native_enclosing_unit(cap_note.site)
+                    or cap_note.site.element_in(mod);
                 if unit is None {
                     legality.module_requires.append(noted);
                 } else {
@@ -444,7 +447,7 @@ impl build_native_legality(
                 }
                 continue;
             }
-            owner = native_capability_demotion_owner(note.site);
+            owner = native_capability_demotion_owner(cap_note.site);
             if owner is None {
                 legality.refuse_site(mod, noted);
             } else {

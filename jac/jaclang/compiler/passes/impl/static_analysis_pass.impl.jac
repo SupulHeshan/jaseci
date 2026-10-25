@@ -343,73 +343,75 @@ impl StaticAnalysisPass._check_semantic_patterns(mod: Module) -> None {
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=CompareExpr) {
-        for (i, op) in enumerate(nd.ops) {
+    for cmp_expr in mod.get_all_sub_nodes(typ=CompareExpr) {
+        for (i, op) in enumerate(cmp_expr.ops) {
             if op.value in ("==", "!=") {
-                right = nd.rights[i] if i < len(nd.rights) else None;
-                left = nd.left if i == 0 else (nd.rights[i - 1] if i > 0 else None);
+                right = cmp_expr.rights[i] if i < len(cmp_expr.rights) else None;
+                left = cmp_expr.left
+                    if i == 0
+                    else (cmp_expr.rights[i - 1] if i > 0 else None);
                 if isinstance(right, Null) or isinstance(left, Null) {
-                    self.ctx.emit(W2058, node_override=nd);
+                    self.ctx.emit(W2058, node_override=cmp_expr);
                 }
             }
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=Assignment) {
-        if nd.aug_op is not None or nd.value is None {
+    for assign in mod.get_all_sub_nodes(typ=Assignment) {
+        if assign.aug_op is not None or assign.value is None {
             continue;
         }
-        if len(nd.target) == 1 {
-            target = nd.target[0];
-            if isinstance(target, Name) and isinstance(nd.value, Name) {
-                if target.value == nd.value.value {
-                    self.ctx.emit(W2063, node_override=nd, name=target.value);
+        if len(assign.target) == 1 {
+            target = assign.target[0];
+            if isinstance(target, Name) and isinstance(assign.value, Name) {
+                if target.value == assign.value.value {
+                    self.ctx.emit(W2063, node_override=assign, name=target.value);
                 }
             }
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=FString) {
+    for fstr in mod.get_all_sub_nodes(typ=FString) {
         has_expr = False;
-        for part in nd.parts {
+        for part in fstr.parts {
             if isinstance(part, FormattedValue) {
                 has_expr = True;
                 break;
             }
         }
         if not has_expr {
-            self.ctx.emit(W2074, node_override=nd);
+            self.ctx.emit(W2074, node_override=fstr);
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=CompareExpr) {
-        for (i, op) in enumerate(nd.ops) {
+    for cmp_expr in mod.get_all_sub_nodes(typ=CompareExpr) {
+        for (i, op) in enumerate(cmp_expr.ops) {
             if op.value in ("==", "!=", "is", "is not") {
-                right = nd.rights[i] if i < len(nd.rights) else None;
+                right = cmp_expr.rights[i] if i < len(cmp_expr.rights) else None;
                 if isinstance(right, Bool) {
                     import from jaclang.compiler.types.type_utils {
                         expr_primitive_name
                     }
-                    left = nd.left if i == 0 else nd.rights[i - 1];
+                    left = cmp_expr.left if i == 0 else cmp_expr.rights[i - 1];
                     if expr_primitive_name(left) == "bool" {
-                        self.ctx.emit(W2075, node_override=nd);
+                        self.ctx.emit(W2075, node_override=cmp_expr);
                     }
                 }
             }
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=FinallyStmt) {
-        for stmt in nd.body {
+    for fin in mod.get_all_sub_nodes(typ=FinallyStmt) {
+        for stmt in fin.body {
             if isinstance(stmt, ReturnStmt) {
                 self.ctx.emit(E2055, node_override=stmt);
             }
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=DisengageStmt) {
+    for disengage_stmt in mod.get_all_sub_nodes(typ=DisengageStmt) {
         in_walker = False;
-        parent = nd.decl_parent;
+        parent = disengage_stmt.decl_parent;
         while parent is not None {
             if isinstance(parent, Ability)
                 and isinstance(parent.signature, EventSignature) {
@@ -425,13 +427,13 @@ impl StaticAnalysisPass._check_semantic_patterns(mod: Module) -> None {
             parent = parent.decl_parent;
         }
         if not in_walker {
-            self.ctx.emit(E2083, node_override=nd);
+            self.ctx.emit(E2083, node_override=disengage_stmt);
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=AwaitExpr) {
+    for await_expr in mod.get_all_sub_nodes(typ=AwaitExpr) {
         in_async = False;
-        parent = nd.decl_parent;
+        parent = await_expr.decl_parent;
         while parent is not None {
             if isinstance(parent, LambdaExpr) {
                 break;
@@ -450,22 +452,22 @@ impl StaticAnalysisPass._check_semantic_patterns(mod: Module) -> None {
             parent = parent.decl_parent;
         }
         if not in_async {
-            self.ctx.emit(E2085, node_override=nd);
+            self.ctx.emit(E2085, node_override=await_expr);
         }
     }
 
-    for nd in mod.get_all_sub_nodes(typ=Archetype) {
-        if nd.arch_kind != "edge" {
-            if nd.src_endpoint is not None {
+    for arch in mod.get_all_sub_nodes(typ=Archetype) {
+        if arch.arch_kind != "edge" {
+            if arch.src_endpoint is not None {
                 self.ctx.emit(
                     E2027,
-                    node_override=nd.src_endpoint,
-                    arch_type=(nd.arch_kind or nd.arch_type.value),
-                    name=nd.name.value
+                    node_override=arch.src_endpoint,
+                    arch_type=(arch.arch_kind or arch.arch_type.value),
+                    name=arch.name.value
                 );
             }
-        } elif not nd.declares_endpoints() {
-            self.ctx.emit(E2086, node_override=nd.name, name=nd.name.value);
+        } elif not arch.declares_endpoints() {
+            self.ctx.emit(E2086, node_override=arch.name, name=arch.name.value);
         }
     }
 }

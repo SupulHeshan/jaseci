@@ -157,9 +157,9 @@ impl RegionInferPass._extent_poisoned(
                 return True;
             }
         }
-        for sub in s2.get_all_sub_nodes(FuncCall) {
-            if self._arch_of_call(sub) is not None
-                and not self._blessed_arch_call(sub, member_sids) {
+        for call in s2.get_all_sub_nodes(FuncCall) {
+            if self._arch_of_call(call) is not None
+                and not self._blessed_arch_call(call, member_sids) {
                 return True;
             }
         }
@@ -306,9 +306,9 @@ impl RegionInferPass._scan_block(body: Sequence[UniNode]) -> list[tuple[int, int
         }
         open_idx = -1;
         close_idx = -1;
-        for s in sids {
-            _oi: int = members[s][1];
-            _ci: int = last_idx[s];
+        for sid in sids {
+            _oi: int = members[sid][1];
+            _ci: int = last_idx[sid];
             if open_idx < 0 or _oi < open_idx {
                 open_idx = _oi;
             }

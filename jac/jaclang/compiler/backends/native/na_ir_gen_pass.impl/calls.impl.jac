@@ -2049,10 +2049,10 @@ impl NaIRGenPass._codegen_call(nd: uni.FuncCall) -> (ir.Value | None) {
                             elem_type_name = self._infer_list_elem_type(arg_val);
                         }
                         if elem_type_name is not None {
-                            helpers = self.list_helpers.get(elem_type_name);
-                            if helpers is not None {
+                            list_helpers_for = self.list_helpers.get(elem_type_name);
+                            if list_helpers_for is not None {
                                 _len_result = self.builder.call(
-                                    helpers["len"], [arg_val], name="list.len"
+                                    list_helpers_for["len"], [arg_val], name="list.len"
                                 );
                             }
                         }

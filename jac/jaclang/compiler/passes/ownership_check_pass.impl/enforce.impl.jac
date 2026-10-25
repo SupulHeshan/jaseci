@@ -1742,10 +1742,10 @@ impl OwnershipCheckPass._emit_view_diagnostics -> None {
             continue;
         }
         for _kv in (_dv.kv_pairs or []) {
-            for _e in (_kv.key, _kv.value) {
-                if self._view_of_expr(_e) is not None {
+            for _kve in (_kv.key, _kv.value) {
+                if self._view_of_expr(_kve) is not None {
                     self.ctx.emit(
-                        E1315, node_override=_e, name="a view in a container literal"
+                        E1315, node_override=_kve, name="a view in a container literal"
                     );
                 }
             }

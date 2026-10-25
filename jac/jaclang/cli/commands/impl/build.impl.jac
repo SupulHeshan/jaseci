@@ -124,14 +124,14 @@ impl build(
         return 0;
     }
 
-    (app, file, rc) = _build_target(cfg, target);
+    (target_app, file, rc) = _build_target(cfg, target);
     if rc {
         return rc;
     }
     return _build_app(
         cfg,
         project_root,
-        app,
+        target_app,
         projection,
         output,
         platform,

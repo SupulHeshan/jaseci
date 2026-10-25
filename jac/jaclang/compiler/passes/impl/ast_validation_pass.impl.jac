@@ -571,8 +571,8 @@ impl ASTValidationPass._check_slot_body(
                 self._check_slot_body([b for b in cs.body], in_loop, loop_kw);
             }
         } elif isinstance(s, SwitchStmt) {
-            for cs in s.cases {
-                self._check_slot_body([b for b in cs.body], in_loop, loop_kw);
+            for sw_case in s.cases {
+                self._check_slot_body([b for b in sw_case.body], in_loop, loop_kw);
             }
         }
     }

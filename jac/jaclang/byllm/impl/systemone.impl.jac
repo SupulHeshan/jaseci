@@ -363,15 +363,15 @@ impl assemble(spec: SystemOneSpec, answers: dict[str, any]) -> tuple[object, flo
     }
 
     if spec.mode == MODE_ENUM {
-        name = answer.get("choice");
+        choice = answer.get("choice");
         members = getattr(spec.resp_type, "__members__", {});
-        if name not in members {
+        if choice not in members {
             raise OutputConversionError(
-                f"System One returned label {name!r}, which is not a member of "
+                f"System One returned label {choice!r}, which is not a member of "
                 f"{getattr(spec.resp_type, '__name__', '?')}"
             );
         }
-        chosen = members[name];
+        chosen = members[choice];
         return (
             [chosen] if spec.as_list else chosen,
             float(answer.get("confidence", 0.0))

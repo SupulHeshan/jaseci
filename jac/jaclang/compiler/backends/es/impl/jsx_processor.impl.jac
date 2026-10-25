@@ -249,12 +249,12 @@ impl EsJsxProcessor.element_name(nd: uni.JsxElementName) -> Expression {
             expr = self.pass_ref.sync_loc(
                 es.Identifier(name=first), jac_node=nd.parts[0]
             );
-            for (idx, part) in enumerate(parts[1:], start=1) {
+            for (idx, segment) in enumerate(parts[1:], start=1) {
                 expr = self.pass_ref.sync_loc(
                     es.MemberExpression(
                         object=expr,
                         property=self.pass_ref.sync_loc(
-                            es.Identifier(name=part), jac_node=nd.parts[idx]
+                            es.Identifier(name=segment), jac_node=nd.parts[idx]
                         ),
                         computed=False,
                         optional=False

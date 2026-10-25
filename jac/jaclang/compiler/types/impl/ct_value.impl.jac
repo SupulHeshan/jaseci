@@ -595,8 +595,9 @@ impl ct_eq(a: CtValue, b: CtValue) -> bool {
         if len(a.fields) != len(b.fields) {
             return False;
         }
-        for (k, av) in a.fields.items() {
-            if k not in b.fields or not ct_same_or_eq(av, b.fields[k]) {
+        for (field_name, av) in a.fields.items() {
+            if field_name not in b.fields
+                or not ct_same_or_eq(av, b.fields[field_name]) {
                 return False;
             }
         }
@@ -869,8 +870,8 @@ impl _repr_container(v: CtValue, seen: list[CtValue]) -> str {
     }
     if isinstance(v, CtRecord) {
         parts3: list[str] = [];
-        for (k, fv) in v.fields.items() {
-            parts3.append(f"{k}={_repr_in(fv, seen)}");
+        for (field_name, fv) in v.fields.items() {
+            parts3.append(f"{field_name}={_repr_in(fv, seen)}");
         }
         return f"{v.class_name}(" + ", ".join(parts3) + ")";
     }
