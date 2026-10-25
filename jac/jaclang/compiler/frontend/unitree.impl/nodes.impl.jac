@@ -3788,7 +3788,10 @@ impl rebind_or_def_insert(
 }
 
 impl def_insert_unpacking(
-    nd: Expr, sym_tab: UniScopeNode, rebind_in_python_scope: bool = False
+    nd: Expr,
+    sym_tab: UniScopeNode,
+    rebind_in_python_scope: bool = False,
+    adopt_enclosing: bool = True
 ) -> None {
     if isinstance(nd, Name) {
         if rebind_in_python_scope {
@@ -3801,8 +3804,10 @@ impl def_insert_unpacking(
                 if ((outer := py_scope.lookup(nd.sym_name, deep=False)) is not None) {
                     outer.add_use(nd.name_spec);
                     record_cross_scope_rebind(py_scope, nd.sym_name, outer);
-                } else {
+                } elif adopt_enclosing {
                     rebind_or_def_insert(nd, py_scope, single_decl='local var');
+                } else {
+                    py_scope.def_insert(nd, single_decl='local var');
                 }
                 return;
             }
@@ -3811,11 +3816,15 @@ impl def_insert_unpacking(
     } elif isinstance(nd, (TupleVal, ListVal)) {
         for target_var in nd.values {
             if isinstance(target_var, Expr) {
-                def_insert_unpacking(target_var, sym_tab, rebind_in_python_scope);
+                def_insert_unpacking(
+                    target_var, sym_tab, rebind_in_python_scope, adopt_enclosing
+                );
             }
         }
     } elif (isinstance(nd, UnaryExpr) and (nd.op.name == Tok.STAR_MUL)) {
-        def_insert_unpacking(nd.operand, sym_tab, rebind_in_python_scope);
+        def_insert_unpacking(
+            nd.operand, sym_tab, rebind_in_python_scope, adopt_enclosing
+        );
     }
 }
 
@@ -4024,12 +4033,19 @@ impl bind_walrus_target(nd: BinaryExpr) -> None {
 }
 
 impl bind_for_target(nd: InForStmt) -> None {
-    def_insert_unpacking(nd.target, nd.sym_tab, rebind_in_python_scope=True);
+    def_insert_unpacking(
+        nd.target, nd.sym_tab, rebind_in_python_scope=True, adopt_enclosing=False
+    );
 }
 
 impl bind_with_alias(nd: ExprAsItem) -> None {
     if isinstance(nd.alias, Name) {
-        def_insert_unpacking(nd.alias, nd.alias.sym_tab, rebind_in_python_scope=True);
+        def_insert_unpacking(
+            nd.alias,
+            nd.alias.sym_tab,
+            rebind_in_python_scope=True,
+            adopt_enclosing=False
+        );
     }
 }
 

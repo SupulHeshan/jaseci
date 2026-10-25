@@ -2390,3 +2390,60 @@ test "bug_ctor_init_args_dict_call_misuse_is_reported" {
         f"Line 24 reported: {by_line.get(24)}"
     );
 }
+
+# =========================================================================
+# Bug #9972: a `for` target, unpacking target, walrus or `with` alias that
+# rebinds a local was never checked against the local's type. The `for`
+# target and the alias were bound on the loop's or block's own scope, a
+# second variable shadowing the function's, while Python and native both
+# write the one function-level slot:
+#
+#   title = Label(text="a");
+#   for (kind, title) in pairs { ... }   # accepted
+#   title.text = "x";                    # checker: Label; runtime: a str
+#
+# Native trusted the checker and stored through the string as the object.
+# Now every binder writes the function's variable and an incompatible rebind
+# is E1001, as `title = "Top"` already was.
+# =========================================================================
+test "bug_9972_every_binder_rebind_is_checked" {
+    program = compile_and_check("checker_rebind_binders_negative.jac");
+    lines = sorted(
+        [
+            e.loc.first_line
+            for e in program.errors_had
+            if e.loc
+        ]
+    );
+    codes = {
+        e.code.code
+        for e in program.errors_had
+        if e.code
+    };
+
+    # Expected: one E1001 per binder shape, on its marked line: for tuple
+    # target, for target, for over a parameter, a second loop reusing a
+    # name, unpacking assignment, walrus, with alias, and an impl body.
+    assert lines == [14, 22, 29, 39, 46, 52, 59, 70] , (
+        "Bug #9972: each binder that rebinds a local to an incompatible type "
+        "must be reported where it binds. "
+        f"Got errors: {[str(e) for e in program.errors_had]}"
+    );
+    assert codes == {"E1001"} , f"Bug #9972: expected only E1001, got {codes}";
+}
+
+# =========================================================================
+# Bug #9972, accepted shapes: a compatible rebind narrows the name in the
+# loop body, the variable outlives the loop, `_` and a `None` sentinel stay
+# exempt, a loop in a nested function or over a module `glob` name binds its
+# own function's local, and in an impl body an earlier typed declaration
+# still owns the name a later loop rebinds.
+# =========================================================================
+test "bug_9972_compatible_rebinds_are_accepted" {
+    program = compile_and_check("checker_rebind_binders.jac");
+    assert len(program.errors_had) == 0 , (
+        "Bug #9972: compatible rebinds through a for target must type-check, "
+        "with the element type inside the loop body. "
+        f"Got errors: {[str(e) for e in program.errors_had]}"
+    );
+}

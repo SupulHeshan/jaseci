@@ -2561,7 +2561,10 @@ def is_frame(nd: UniNode) -> bool;
 def find_typed_decl_scope_of(nd: AstSymbolNode) -> UniScopeNode;
 
 def def_insert_unpacking(
-    nd: Expr, sym_tab: UniScopeNode, rebind_in_python_scope: bool = False
+    nd: Expr,
+    sym_tab: UniScopeNode,
+    rebind_in_python_scope: bool = False,
+    adopt_enclosing: bool = True
 ) -> None;
 
 def bind_assignment_targets(nd: Assignment) -> None;

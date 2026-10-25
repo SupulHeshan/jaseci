@@ -29,11 +29,14 @@ test "package" {
 }
 
 test "expr as item alias variable" {
+    # A `with ... as` alias writes the enclosing scope's variable, as an
+    # assignment does, not a with-block-only one (#9972).
     file_path = os.path.join(FIXTURES, "with_as_clause.jac");
     mod = JacProgram().compile(file_path);
     with_names = mod.sym_tab.kid_scope[0].names_in_scope;
-    assert "f" in with_names , "Alias variable 'f' should be registered in WithStmt symbol table";
-    assert str(with_names["f"].sym_type) == "variable";
+    assert "f" not in with_names , "Alias 'f' must not be a with-block-only symbol";
+    assert "f" in mod.sym_tab.names_in_scope , "Alias 'f' binds the enclosing scope";
+    assert str(mod.sym_tab.names_in_scope["f"].sym_type) == "variable";
 }
 
 test "in for stmt iteration variables" {
@@ -47,10 +50,17 @@ test "in for stmt iteration variables" {
         (4, ["first", "middle", "last"]),
         (5, ["a", "b", "c", "d"])
     ];
+    # A for target writes the enclosing scope's variable, as an assignment
+    # does, not a loop-only one (#9972); the loop keeps its own scope.
     for (scope_idx, expected_vars) in test_cases {
         for_loop_scope = mod.sym_tab.kid_scope[scope_idx];
         for var_name in expected_vars {
-            assert var_name in for_loop_scope.names_in_scope;
+            assert var_name not in for_loop_scope.names_in_scope , (
+                f"'{var_name}' must not be a loop-only symbol (loop {scope_idx})"
+            );
+            assert var_name in mod.sym_tab.names_in_scope , (
+                f"'{var_name}' binds the enclosing scope (loop {scope_idx})"
+            );
         }
     }
 }
