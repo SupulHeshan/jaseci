@@ -1357,6 +1357,7 @@ node InForStmt(AstAsyncNode, AstElseBodyNode, CodeBlockStmt, UniScopeNode) {
     ) -> None;
 
     def postinit -> None;
+    def lends_elements -> bool;
     def __repr__ -> str;
 }
 

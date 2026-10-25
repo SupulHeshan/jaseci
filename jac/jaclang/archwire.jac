@@ -8630,7 +8630,8 @@ graph import compiler {
             UniNode,
             UniScopeNode,
             WhileStmt,
-            YieldExpr
+            YieldExpr,
+            find_python_scope_node_of
         },
         passes.ownership_hints { Ability, Assignment, FuncSignature, Module, Name },
         passes.package_boundary_pass { Import, Module, ModulePath },

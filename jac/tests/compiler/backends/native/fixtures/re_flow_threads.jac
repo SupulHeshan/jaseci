@@ -60,8 +60,8 @@ with entry {
         j.bad = work(j.seed);
     }
     total: int = 0;
-    for j in jobs {
-        total += j.bad;
+    for job in jobs {
+        total += job.bad;
     }
     print("bad", total);
 }

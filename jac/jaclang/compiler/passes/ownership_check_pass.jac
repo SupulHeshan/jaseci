@@ -111,6 +111,7 @@ walker OwnershipCheckPass(CompilerPass) {
     def _nogc_fresh_arch_elem(expr: Expr | None) -> bool;
     def _nogc_fresh_scalar_list(expr: Expr | None) -> bool;
     def _stamp_loop_borrows -> None;
+    def _check_loan_target_is_fresh(st: InForStmt) -> None;
     def _emit_element_space_conflicts -> None;
     def _emit_freeze_diagnostics -> None;
     def _emit_seal_warnings -> None;

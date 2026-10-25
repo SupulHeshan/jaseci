@@ -4034,7 +4034,10 @@ impl bind_walrus_target(nd: BinaryExpr) -> None {
 
 impl bind_for_target(nd: InForStmt) -> None {
     def_insert_unpacking(
-        nd.target, nd.sym_tab, rebind_in_python_scope=True, adopt_enclosing=False
+        nd.target,
+        nd.sym_tab,
+        rebind_in_python_scope=not nd.lends_elements(),
+        adopt_enclosing=False
     );
 }
 
