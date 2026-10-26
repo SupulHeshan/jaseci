@@ -6,7 +6,11 @@ import from unittest { mock }
 import from jaclang.byllm._optdeps.litellm { litellm }
 import from jaclang.byllm.exceptions { LLMTimeout, RateLimitError }
 import from jaclang.byllm.lib { MockLLM, Model, ModelPool }
-import from jaclang.byllm.llm { _is_timeout_error, _is_transient_error }
+import from jaclang.byllm.llm {
+    _NO_FORCED_TOOL_MODELS,
+    _is_timeout_error,
+    _is_transient_error
+}
 import from jaclang.testing.requires { require_module }
 import from support { call, mk_run, say, text_chunk }
 
@@ -181,6 +185,44 @@ test "one deadline covers everything a call does" {
         return (_outcome(lambda { rest("go"); }), len(llm.seen));
     }
 
+    def late_rejection(budget: float) -> tuple[str, int] {
+        # A model name of its own: a rejection is remembered per model.
+        name = "gpt-4o-mini-forced-fallback";
+        answer = litellm.completion;
+        timeouts: list[float] = [];
+
+        def rejects_forced_choice(**kwargs: any) -> any {
+            timeouts.append(float(kwargs["timeout"]));
+            if len(timeouts) == 1 {
+                time.sleep(1.2);
+                raise litellm.BadRequestError(
+                    message="tool_choice required is not supported",
+                    model=name,
+                    llm_provider="openai"
+                );
+            }
+            return answer(
+                model="gpt-4o-mini",
+                messages=kwargs["messages"],
+                mock_response="recovered"
+            );
+        }
+        model = Model(model_name=name, api_key="sk-test", timeout=budget);
+        run = mk_run(call_params={"tool_choice": "required"});
+        try {
+            with mock.patch("litellm.completion", rejects_forced_choice) {
+                got = _outcome(lambda { model.dispatch_no_streaming(run).output; });
+            }
+        } finally {
+            _NO_FORCED_TOOL_MODELS.discard(name);
+        }
+        # The 1.2s rejection is spent by the time the fallback goes out.
+        if len(timeouts) == 2 and timeouts[1] > budget - 1.0 {
+            got = "the fallback got a stale timeout";
+        }
+        return (got, len(timeouts));
+    }
+
     def stream_closed(budget: float, is_async: bool) -> tuple[str, int] {
         held: list[any] = [];
         closed: list[int] = [];
@@ -280,6 +322,20 @@ test "one deadline covers everything a call does" {
             "a tool that outlives the deadline ends the call",
             tool_loop,
             0.4,
+            "LLMTimeout",
+            1
+        ),
+        (
+            "a rejected forced tool_choice falls back with only the time left",
+            late_rejection,
+            2.0,
+            "recovered",
+            2
+        ),
+        (
+            "a rejection that spends the budget leaves no time for the fallback",
+            late_rejection,
+            1.0,
             "LLMTimeout",
             1
         ),

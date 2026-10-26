@@ -67,6 +67,8 @@ def _without_forced_output(params: dict[str, any]) -> dict[str, any];
 
 def _forced_output_params(params: dict[str, any]) -> dict[str, any];
 
+def _fallback_params(params: dict[str, any], started: float) -> dict[str, any];
+
 impl _forced_tool_rejected(e: Exception) -> bool {
     text = str(e);
     return "tool_choice" in text and "not supported" in text;
@@ -87,6 +89,23 @@ impl _forced_output_params(params: dict[str, any]) -> dict[str, any] {
         return _without_forced_output(params);
     }
     return params;
+}
+
+impl _fallback_params(params: dict[str, any], started: float) -> dict[str, any] {
+    out = _without_forced_output(params);
+    budget = out.get("timeout");
+    if isinstance(budget, (int, float)) {
+        left = float(budget) - (time.monotonic() - started);
+        if left <= 0 {
+            model = str(params.get("model", ""));
+            raise LLMTimeout(
+                message=f"{model} spent its whole timeout before the tool_choice fallback",
+                model=model
+            );
+        }
+        out["timeout"] = left;
+    }
+    return out;
 }
 
 def _model_lacks_tool_role(model_name: str) -> bool;
@@ -265,6 +284,7 @@ impl Model.model_call_no_stream(params: dict[str, any]) -> dict[str, any] {
         } else {
             require_optional("litellm", "llm");
             sent = _forced_output_params(params);
+            started = time.monotonic();
             try {
                 response = litellm.completion(
                     api_key=self.api_key or None,
@@ -281,7 +301,7 @@ impl Model.model_call_no_stream(params: dict[str, any]) -> dict[str, any] {
                     api_key=self.api_key or None,
                     api_base=self.api_base or None,
                     num_retries=0,
-                    **_without_forced_output(params)
+                    **_fallback_params(params, started)
                 );
             }
         }
@@ -358,6 +378,7 @@ impl Model.model_call_no_stream_async(params: dict[str, any]) -> dict[str, any] 
         } else {
             require_optional("litellm", "llm");
             sent = _forced_output_params(params);
+            started = time.monotonic();
             try {
                 response = await litellm.acompletion(
                     api_key=self.api_key or None,
@@ -374,7 +395,7 @@ impl Model.model_call_no_stream_async(params: dict[str, any]) -> dict[str, any] 
                     api_key=self.api_key or None,
                     api_base=self.api_base or None,
                     num_retries=0,
-                    **_without_forced_output(params)
+                    **_fallback_params(params, started)
                 );
             }
         }
