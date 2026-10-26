@@ -392,6 +392,26 @@ impl TypeCheckPass._write_leaves(target: (Expr | None)) -> list[Expr] {
     return [target] if target is not None else [];
 }
 
+impl TypeCheckPass._is_unannotated_rebind(prior: Symbol, target: Name) -> bool {
+    if prior.decl is None or prior.decl.name_of is target {
+        return False;
+    }
+    site = prior.decl.name_of.parent;
+    return (isinstance(site, Assignment) and site.type_tag is None)
+        or isinstance(site, InForStmt);
+}
+
+impl TypeCheckPass._is_exempt_rebind(
+    prior: Symbol, target: Name, declared: TypeBase
+) -> bool {
+    if self._is_unannotated_rebind(prior, target)
+        and (self.evaluator.is_none_type(declared) or target.value == "_") {
+        return True;
+    }
+    return isinstance(declared, ModuleType)
+        and any(d.name_of.find_parent_of_type(Import) is not None for d in prior.defn);
+}
+
 impl TypeCheckPass._check_for_target_rebinds(nd: InForStmt) -> None {
     scope = find_python_scope_node_of(nd);
     if scope is None {
@@ -399,7 +419,7 @@ impl TypeCheckPass._check_for_target_rebinds(nd: InForStmt) -> None {
     }
     loop_at = (nd.loc.first_line, nd.loc.col_start);
     for leaf in self._write_leaves(nd.target) {
-        if not isinstance(leaf, Name) or leaf.sym is None or leaf.value == "_" {
+        if not isinstance(leaf, Name) or leaf.sym is None {
             continue;
         }
         prior = scope.lookup(leaf.value, deep=False);
@@ -410,13 +430,12 @@ impl TypeCheckPass._check_for_target_rebinds(nd: InForStmt) -> None {
             continue;
         }
         declared = self.evaluator.get_type_of_symbol(prior);
-        decl_site = prior.decl.name_of.parent;
-        if isinstance(decl_site, Assignment) and decl_site.type_tag is None {
+        if self._is_unannotated_rebind(prior, leaf) {
             declared = self.evaluator._widen_literal_for_declaration(declared);
         }
-        if isinstance(declared, (UnknownType, ModuleType))
+        if isinstance(declared, UnknownType)
             or self.evaluator.is_any_type(declared)
-            or self.evaluator.is_none_type(declared) {
+            or self._is_exempt_rebind(prior, leaf, declared) {
             continue;
         }
         bound = self.evaluator.get_type_of_expression(leaf);
@@ -554,16 +573,7 @@ impl TypeCheckPass.exit_assignment with Assignment exit {
         if isinstance(target, Name) and target.sym {
             left_type = self.evaluator.get_type_of_symbol(target.sym);
 
-            if (
-                target.sym.decl.name_of is not target
-                and (
-                    (
-                        isinstance(target.sym.decl.name_of.parent, Assignment)
-                        and target.sym.decl.name_of.parent.type_tag is None
-                    )
-                    or isinstance(target.sym.decl.name_of.parent, InForStmt)
-                )
-            ) {
+            if self._is_unannotated_rebind(target.sym, target) {
                 is_unannotated_reassign = True;
 
                 left_type = self.evaluator._widen_literal_for_declaration(left_type);
@@ -757,25 +767,13 @@ impl TypeCheckPass.exit_assignment with Assignment exit {
                 );
             }
         } else {
-            is_evolving_reassign = is_unannotated_reassign
-                and (
-                    self.evaluator.is_none_type(left_type)
-                    or (isinstance(target, Name) and target.value == "_")
-                );
-            is_module_fallback_rebind = (
-                isinstance(target, Name)
+            is_exempt_rebind = isinstance(target, Name)
                 and target.sym is not None
-                and isinstance(left_type, ModuleType)
-                and any(
-                    d.name_of.find_parent_of_type(Import) is not None
-                    for d in target.sym.defn
-                )
-            );
+                and self._is_exempt_rebind(target.sym, target, left_type);
             import from jaclang.compiler.c_interop { c_bytes_array_definition }
             if (
                 here.aug_op is None
-                and not is_evolving_reassign
-                and not is_module_fallback_rebind
+                and not is_exempt_rebind
                 and not c_bytes_array_definition(here, left_type)
             ) {
                 verdict = self.evaluator.assign_expr(
