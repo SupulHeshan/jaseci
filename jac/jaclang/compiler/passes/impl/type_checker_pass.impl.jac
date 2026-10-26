@@ -426,7 +426,8 @@ impl TypeCheckPass._check_for_target_rebinds(nd: InForStmt) -> None {
         if prior is None or prior is leaf.sym or prior.decl is None {
             continue;
         }
-        if (prior.decl.loc.first_line, prior.decl.loc.col_start) >= loop_at {
+        if not isinstance(prior.decl.name_of, ParamVar)
+            and (prior.decl.loc.first_line, prior.decl.loc.col_start) >= loop_at {
             continue;
         }
         declared = self.evaluator.get_type_of_symbol(prior);

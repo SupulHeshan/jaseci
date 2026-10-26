@@ -49,3 +49,12 @@ with entry {
         print(c);
     }
 }
+
+impl rebinds_param(x: int) -> int {
+    for x in ["bad"] {  # <-- Error
+        print(x);
+    }
+    return 0;
+}
+
+def rebinds_param(x: int) -> int;
