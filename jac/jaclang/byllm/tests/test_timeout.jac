@@ -124,281 +124,185 @@ test "a stalled request raises LLMTimeout after one request on every transport" 
 }
 
 
-test "one deadline covers everything a call does" {
-    require_module("litellm");
-    transient = litellm.APIConnectionError(
-        message="connection reset", llm_provider="openai", model="gpt-4o-mini"
-    );
+"""A fake provider: request n runs `steps[n]` (wait, fail, answer or stream), notes any
+request given more time than the call had left, and keeps every stream it hands out."""
+obj _Provider {
+    has budget: float,
+        steps: list[any],
+        real: any,
+        started: float = 0.0,
+        closed: int = 0,
+        open_after: int = 0,
+        held: list[any] = [],
+        sent: list[float] = [],
+        overgiven: list[str] = [];
 
-    def nap -> str {
-        time.sleep(0.6);
-        return "rested";
+    def postinit {
+        self.started = time.monotonic();
     }
 
-    def retry_after_failure(budget: float) -> tuple[str, int] {
-        answer = litellm.completion;
-        timeouts: list[float] = [];
-
-        def fails_once(**kwargs: any) -> any {
-            timeouts.append(float(kwargs["timeout"]));
-            if len(timeouts) == 1 {
-                raise transient;
-            }
-            return answer(
-                model="gpt-4o-mini",
-                messages=kwargs["messages"],
-                mock_response="recovered"
+    def record(timeout: any) -> list[any] {
+        left = self.budget - (time.monotonic() - self.started);
+        given = max(timeout.connect, timeout.read) if timeout?.read else float(timeout);
+        self.sent.append(given);
+        if given > left + 0.05 {
+            self.overgiven.append(
+                f"request {len(self.sent)}: {given:.1f}s, {left:.1f}s left"
             );
         }
-        model = Model(model_name="gpt-4o-mini", api_key="sk-test", timeout=budget);
-        with mock.patch("litellm.completion", fails_once) {
-            got = _outcome(lambda { model.dispatch_no_streaming(mk_run()).output; });
-        }
-        # The 1s backoff is spent by the time the retry goes out.
-        if len(timeouts) == 2 and timeouts[1] > timeouts[0] - 0.9 {
-            got = "retried with a fresh budget";
-        }
-        return (got, len(timeouts));
+        return self.steps[len(self.sent) - 1];
     }
 
-    def slow_failure(budget: float) -> tuple[str, int] {
-        asked: list[int] = [];
-
-        def fails_late(**_kwargs: any) -> any {
-            asked.append(1);
-            time.sleep(0.8);
-            raise transient;
-        }
-        model = Model(model_name="gpt-4o-mini", api_key="sk-test", timeout=budget);
-        with mock.patch("litellm.completion", fails_late) {
-            got = _outcome(lambda { model.dispatch_no_streaming(mk_run()); });
-        }
-        return (got, len(asked));
-    }
-
-    def tool_loop(budget: float) -> tuple[str, int] {
-        llm = MockLLM(outputs=[call("nap"), say("done")], timeout=budget);
-
-        """Rest, then report."""
-        def rest(note: str) -> str by llm(tools=[nap]);
-
-        return (_outcome(lambda { rest("go"); }), len(llm.seen));
-    }
-
-    def late_rejection(budget: float) -> tuple[str, int] {
-        # A model name of its own: a rejection is remembered per model.
-        name = "gpt-4o-mini-forced-fallback";
-        answer = litellm.completion;
-        timeouts: list[float] = [];
-
-        def rejects_forced_choice(**kwargs: any) -> any {
-            timeouts.append(float(kwargs["timeout"]));
-            if len(timeouts) == 1 {
-                time.sleep(1.2);
-                raise litellm.BadRequestError(
-                    message="tool_choice required is not supported",
-                    model=name,
-                    llm_provider="openai"
+    def completion(**kwargs: any) -> any {
+        for (act, arg) in self.record(kwargs["timeout"]) {
+            if act == "wait" {
+                time.sleep(arg);
+            } elif act == "fail" {
+                raise arg;
+            } elif act == "answer" {
+                return self.real(
+                    model="gpt-4o-mini", messages=kwargs["messages"], mock_response=arg
                 );
+            } else {
+                self.held.append(self.stream(arg, kwargs["timeout"].read));
+                return self.held[-1];
             }
-            return answer(
-                model="gpt-4o-mini",
-                messages=kwargs["messages"],
-                mock_response="recovered"
-            );
         }
-        model = Model(model_name=name, api_key="sk-test", timeout=budget);
-        run = mk_run(call_params={"tool_choice": "required"});
+    }
+
+    async def acompletion(**kwargs: any) -> any {
+        self.record(kwargs["timeout"]);
+        self.held.append(self.astream());
+        return self.held[-1];
+    }
+
+    # With an error, waits out the read timeout it was given, as httpx would.
+    def stream(error: Exception | None, read: float) -> any {
         try {
-            with mock.patch("litellm.completion", rejects_forced_choice) {
-                got = _outcome(lambda { model.dispatch_no_streaming(run).output; });
+            if error is not None {
+                time.sleep(min(read, 1.0));
+                raise error;
+            }
+            for _ in range(10) {
+                yield text_chunk("x");
             }
         } finally {
-            _NO_FORCED_TOOL_MODELS.discard(name);
+            self.closed += 1;
         }
-        # The 1.2s rejection is spent by the time the fallback goes out.
-        if len(timeouts) == 2 and timeouts[1] > budget - 1.0 {
-            got = "the fallback got a stale timeout";
-        }
-        return (got, len(timeouts));
     }
 
-    def silent_stream(budget: float) -> tuple[str, int] {
-        seen: list[any] = [];
-
-        # Waits out the read timeout it is given, as httpx would, then gives up.
-        def sends_nothing(**kwargs: any) -> any {
-            seen.append(kwargs["timeout"]);
-            def chunks -> any {
-                time.sleep(min(float(kwargs["timeout"].read), 3.0));
-                if seen {
-                    raise litellm.Timeout(
-                        message="no chunk arrived",
-                        model="gpt-4o-mini",
-                        llm_provider="openai"
-                    );
-                }
-                yield text_chunk("never");
+    async def astream -> any {
+        try {
+            for _ in range(10) {
+                yield text_chunk("x");
             }
-            return chunks();
+        } finally {
+            self.closed += 1;
         }
-        model = Model(model_name="gpt-4o-mini", api_key="sk-test", timeout=budget);
-        started = time.monotonic();
-        with mock.patch("litellm.completion", sends_nothing) {
-            got = _outcome(
-                lambda { "".join(model.dispatch_streaming(mk_run(stream=True))); }
-            );
-        }
-        if seen and seen[0].connect > budget {
-            got = "the connect timeout is not capped";
-        }
-        if time.monotonic() - started > budget + 1.0 {
-            got = f"{got} long after the deadline";
-        }
-        return (got, len(seen));
     }
+}
 
-    def stream_closed(budget: float, is_async: bool) -> tuple[str, int] {
-        held: list[any] = [];
-        closed: list[int] = [];
 
-        def chunks -> any {
-            try {
-                for _ in range(100) {
-                    yield text_chunk("x");
-                }
-            } finally {
-                closed.append(1);
-            }
-        }
+def _nap -> str {
+    time.sleep(0.6);
+    return "rested";
+}
 
-        async def achunks -> any {
-            try {
-                for _ in range(100) {
-                    yield text_chunk("x");
-                }
-            } finally {
-                closed.append(1);
-            }
-        }
 
-        # The provider keeps its stream, so only an explicit close ends it.
-        def answer(**_kwargs: any) -> any {
-            held.append(chunks());
-            return held[0];
+def _read_slowly(model: Model, fake: _Provider) -> str {
+    try {
+        for _piece in model.dispatch_streaming(mk_run(stream=True)) {
+            time.sleep(0.3);
         }
-
-        async def aanswer(**_kwargs: any) -> any {
-            held.append(achunks());
-            return held[0];
-        }
-        model = Model(model_name="gpt-4o-mini", api_key="sk-test", timeout=budget);
-
-        def read_slowly -> str {
-            try {
-                for _piece in model.dispatch_streaming(mk_run(stream=True)) {
-                    time.sleep(0.3);
-                }
-            } except LLMTimeout {
-                return "closed" if closed else "left open";
-            }
-            return "read to the end";
-        }
-
-        # Checked before asyncio.run ends, since its shutdown closes every
-        # async generator still open.
-        async def aread_slowly -> str {
-            try {
-                async for _piece in model.adispatch_streaming(mk_run(stream=True)) {
-                    await asyncio.sleep(0.3);
-                }
-            } except LLMTimeout {
-                return "closed" if closed else "left open";
-            }
-            return "read to the end";
-        }
-        if is_async {
-            with mock.patch("litellm.acompletion", aanswer) {
-                got = _outcome(lambda { asyncio.run(aread_slowly()); });
-            }
-        } else {
-            with mock.patch("litellm.completion", answer) {
-                got = _outcome(read_slowly);
-            }
-        }
-        return (got, len(held));
+    } finally {
+        fake.open_after = len(fake.held) - fake.closed;
     }
+    return "read to the end";
+}
 
-    def sync_stream_closed(budget: float) -> tuple[str, int] {
-        return stream_closed(budget, False);
+
+# Counted before asyncio.run ends, since its shutdown closes every open async generator.
+async def _aread_slowly(model: Model, fake: _Provider) -> str {
+    try {
+        async for _piece in model.adispatch_streaming(mk_run(stream=True)) {
+            await asyncio.sleep(0.3);
+        }
+    } finally {
+        fake.open_after = len(fake.held) - fake.closed;
     }
+    return "read to the end";
+}
 
-    def async_stream_closed(budget: float) -> tuple[str, int] {
-        return stream_closed(budget, True);
+
+"""Run one row: `call` sends a request, `forced` one with a forced tool_choice,
+`stream`/`astream` read a stream slowly, `tool` runs a tool loop on a MockLLM."""
+def _run_row(mode: str, budget: float, fake: _Provider) -> str {
+    if mode == "tool" {
+        llm = MockLLM(outputs=[call("_nap"), say("done")], timeout=budget);
+
+        """Rest, then report."""
+        def rest(note: str) -> str by llm(tools=[_nap]);
+
+        got = _outcome(lambda { rest("go"); });
+        fake.sent = list(llm.seen);
+        return got;
     }
+    # A model name of its own: a rejected tool_choice is remembered per model.
+    name = "gpt-4o-mini-forced" if mode == "forced" else "gpt-4o-mini";
+    model = Model(model_name=name, api_key="sk-test", timeout=budget);
+    forced = mk_run(call_params={"tool_choice": "required"});
+    with mock.patch("litellm.completion", fake.completion) {
+        with mock.patch("litellm.acompletion", fake.acompletion) {
+            if mode == "astream" {
+                got = _outcome(lambda { asyncio.run(_aread_slowly(model, fake)); });
+            } elif mode == "stream" {
+                got = _outcome(lambda { _read_slowly(model, fake); });
+            } elif mode == "forced" {
+                got = _outcome(lambda { model.dispatch_no_streaming(forced).output; });
+            } else {
+                got = _outcome(
+                    lambda { model.dispatch_no_streaming(mk_run()).output; }
+                );
+            }
+        }
+    }
+    _NO_FORCED_TOOL_MODELS.discard(name);
+    return got;
+}
 
-    # (label, scenario, call budget, outcome, requests sent)
-    for (label, scenario, budget, outcome, requests) in [
-        (
-            "a retry whose backoff fits gets only what is left",
-            retry_after_failure,
-            30.0,
-            "recovered",
-            2
-        ),
-        (
-            "a request that spends the budget leaves no time to retry",
-            slow_failure,
-            1.5,
-            "APIConnectionError",
-            1
-        ),
-        (
-            "a tool that outlives the deadline ends the call",
-            tool_loop,
-            0.4,
-            "LLMTimeout",
-            1
-        ),
-        (
-            "a rejected forced tool_choice falls back with only the time left",
-            late_rejection,
-            2.0,
-            "recovered",
-            2
-        ),
-        (
-            "a rejection that spends the budget leaves no time for the fallback",
-            late_rejection,
-            1.0,
-            "LLMTimeout",
-            1
-        ),
-        (
-            "a stream with no first chunk is cut off by the capped read timeout",
-            silent_stream,
-            0.5,
-            "Timeout",
-            1
-        ),
-        (
-            "a stream cut off at the deadline closes the provider's stream",
-            sync_stream_closed,
-            0.5,
-            "closed",
-            1
-        ),
-        (
-            "an async stream cut off at the deadline closes the provider's stream",
-            async_stream_closed,
-            0.5,
-            "closed",
-            1
-        )
+
+test "one deadline covers everything a call does" {
+    require_module("litellm");
+    reset = litellm.APIConnectionError(
+        message="connection reset", llm_provider="openai", model="gpt-4o-mini"
+    );
+    rejected = litellm.BadRequestError(
+        message="tool_choice is not supported", model="m", llm_provider="openai"
+    );
+    stalled = litellm.Timeout(message="no chunk", model="m", llm_provider="openai");
+    (fail, ok) = ([("fail", reset)], [("answer", "ok")]);
+    slow_fail = [("wait", 0.8), ("fail", reset)];
+    late = [("wait", 1.2), ("fail", rejected)];
+    (stall, chunks) = ([("stream", stalled)], [("stream", None)]);
+    # Each row sends one request per step list, gives no request more time than the
+    # call has left, and leaves no provider stream open.
+    # (label, mode, budget, each request's steps, outcome)
+    for (label, mode, budget, steps, outcome) in [
+        ("a retry gets only the time left", "call", 30.0, [fail, ok], "ok"),
+        ("no time left to retry", "call", 1.5, [slow_fail], "APIConnectionError"),
+        ("a tool past the deadline ends the call", "tool", 0.4, [[]], "LLMTimeout"),
+        ("the fallback gets only the time left", "forced", 2.0, [late, ok], "ok"),
+        ("no time left for the fallback", "forced", 1.0, [late], "LLMTimeout"),
+        ("a silent stream is cut off", "stream", 0.5, [stall], "Timeout"),
+        ("a cut-off stream is closed", "stream", 0.5, [chunks], "LLMTimeout"),
+        ("a cut-off async stream is closed", "astream", 0.5, [chunks], "LLMTimeout")
     ] {
-        (got, sent) = scenario(budget);
+        fake = _Provider(budget=budget, steps=steps, real=litellm.completion);
+        got = _run_row(mode, budget, fake);
         assert got == outcome , f"{label}: got {got!r}";
-        assert sent == requests , f"{label}: {sent} requests";
+        assert len(fake.sent) == len(steps) , f"{label}: {len(fake.sent)} requests";
+        assert not fake.overgiven , f"{label}: {fake.overgiven[0]}";
+        assert fake.open_after == 0 , f"{label}: a provider stream was left open";
     }
 }
 
