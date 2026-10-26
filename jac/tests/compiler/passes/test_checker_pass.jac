@@ -398,36 +398,6 @@ glob CHECKER_DIRS: dict[(str, str)] = {
              ]
          ),
          (
-             "for_target_rebind",
-             "checker",
-             "checker_for_target_rebind.jac",
-             3,
-             True,
-             [
-                 (
-                     0,
-                     """
-        for (kind, title) in [("top", "Top"), ("side", "Side")] {  # <-- Error
-        Cannot assign str to Label
-    """
-                 ),
-                 (
-                     1,
-                     """
-        for title in ["Top", "Side"] {  # <-- Error
-        Cannot assign str to Label
-    """
-                 ),
-                 (
-                     2,
-                     """
-        for title in ["Top"] {  # <-- Error
-        Cannot assign str to Label
-    """
-                 )
-             ]
-         ),
-         (
              "subscript_guard_assignment",
              "checker",
              "checker_subscript_guard_assignment.jac",
@@ -2587,26 +2557,42 @@ test "agentvisitor_connect_no_errors" {
 
 test "inferred_local_type_frozen" {
     # An unannotated local is frozen to the type inferred at its first
-    # binding; reassigning an incompatible type is an error. The
-    # `None`-sentinel pattern is the one exception (the type evolves).
+    # binding; reassigning an incompatible type is an error, and so is a
+    # `for` target that reuses the name (#9972). The `None`-sentinel
+    # pattern is the one exception (the type evolves).
     program = JacProgram();
     mod = program.compile(
         os.path.join(CHECKER_FIXTURES, "checker_inferred_type_frozen.jac"),
         options=NO_TC
     );
-    assert len(program.errors_had) == 1 , f"Expected 1 type error, but got {len(
+    assert len(program.errors_had) == 3 , f"Expected 3 type errors, but got {len(
         program.errors_had
     )}: "
         + "\n".join([err.pretty_print() for err in program.errors_had]);
-    _first_code = program.errors_had[0].code;
-    assert _first_code is not None;
-    assert _first_code.code == "E1001";
-    assert_error_pretty_found(
-        """
+    for err in program.errors_had {
+        assert err.code is not None and err.code.code == "E1001";
+    }
+    for (idx, needle) in [
+        (0, """
         a = "some str";  # <-- Error
-    """,
-        program.errors_had[0].pretty_print()
-    );
+    """),
+        (
+            1,
+            """
+        for a in ["x", "y"] {  # <-- Error
+        Cannot assign str to int
+    """
+        ),
+        (
+            2,
+            """
+        for (kind, a) in [("k", "x")] {  # <-- Error
+        Cannot assign str to int
+    """
+        )
+    ] {
+        assert_error_pretty_found(needle, program.errors_had[idx].pretty_print());
+    }
 }
 
 test "inferred_local_type_widens_literals" {
