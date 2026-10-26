@@ -223,6 +223,41 @@ test "one deadline covers everything a call does" {
         return (got, len(timeouts));
     }
 
+    def silent_stream(budget: float) -> tuple[str, int] {
+        seen: list[any] = [];
+
+        # Waits out the read timeout it is given, as httpx would, then gives up.
+        def sends_nothing(**kwargs: any) -> any {
+            seen.append(kwargs["timeout"]);
+            def chunks -> any {
+                time.sleep(min(float(kwargs["timeout"].read), 3.0));
+                if seen {
+                    raise litellm.Timeout(
+                        message="no chunk arrived",
+                        model="gpt-4o-mini",
+                        llm_provider="openai"
+                    );
+                }
+                yield text_chunk("never");
+            }
+            return chunks();
+        }
+        model = Model(model_name="gpt-4o-mini", api_key="sk-test", timeout=budget);
+        started = time.monotonic();
+        with mock.patch("litellm.completion", sends_nothing) {
+            got = _outcome(
+                lambda { "".join(model.dispatch_streaming(mk_run(stream=True))); }
+            );
+        }
+        if seen and seen[0].connect > budget {
+            got = "the connect timeout is not capped";
+        }
+        if time.monotonic() - started > budget + 1.0 {
+            got = f"{got} long after the deadline";
+        }
+        return (got, len(seen));
+    }
+
     def stream_closed(budget: float, is_async: bool) -> tuple[str, int] {
         held: list[any] = [];
         closed: list[int] = [];
@@ -337,6 +372,13 @@ test "one deadline covers everything a call does" {
             late_rejection,
             1.0,
             "LLMTimeout",
+            1
+        ),
+        (
+            "a stream with no first chunk is cut off by the capped read timeout",
+            silent_stream,
+            0.5,
+            "Timeout",
             1
         ),
         (
