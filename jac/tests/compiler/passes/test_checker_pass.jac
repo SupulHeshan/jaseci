@@ -398,6 +398,36 @@ glob CHECKER_DIRS: dict[(str, str)] = {
              ]
          ),
          (
+             "for_target_rebind",
+             "checker",
+             "checker_for_target_rebind.jac",
+             3,
+             True,
+             [
+                 (
+                     0,
+                     """
+        for (kind, title) in [("top", "Top"), ("side", "Side")] {  # <-- Error
+        Cannot assign str to Label
+    """
+                 ),
+                 (
+                     1,
+                     """
+        for title in ["Top", "Side"] {  # <-- Error
+        Cannot assign str to Label
+    """
+                 ),
+                 (
+                     2,
+                     """
+        for title in ["Top"] {  # <-- Error
+        Cannot assign str to Label
+    """
+                 )
+             ]
+         ),
+         (
              "subscript_guard_assignment",
              "checker",
              "checker_subscript_guard_assignment.jac",

@@ -418,7 +418,6 @@ walker TypeEvaluator {
 
     def _get_type_of_symbol(symbol: Symbol) -> TypeBase;
     def _get_type_of_symbol_decl(symbol: Symbol, decl: NameAtom) -> TypeBase;
-    def _get_type_of_name_binding(symbol: Symbol, node_: Name) -> TypeBase;
     def _as_final_form(ty: TypeBase) -> (ClassType | None);
     def _final_declared_type(
         annotation_type: TypeBase, symbol: (Symbol | None), value: (Expr | None)

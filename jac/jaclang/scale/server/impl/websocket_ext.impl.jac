@@ -71,14 +71,13 @@ impl serve_ws_connection(
                 data = first_data;
                 first_data = None;
             } else {
-                (status, frame) = await ws_receive_frame(websocket, max_bytes);
+                (status, data) = await ws_receive_frame(websocket, max_bytes);
                 if status == 'close' {
                     break;
                 }
-                if status == 'skip' or frame is None {
+                if status == 'skip' {
                     continue;
                 }
-                data = frame;
             }
             ctx.last_seen = time.monotonic();
             control = await ws_handle_control(

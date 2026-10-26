@@ -10505,8 +10505,7 @@ graph import compiler {
         backends.es.esast_gen_pass.EsastGenPass._try_primitive_op {
             expr_primitive_name
         },
-        backends.native.na_ir_gen_pass.NaIRGenPass._check_native_import_names
-            | passes.type_checker_pass.TypeCheckPass._block_binding_prior {
+        backends.native.na_ir_gen_pass.NaIRGenPass._check_native_import_names {
             lookup_symtab
         },
         backends.native.na_ir_gen_pass.NaIRGenPass._is_boolean_result_expr {

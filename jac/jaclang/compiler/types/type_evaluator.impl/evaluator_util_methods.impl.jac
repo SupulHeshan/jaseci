@@ -1144,12 +1144,10 @@ impl TypeEvaluator._stored_in_same_function(symbol: Symbol, nd: UniNode) -> bool
 impl TypeEvaluator._get_enclosing_return_scope(
     nd: UniNode
 ) -> Ability | LambdaExpr | None {
-    scope = nd.decl_parent;
-    while scope is not None {
-        if isinstance(scope, (LambdaExpr, Ability)) {
-            return scope;
+    while nd := nd.decl_parent {
+        if isinstance(nd, (LambdaExpr, Ability)) {
+            return nd;
         }
-        scope = scope.decl_parent;
     }
     return None;
 }
