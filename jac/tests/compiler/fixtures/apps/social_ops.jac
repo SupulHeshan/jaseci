@@ -1,5 +1,9 @@
 """Elements the `social` entry re-imports instead of declaring itself."""
 
+obj Badge {
+    has label: str;
+}
+
 walker:pub Relay {
     has name: str;
 

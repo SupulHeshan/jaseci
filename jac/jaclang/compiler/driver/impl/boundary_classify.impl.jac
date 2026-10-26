@@ -485,7 +485,7 @@ impl _declared_name(stmt: uni.ContextAwareNode) -> (str | None) {
     return None;
 }
 
-impl _reexport_provider(imp: uni.Import, prog: JacProgram) -> (uni.Module | None) {
+impl parsed_import_source(imp: uni.Import, prog: JacProgram) -> (uni.Module | None) {
     target = bridgeable_import_target(imp);
     if target is None or not os.path.isfile(target) {
         return None;
@@ -506,6 +506,9 @@ impl _declaration_named(
         return None;
     }
     seen.add(key);
+    if mod.stub_only and os.path.isfile(mod.loc.mod_path) {
+        mod = prog.load_dependency_module(mod.loc.mod_path, need_tree=True);
+    }
     for stmt in mod.body {
         if isinstance(stmt, uni.ContextAwareNode) and _declared_name(stmt) == wanted {
             return stmt;
@@ -517,7 +520,7 @@ impl _declaration_named(
     }
     reexport = sym.decl.parent;
     if isinstance(reexport, uni.ModuleItem) and isinstance(reexport.name, uni.Name) {
-        provider = _reexport_provider(reexport.from_parent, prog);
+        provider = parsed_import_source(reexport.from_parent, prog);
         if provider is not None {
             return _declaration_named(provider, reexport.name.sym_name, prog, seen);
         }

@@ -1,11 +1,19 @@
 """Client-context consumer inside the `web` app bridging to `social`.
 
-`Relay`, `relay` and `relay_alias` (the entry's alias of `relay`) are declared in
-`social_ops` and only re-imported by the `social` entry; they bridge exactly like
-the entry's own `greet`, always to the declared name.
+`Badge`, `Relay`, `relay` and the entry's aliases `RelayAlias` and `relay_alias`
+are declared in `social_ops` and only re-imported by the `social` entry; they
+bridge exactly like the entry's own `greet`, always to the declared name.
 """
 
-import from ..social_app { greet, greet as hello, Relay, relay, relay_alias }
+import from ..social_app {
+    greet,
+    greet as hello,
+    Badge,
+    Relay,
+    RelayAlias,
+    relay,
+    relay_alias
+}
 
 def:pub Panel -> JsxElement {
     has label: str = "";
@@ -18,6 +26,8 @@ def:pub Panel -> JsxElement {
         label = await relay(label);
         label = await relay_alias(label);
         await (root spawn Relay(name=label));
+        badge = Badge(label=label);
+        await (root spawn RelayAlias(name=badge.label));
     }
 
     <div>{label}</div>

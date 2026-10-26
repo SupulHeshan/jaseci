@@ -553,6 +553,10 @@ impl BoundaryAnalysisPass._register_client_bridged_import(nd: Import) -> None {
             if source_mod is not None
                 and classify_client_import_item(source_mod, item, self.prog)
                     != ClientImportVerdict.CLIENT {
+                decl = import_item_declaration(source_mod, item, self.prog);
+                if isinstance(decl, (Archetype, Enum)) {
+                    source_mod = decl.find_parent_of_type(Module) or source_mod;
+                }
                 self._register_type_import(nd, item, source_mod, InteropContext.CLIENT);
             }
             continue;
@@ -709,12 +713,7 @@ impl BoundaryAnalysisPass._find_ability(mod: Module, target: str) -> (Ability | 
 }
 
 impl BoundaryAnalysisPass._parsed_provider_of(nd: Import) -> (Module | None) {
-    import os;
-    target = bridgeable_import_target(nd);
-    if not target or not os.path.isfile(str(target)) {
-        return None;
-    }
-    return self.prog.load_dependency_module(str(target), need_tree=True);
+    return parsed_import_source(nd, self.prog);
 }
 
 impl BoundaryAnalysisPass._reject_owned_type_import(
@@ -736,14 +735,8 @@ impl BoundaryAnalysisPass._check_provider_pub(nd: Import, item: ModuleItem) -> N
     if provider_mod is None {
         return;
     }
-    verdict = classify_client_import_item(provider_mod, item, self.prog);
-    if verdict == ClientImportVerdict.UNKNOWN and provider_mod.stub_only {
-        parsed = self._parsed_provider_of(nd);
-        if parsed is not None {
-            verdict = classify_client_import_item(parsed, item, self.prog);
-        }
-    }
-    if verdict != ClientImportVerdict.DEAD {
+    if classify_client_import_item(provider_mod, item, self.prog)
+        != ClientImportVerdict.DEAD {
         return;
     }
     consumer = module_app(self.module) or self.module.name;

@@ -1,7 +1,14 @@
 """File-rooted `social` service app: the provider side of every bridge below."""
 
 import from typing { Generator }
-import from social_ops { Relay, Sweep, relay, relay as relay_alias }
+import from social_ops {
+    Badge,
+    Relay,
+    Relay as RelayAlias,
+    Sweep,
+    relay,
+    relay as relay_alias
+}
 
 obj Profile {
     has name: str,

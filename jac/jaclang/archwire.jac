@@ -5753,7 +5753,7 @@ graph import compiler {
             module_app
         },
         passes.boundary_analysis_pass.BoundaryAnalysisPass._parsed_provider_of {
-            bridgeable_import_target
+            parsed_import_source
         },
         passes.boundary_analysis_pass.BoundaryAnalysisPass._provider_module_of {
             bridgeable_import_target,
@@ -5767,6 +5767,7 @@ graph import compiler {
             ClientImportVerdict,
             classify_client_import_item,
             import_crosses_apps,
+            import_item_declaration,
             import_provider_app,
             import_provider_route,
             is_client_boundary_import

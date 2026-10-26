@@ -89,7 +89,7 @@ def symbol_linked_source_module(nd: uni.Import) -> (uni.Module | None);
 
 def _declared_name(stmt: uni.ContextAwareNode) -> (str | None);
 
-def _reexport_provider(imp: uni.Import, prog: JacProgram) -> (uni.Module | None);
+def parsed_import_source(imp: uni.Import, prog: JacProgram) -> (uni.Module | None);
 
 def _declaration_named(
     mod: uni.Module, wanted: str, prog: JacProgram, seen: set[tuple[str, str]]

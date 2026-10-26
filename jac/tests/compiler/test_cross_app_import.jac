@@ -35,9 +35,14 @@ def fixture(*parts: str) -> str {
     return os.path.join(APPS_DIR, *parts);
 }
 
-def compile_fixture(path: str, cgen: bool = False, app: str = "") -> tuple[any, ...] {
+def compile_fixture(
+    path: str, cgen: bool = False, app: str = "", provider: str = ""
+) -> tuple[any, ...] {
     prog = JacProgram();
     import from jaclang.compiler.driver.compile_options { CompileOptions }
+    if provider {
+        prog.compile(provider, options=CompileOptions(no_cgen=not cgen));
+    }
     options = CompileOptions(no_cgen=not cgen);
     if app {
         options.target_app = app;
@@ -163,7 +168,12 @@ test "client-context import of server-placed elements is CLIENT_BRIDGE" {
 }
 
 test "direct, aliased and re-imported client RPC calls retain the service route" {
-    (prog, mod) = compile_fixture(fixture("web", "panel.jac"), cgen=True, app="web");
+    (prog, mod) = compile_fixture(
+        fixture("web", "panel.jac"),
+        cgen=True,
+        app="web",
+        provider=fixture("social_app.jac")
+    );
     assert not prog.errors_had , str(prog.errors_had);
     js = mod.gen.js;
     calls = re.findall(r'__jacCallFunction\("greet",[^\n]+', js);
@@ -192,8 +202,15 @@ test "direct, aliased and re-imported client RPC calls retain the service route"
         assert '"contract":' in call , call;
     }
     assert '__jacCallFunction("hello"' not in js;
-    at = js.find('__jacSpawn("Relay"');
-    assert at >= 0 and '"app": "social"' in js[at:at + 400] , js;
+    spawns = re.findall(r'__jacSpawn\("Relay(?:Alias)?",[^\n]+', js);
+    assert len(spawns) == 2 , js;
+    for call in spawns {
+        assert call.startswith('__jacSpawn("Relay",') , (
+            "a walker spawn targets the declared walker, not the entry's alias: " + call
+        );
+        assert '"app": "social"' in call , call;
+    }
+    assert "class Badge" in js , js;
     social_path = os.path.realpath(fixture("social_app.jac"));
     assert all(
         os.path.realpath(path) != social_path
