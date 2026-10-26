@@ -10,7 +10,8 @@ when the first binding infers `NoneType`, the variable's type is allowed
 to evolve, matching TypeScript's strict-mode evolving locals.
 
 A `for` target that reuses the name writes the same variable, so it is held
-to the frozen type too (#9972), in the single and the unpacking form.
+to the frozen type too (#9972), in the single and the unpacking form, and
+an annotated local to its annotation.
 """
 
 with entry {
@@ -36,5 +37,15 @@ with entry {
     }
     for b in [3, 4] {  # <-- Ok
         print(b);
+    }
+}
+
+glob
+     # An annotated local is held to its annotation the same way.
+     c: str = "s";
+
+with entry {
+    for c in [1, 2] {  # <-- Error
+        print(c);
     }
 }

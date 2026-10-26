@@ -2558,14 +2558,14 @@ test "agentvisitor_connect_no_errors" {
 test "inferred_local_type_frozen" {
     # An unannotated local is frozen to the type inferred at its first
     # binding; reassigning an incompatible type is an error, and so is a
-    # `for` target that reuses the name (#9972). The `None`-sentinel
-    # pattern is the one exception (the type evolves).
+    # `for` target that reuses the name, unannotated or annotated (#9972).
+    # The `None`-sentinel pattern is the one exception (the type evolves).
     program = JacProgram();
     mod = program.compile(
         os.path.join(CHECKER_FIXTURES, "checker_inferred_type_frozen.jac"),
         options=NO_TC
     );
-    assert len(program.errors_had) == 3 , f"Expected 3 type errors, but got {len(
+    assert len(program.errors_had) == 4 , f"Expected 4 type errors, but got {len(
         program.errors_had
     )}: "
         + "\n".join([err.pretty_print() for err in program.errors_had]);
@@ -2588,6 +2588,13 @@ test "inferred_local_type_frozen" {
             """
         for (kind, a) in [("k", "x")] {  # <-- Error
         Cannot assign str to int
+    """
+        ),
+        (
+            3,
+            """
+        for c in [1, 2] {  # <-- Error
+        Cannot assign int to str
     """
         )
     ] {
