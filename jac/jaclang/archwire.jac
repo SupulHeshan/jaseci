@@ -2130,6 +2130,7 @@ graph import {
         cli.commands.execution.serve | cli.commands.project.script { get_config },
         cli.commands.execution.x | cli.commands.project.update { get_config },
         cli.commands.fix._append_app_table { _toml_append_section },
+        cli.commands.fix._report_invalid_manifest { JacConfig },
         cli.commands.project._bootstrap_project_deps
             | testing.testing.JacTestClient._ensure_initialized {
             get_config,
@@ -2274,9 +2275,10 @@ graph import {
         mobui_module_exempt
     }
     project.modresolver ++> [
-        cli.commands.fix._verify_claims | server.outbox.outbox_db_path {
+        cli.commands.fix._report_invalid_manifest | server.outbox.outbox_db_path {
             find_jac_project_root
         },
+        cli.commands.fix._verify_claims { find_jac_project_root },
         cli.commands.fix.fix { find_jac_project_root },
         client.compiler.ViteCompiler.compile_desktop_sdk
             | compiler.tests.test_jac_mobui_typing
@@ -3838,7 +3840,8 @@ graph import {
             NATIVE_DIR_REL,
             SERVE_MANIFEST_REL
         },
-        dist.precompile_bytecode.seal_runtime_closure { SERVE_MANIFEST_REL },
+        dist.precompile_bytecode.seal_runtime_closure
+            | scale.injector.bundle.require_serve_manifest { SERVE_MANIFEST_REL },
         dist.seal.bake_serve_payloads { CLIENT_DIST_REL, SERVE_MANIFEST_REL },
         dist.seal.build_serve_manifest { serve_manifest_stamp },
     ]
@@ -3847,7 +3850,9 @@ graph import {
             sealed_root_for,
             unlisted_image_root
         },
-        scale.injector.bundle.pack_jab { SERVE_MANIFEST_REL },
+        scale.injector.bundle.pack_jab | scale.tests.microservices.test_app_precompile {
+            SERVE_MANIFEST_REL
+        },
     ]
     server.server ++> [
         client.targets.desktop.native.broker_extension
