@@ -38,6 +38,10 @@ with entry {
     for b in [3, 4] {  # <-- Ok
         print(b);
     }
+    (q, _) = (7, 1);
+    for (_, z) in [("k", 2.5)] {  # <-- Ok: `_` from an unpack is a throwaway
+        print(q, z);
+    }
 }
 
 glob

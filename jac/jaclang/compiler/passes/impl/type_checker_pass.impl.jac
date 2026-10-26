@@ -397,6 +397,9 @@ impl TypeCheckPass._is_unannotated_rebind(prior: Symbol, target: Name) -> bool {
         return False;
     }
     site = prior.decl.name_of.parent;
+    while isinstance(site, (TupleVal, ListVal)) {
+        site = site.parent;
+    }
     return (isinstance(site, Assignment) and site.type_tag is None)
         or isinstance(site, InForStmt);
 }
