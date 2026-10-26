@@ -1,10 +1,9 @@
-"""A `for` target that rebinds a local writes that local on native (#9972).
+"""A `for` target that rebinds a local keeps Python's values on native (#9972).
 
-The checker binds a `for` target in the function's scope, so a loop that
-rebinds an existing name is one variable, as it is on Python. These cases
-pin the native result for rebinds the checker accepts: the slot's type and
-the element's differ (float vs int, Base vs Derived), the loop runs zero
-times, the target unpacks, and a wider declaration narrows in the body.
+These pin the native result for rebinds the checker accepts: the element
+and the earlier value differ in representation (int over float), the loop
+runs zero times, the target unpacks, and a wider declaration is read as the
+element type in the body.
 """
 
 import ctypes;
@@ -14,12 +13,6 @@ test "a for target rebinding a float local leaves the last element" {
     (_eng, _ir) = compile_native("for_target_rebind.jac");
     f = get_func(_eng, "float_slot_int_elems", ctypes.c_double);
     assert f() == 3.0 , f"x holds 2 after the loop, so 2 * 1.5, got {f()}";
-}
-
-test "a for target rebinding a base-class local reads the last element" {
-    (_eng, _ir) = compile_native("for_target_rebind.jac");
-    f = get_func(_eng, "base_slot_derived_elems", ctypes.c_int64);
-    assert f() == 3 , f"b is the last Derived after the loop, got {f()}";
 }
 
 test "the loop variable survives the loop and a zero-iteration loop keeps it" {

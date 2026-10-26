@@ -983,11 +983,11 @@ impl NaIRGenPass._export_native_layout -> None {
                 str(func.function_type.return_type.pointee_type)
             );
 
-            ret_tkey = tuple_keys.get(str(func.function_type.return_type.pointee_type))
+            tkey = tuple_keys.get(str(func.function_type.return_type.pointee_type))
                 if ret_type.startswith("Tuple")
                 else None;
-            if ret_tkey is not None {
-                ret_tuple = layout.tuples.get(ret_tkey);
+            if tkey is not None {
+                ret_tuple = layout.tuples.get(tkey);
                 if ret_tuple is not None {
                     hints = self._ret_tuple_hints(fname, ret_tuple);
                     if hints is not None {
@@ -996,7 +996,7 @@ impl NaIRGenPass._export_native_layout -> None {
                             element_types=ret_tuple.element_types,
                             element_struct_hints=hints
                         );
-                        layout.tuples[ret_tkey] = ret_tuple;
+                        layout.tuples[tkey] = ret_tuple;
                     }
                 }
             }

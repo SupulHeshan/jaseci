@@ -1102,8 +1102,8 @@ impl _create_body(
         if not full_path.exists() or force {
             if content.startswith("base64:") {
                 binary_data = base64.b64decode(content[7:]);
-                with open(full_path, "wb") as bf {
-                    bf.write(binary_data);
+                with open(full_path, "wb") as f {
+                    f.write(binary_data);
                 }
             } else {
                 rendered = content.replace("{{name}}", project_name);

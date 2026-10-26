@@ -521,7 +521,6 @@ impl OwnershipCheckPass._stamp_loop_borrows -> None {
         if not (isinstance(coll, UnaryExpr) and is_borrow_kind(coll.ownership)) {
             continue;
         }
-        self._check_loan_target_is_fresh(st);
         owner = self._place_of(coll.operand);
         if owner is None {
             _chk = self._chunks_shape_of(coll.operand);
@@ -547,29 +546,6 @@ impl OwnershipCheckPass._stamp_loop_borrows -> None {
             name=tgt.sym_name, owner=self._name_sym_id(owner), is_mut=is_mut, field="[]"
         );
         self.borrow_created_at[borrow_id] = st;
-    }
-}
-
-impl OwnershipCheckPass._check_loan_target_is_fresh(st: InForStmt) -> None {
-    scope = find_python_scope_node_of(st);
-    if scope is None {
-        return;
-    }
-    names = [st.target] if isinstance(st.target, Name) else [];
-    names.extend(st.target.get_all_sub_nodes(Name));
-    for nm in names {
-        outer = scope.lookup(nm.sym_name, deep=False);
-        if outer is not None and outer is not nm.sym {
-            related = [
-                (
-                    f"'{nm.sym_name}' is also bound here, so the loan would outlive the loop",
-                    outer.decl
-                )
-            ]
-                if outer.decl is not None
-                else None;
-            self.ctx.emit(E1306, node_override=nm, name=nm.sym_name, related=related);
-        }
     }
 }
 

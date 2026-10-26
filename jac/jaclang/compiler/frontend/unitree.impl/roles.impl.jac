@@ -707,12 +707,6 @@ impl InForStmt.__repr__ -> str {
     return UniScopeNode.__repr__(self);
 }
 
-impl InForStmt.lends_elements -> bool {
-    coll = self.collection;
-    return isinstance(coll, UnaryExpr)
-        and coll.ownership in (OwnershipKind.BORROW, OwnershipKind.MUT_BORROW);
-}
-
 impl WhileStmt.condition.getter -> Expr {
     return [self->:ConditionRole:->][0];
 }

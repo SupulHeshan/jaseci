@@ -873,24 +873,6 @@ glob OWNERSHIP_CASES: list[tuple[any, ...]] = [
              "ref_loop_owner_write.jac",
              ["E1306"]
          ),
-         (
-             "ref_loops",
-             "a ref-loop variable named like another local is E1306",
-             "ref_loop_rebinds_local.jac",
-             ["E1306", "E1306"]
-         ),
-         (
-             "ref_loops",
-             "a reused ref-loop name keeps each loop's loan (E1303 survives)",
-             "ref_loop_reused_name.jac",
-             ["E1303"]
-         ),
-         (
-             "ref_loops",
-             "ref loops reusing one loop-variable name are clean",
-             "ref_loop_reused_name_ok.jac",
-             []
-         ),
          # -- seal_connect ----------------------------------------------------
          (
              "seal_connect",

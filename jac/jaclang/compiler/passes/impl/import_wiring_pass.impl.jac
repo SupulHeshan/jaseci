@@ -53,18 +53,16 @@ impl ImportWiringPass._check_arch_module(mod: Module) -> None {
     rule_names: dict[str, ImportRule] = {};
     for block in blocks {
         self._check_scope(spec, block, seen_scopes);
-        for block_stmt in block.body {
-            if isinstance(block_stmt, ImportRule) {
-                if block_stmt.name.value in rule_names {
-                    self.ctx.emit(
-                        E2092, node_override=block_stmt.name, name=block_stmt.name.value
-                    );
+        for stmt in block.body {
+            if isinstance(stmt, ImportRule) {
+                if stmt.name.value in rule_names {
+                    self.ctx.emit(E2092, node_override=stmt.name, name=stmt.name.value);
                 } else {
-                    rule_names[block_stmt.name.value] = block_stmt;
+                    rule_names[stmt.name.value] = stmt;
                 }
-                self._check_rule_patterns(spec, block_stmt);
-            } elif isinstance(block_stmt, ImportWire) {
-                self._check_wire(spec, block_stmt);
+                self._check_rule_patterns(spec, stmt);
+            } elif isinstance(stmt, ImportWire) {
+                self._check_wire(spec, stmt);
             }
         }
     }

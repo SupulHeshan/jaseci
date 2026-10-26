@@ -393,9 +393,9 @@ impl TypeCheckPass._write_leaves(target: (Expr | None)) -> list[Expr] {
     return [target] if target is not None else [];
 }
 
-impl TypeCheckPass._is_inferred_rebind(target: Name) -> bool {
-    decl = target.sym.decl if target.sym is not None else None;
-    if decl is None or decl.name_of is target {
+impl TypeCheckPass._is_inferred_decl(sym: Symbol) -> bool {
+    decl = sym.decl;
+    if decl is None {
         return False;
     }
     leaf: UniNode = decl.name_of;
@@ -420,31 +420,40 @@ impl TypeCheckPass._is_inferred_rebind(target: Name) -> bool {
         and site.left is leaf;
 }
 
-impl TypeCheckPass._is_exempt_rebind(target: Name, declared: TypeBase) -> bool {
-    if self._is_inferred_rebind(target)
+impl TypeCheckPass._is_inferred_rebind(target: Name) -> bool {
+    sym = target.sym;
+    return sym is not None
+        and sym.decl is not None
+        and sym.decl.name_of is not target
+        and self._is_inferred_decl(sym);
+}
+
+impl TypeCheckPass._is_exempt_rebind(
+    target: Name, prior: Symbol, declared: TypeBase
+) -> bool {
+    if prior.decl is not None
+        and prior.decl.name_of is not target
+        and self._is_inferred_decl(prior)
         and (self.evaluator.is_none_type(declared) or target.value == "_") {
         return True;
     }
     return isinstance(declared, ModuleType)
-        and target.sym is not None
-        and any(
-            d.name_of.find_parent_of_type(Import) is not None for d in target.sym.defn
-        );
+        and any(d.name_of.find_parent_of_type(Import) is not None for d in prior.defn);
 }
 
-impl TypeCheckPass._check_rebind(target: Name) -> None {
-    sym = target.sym;
-    if sym is None or sym.decl is None or sym.decl.name_of is target {
-        return;
-    }
-    declared = self.evaluator.get_type_of_symbol(sym);
-    if self._is_inferred_rebind(target) {
+impl TypeCheckPass._check_rebind_against(target: Name, prior: Symbol) -> None {
+    declared = self.evaluator.get_type_of_symbol(prior);
+    if self._is_inferred_decl(prior) {
         declared = self.evaluator._widen_literal_for_declaration(declared);
     }
-    if isinstance(declared, UnknownType) or self._is_exempt_rebind(target, declared) {
+    if isinstance(declared, UnknownType)
+        or self._is_exempt_rebind(target, prior, declared) {
         return;
     }
-    bound = self.evaluator._get_type_of_name_binding(sym, target);
+    if target.sym is None {
+        return;
+    }
+    bound = self.evaluator._get_type_of_name_binding(target.sym, target);
     if isinstance(bound, UnknownType) {
         return;
     }
@@ -457,12 +466,89 @@ impl TypeCheckPass._check_rebind(target: Name) -> None {
     }
 }
 
+impl TypeCheckPass._check_rebind(target: Name) -> None {
+    sym = target.sym;
+    if sym is None or sym.decl is None or sym.decl.name_of is target {
+        return;
+    }
+    self._check_rebind_against(target, sym);
+}
+
 impl TypeCheckPass._check_rebinds(target: (Expr | None)) -> None {
     for leaf in self._write_leaves(target) {
         if isinstance(leaf, Name) {
             self._check_rebind(leaf);
         }
     }
+}
+
+impl TypeCheckPass._defer_block_binds(target: (Expr | None), block: UniNode) -> None {
+    for leaf in self._write_leaves(target) {
+        if isinstance(leaf, Name) and leaf.sym is not None {
+            self._deferred_block_binds.append((leaf, block));
+        }
+    }
+}
+
+impl TypeCheckPass._flush_block_binds -> None {
+    pending = self._deferred_block_binds;
+    self._deferred_block_binds = [];
+    for (target, block) in pending {
+        prior = self._block_binding_prior(target, block);
+        if prior is not None {
+            self._check_rebind_against(target, prior);
+        }
+    }
+}
+
+impl TypeCheckPass._block_binding_prior(
+    target: Name, block: UniNode
+) -> (Symbol | None) {
+    sym = target.sym;
+    scope = find_python_scope_node_of(block);
+    if sym is None or scope is None {
+        return None;
+    }
+    seen = lookup_symtab(scope, target.value, self.evaluator.builtins_module);
+    if seen is None or seen is sym or seen.decl is None {
+        return None;
+    }
+    is_local = scope.lookup(target.value, deep=False) is seen;
+    if not is_local {
+        tab = seen.parent_tab;
+        if tab is None or find_python_scope_node_of(tab) is not scope {
+            return None;
+        }
+    }
+    block_start = (block.loc.first_line, block.loc.col_start);
+    seen_at = (seen.decl.loc.first_line, seen.decl.loc.col_start);
+    if seen_at < block_start {
+        if is_local or self._read_after(seen, block, None) {
+            return seen;
+        }
+        return None;
+    }
+    if is_local and self._read_after(seen, block, seen.decl) {
+        return seen;
+    }
+    return None;
+}
+
+impl TypeCheckPass._read_after(
+    sym: Symbol, block: UniNode, until: (UniNode | None)
+) -> bool {
+    block_end = (block.loc.last_line, block.loc.col_end);
+    for use in sym.uses {
+        at = (use.loc.first_line, use.loc.col_start);
+        if at <= block_end {
+            continue;
+        }
+        if until is not None and at >= (until.loc.first_line, until.loc.col_start) {
+            continue;
+        }
+        return True;
+    }
+    return False;
 }
 
 impl TypeCheckPass._check_immutable_write(
@@ -782,7 +868,8 @@ impl TypeCheckPass.exit_assignment with Assignment exit {
             }
         } else {
             is_exempt_rebind = isinstance(target, Name)
-                and self._is_exempt_rebind(target, left_type);
+                and target.sym is not None
+                and self._is_exempt_rebind(target, target.sym, left_type);
             import from jaclang.compiler.c_interop { c_bytes_array_definition }
             if (
                 here.aug_op is None
@@ -1510,6 +1597,7 @@ impl TypeCheckPass._install_client_state_setters -> None {
 impl TypeCheckPass.postinit -> None {
     self.evaluator = self.prog.get_type_evaluator();
     self._deferred_writes = [];
+    self._deferred_block_binds = [];
 }
 
 impl TypeCheckPass.initialize with entry {
@@ -1541,6 +1629,7 @@ impl TypeCheckPass.prepare with entry {
 
 impl TypeCheckPass.finish with exit {
     self._flush_immutable_writes();
+    self._flush_block_binds();
     if self.ctx.nested_depth {
         return;
     }
@@ -1713,7 +1802,7 @@ impl TypeCheckPass.exit_in_for_stmt with InForStmt exit {
         self.evaluator.get_type_of_expression(here.target);
     }
     self._check_immutable_write(here.target, rebind_scope=here);
-    self._check_rebinds(here.target);
+    self._defer_block_binds(here.target, here);
 
     collection_type = self.evaluator.get_type_of_expression(here.collection);
 
@@ -1815,7 +1904,7 @@ impl TypeCheckPass.enter_with_stmt with WithStmt entry {
         if not isinstance(alias_type, UnknownType) {
             ctx_item.alias.type = alias_type;
         }
-        self._check_rebind(ctx_item.alias);
+        self._defer_block_binds(ctx_item.alias, here);
     }
 }
 

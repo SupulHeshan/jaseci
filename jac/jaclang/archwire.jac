@@ -8493,12 +8493,10 @@ graph import compiler {
             AstSymbolNode,
             AtomTrailer,
             BinaryExpr,
-            ExprAsItem,
             FuncSignature,
             HasVar,
             ImplDef,
             Import,
-            InForStmt,
             Module,
             Name,
             NameAtom,
@@ -8508,9 +8506,7 @@ graph import compiler {
             UniNode,
             UniScopeNode,
             bind_assignment_targets,
-            bind_for_target,
             bind_walrus_target,
-            bind_with_alias,
             binding_sites_in,
             is_identifier_slot,
             typed_rebind_names
@@ -8679,8 +8675,7 @@ graph import compiler {
             UniNode,
             UniScopeNode,
             WhileStmt,
-            YieldExpr,
-            find_python_scope_node_of
+            YieldExpr
         },
         passes.ownership_hints { Ability, Assignment, FuncSignature, Module, Name },
         passes.package_boundary_pass { Import, Module, ModulePath },
@@ -8985,9 +8980,7 @@ graph import compiler {
             WhileStmt,
             WithStmt,
             bind_assignment_targets,
-            bind_for_target,
             bind_walrus_target,
-            bind_with_alias,
             def_insert_unpacking,
             find_python_scope_node_of,
             is_walrus,
@@ -9418,7 +9411,6 @@ graph import compiler {
             Ability,
             Archetype,
             AtomTrailer,
-            DictCompr,
             ElseIf,
             ElseStmt,
             Expr,
@@ -9426,7 +9418,6 @@ graph import compiler {
             ImplDef,
             Import,
             KWPair,
-            ListCompr,
             Module,
             ModuleItem,
             Name,
@@ -10466,7 +10457,8 @@ graph import compiler {
         backends.es.esast_gen_pass.EsastGenPass._try_primitive_op {
             expr_primitive_name
         },
-        backends.native.na_ir_gen_pass.NaIRGenPass._check_native_import_names {
+        backends.native.na_ir_gen_pass.NaIRGenPass._check_native_import_names
+            | passes.type_checker_pass.TypeCheckPass._block_binding_prior {
             lookup_symtab
         },
         backends.native.na_ir_gen_pass.NaIRGenPass._is_boolean_result_expr {
@@ -14313,7 +14305,9 @@ graph import compiler.types {
         type_evaluator.TypeEvaluator._extern_field_type { numeric_name_of },
         type_evaluator.TypeEvaluator._literal_type_from_expr { folded_number },
     ]
-    fixed_width --> type_evaluator.TypeEvaluator._narrow_on_store { numeric_name_of }
+    fixed_width --> type_evaluator.TypeEvaluator._get_type_from_flow_node {
+        numeric_name_of
+    }
     operations ++> type_evaluator {
         BINARY_OPERATOR_MAP,
         get_type_of_binary_operation,

@@ -305,12 +305,12 @@ impl JcirGenPass._materialize(v: CtValue, jac_node: UniNode) -> (CgNode | None) 
     }
     if isinstance(v, CtRecord) {
         kws: list[CgNode] = [];
-        for (field_name, item) in v.fields.items() {
+        for (k, item) in v.fields.items() {
             mv = self._materialize(item, jac_node);
             if mv is None {
                 return None;
             }
-            kws.append(self.nod('keyword', ['arg', 'value'], [field_name, mv]));
+            kws.append(self.nod('keyword', ['arg', 'value'], [k, mv]));
         }
         cls_ref = self._class_ref(v.module, v.class_name, jac_node);
         if self._record_bypasses_init(v) {

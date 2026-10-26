@@ -8,6 +8,7 @@ walker TypeCheckPass(TreePass) {
     static has contract: PassContract = PassContract(provides=(AnalysisFact.TYPE_OF, ));
     has evaluator: TypeEvaluator postinit,
         _deferred_writes: list[tuple[Expr, (UniNode | None)]] postinit,
+        _deferred_block_binds: list[tuple[Name, UniNode]] postinit,
         _lambda_depth: int = 0,
         _restores_evaluator: bool = False,
         _outer_pass: (CompileContext | None) = None,
@@ -92,10 +93,16 @@ walker TypeCheckPass(TreePass) {
     can exit_sub_tag with SubTag exit;
     def _eval_unpacking_names(container: Expr) -> None;
     def _write_leaves(target: (Expr | None)) -> list[Expr];
+    def _is_inferred_decl(sym: Symbol) -> bool;
     def _is_inferred_rebind(target: Name) -> bool;
-    def _is_exempt_rebind(target: Name, declared: TypeBase) -> bool;
+    def _is_exempt_rebind(target: Name, prior: Symbol, declared: TypeBase) -> bool;
+    def _check_rebind_against(target: Name, prior: Symbol) -> None;
     def _check_rebind(target: Name) -> None;
     def _check_rebinds(target: (Expr | None)) -> None;
+    def _defer_block_binds(target: (Expr | None), block: UniNode) -> None;
+    def _flush_block_binds -> None;
+    def _block_binding_prior(target: Name, block: UniNode) -> (Symbol | None);
+    def _read_after(sym: Symbol, block: UniNode, until: (UniNode | None)) -> bool;
     def _check_immutable_write(
         target: (Expr | None), rebind_scope: (UniNode | None) = None
     ) -> None;

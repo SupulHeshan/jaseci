@@ -63,9 +63,9 @@ impl UniNode._link(kid: Sequence[UniNode], roles: dict[type, any]) -> None {
     for k in kid {
         if k is not None {
             self +>:Kid:+> k;
-            kid_role = role_of.get(id(k));
-            if kid_role is not None and id(k) not in attached {
-                self._attach(k, kid_role);
+            role = role_of.get(id(k));
+            if role is not None and id(k) not in attached {
+                self._attach(k, role);
                 attached.add(id(k));
                 if extra_roles {
                     for extra in extra_roles.get(id(k), []) {
@@ -3788,10 +3788,7 @@ impl rebind_or_def_insert(
 }
 
 impl def_insert_unpacking(
-    nd: Expr,
-    sym_tab: UniScopeNode,
-    rebind_in_python_scope: bool = False,
-    adopt_enclosing: bool = True
+    nd: Expr, sym_tab: UniScopeNode, rebind_in_python_scope: bool = False
 ) -> None {
     if isinstance(nd, Name) {
         if rebind_in_python_scope {
@@ -3804,10 +3801,8 @@ impl def_insert_unpacking(
                 if ((outer := py_scope.lookup(nd.sym_name, deep=False)) is not None) {
                     outer.add_use(nd.name_spec);
                     record_cross_scope_rebind(py_scope, nd.sym_name, outer);
-                } elif adopt_enclosing {
-                    rebind_or_def_insert(nd, py_scope, single_decl='local var');
                 } else {
-                    py_scope.def_insert(nd, single_decl='local var');
+                    rebind_or_def_insert(nd, py_scope, single_decl='local var');
                 }
                 return;
             }
@@ -3816,15 +3811,11 @@ impl def_insert_unpacking(
     } elif isinstance(nd, (TupleVal, ListVal)) {
         for target_var in nd.values {
             if isinstance(target_var, Expr) {
-                def_insert_unpacking(
-                    target_var, sym_tab, rebind_in_python_scope, adopt_enclosing
-                );
+                def_insert_unpacking(target_var, sym_tab, rebind_in_python_scope);
             }
         }
     } elif (isinstance(nd, UnaryExpr) and (nd.op.name == Tok.STAR_MUL)) {
-        def_insert_unpacking(
-            nd.operand, sym_tab, rebind_in_python_scope, adopt_enclosing
-        );
+        def_insert_unpacking(nd.operand, sym_tab, rebind_in_python_scope);
     }
 }
 
@@ -4032,26 +4023,6 @@ impl bind_walrus_target(nd: BinaryExpr) -> None {
     }
 }
 
-impl bind_for_target(nd: InForStmt) -> None {
-    def_insert_unpacking(
-        nd.target,
-        nd.sym_tab,
-        rebind_in_python_scope=not nd.lends_elements(),
-        adopt_enclosing=False
-    );
-}
-
-impl bind_with_alias(nd: ExprAsItem) -> None {
-    if isinstance(nd.alias, Name) {
-        def_insert_unpacking(
-            nd.alias,
-            nd.alias.sym_tab,
-            rebind_in_python_scope=True,
-            adopt_enclosing=False
-        );
-    }
-}
-
 impl is_walrus(nd: UniNode) -> bool {
     return isinstance(nd, BinaryExpr)
         and isinstance(nd.op, Token)
@@ -4061,24 +4032,20 @@ impl is_walrus(nd: UniNode) -> bool {
 impl binding_sites_in(scope_root: UniNode) -> list[UniNode] {
     sites: list[UniNode] = [];
     sites.extend(scope_root.get_all_sub_nodes(Assignment));
-    sites.extend(scope_root.get_all_sub_nodes(InForStmt));
-    for item in scope_root.get_all_sub_nodes(ExprAsItem) {
-        if isinstance(item.alias, Name) {
-            sites.append(item);
-        }
-    }
     for expr in scope_root.get_all_sub_nodes(BinaryExpr) {
         if is_walrus(expr) {
             sites.append(expr);
         }
     }
-    sites.sort(key=binding_site_order);
+    sites.sort(
+        key=lambda (nd: UniNode) -> tuple[int, int, int, int] { return (
+            nd.loc.last_line,
+            nd.loc.col_end,
+            -nd.loc.first_line,
+            -nd.loc.col_start
+        ); }
+    );
     return sites;
-}
-
-impl binding_site_order(nd: UniNode) -> tuple[int, int, int, int] {
-    at = nd.collection if isinstance(nd, InForStmt) else nd;
-    return (at.loc.last_line, at.loc.col_end, -at.loc.first_line, -at.loc.col_start);
 }
 
 impl typed_rebind_names(nd: Assignment) -> list[Name] {

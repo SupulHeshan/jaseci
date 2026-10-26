@@ -3601,8 +3601,8 @@ impl JacAutoLintPass._impl_property_kind(nd: uni.ImplDef) -> str {
 
     spec = nd.spec if isinstance(nd.spec, uni.FuncSignature) else None;
     for role in ["property", "setter", "deleter"] {
-        pending_acc = pending.get(role);
-        acc_sig = pending_acc.signature if pending_acc is not None else None;
+        acc = pending.get(role);
+        acc_sig = acc.signature if acc is not None else None;
         if (
             isinstance(acc_sig, uni.FuncSignature)
             and (spec is not None)

@@ -5149,8 +5149,8 @@ impl NativeBuiltinEmitter._emit_extreme(
     }
     helpers: (dict[str, any] | None) = None;
     if len(args) == 1 {
-        for (key, list_ty) in p.list_types.items() {
-            if args[0].type == list_ty.as_pointer() {
+        for (key, ty) in p.list_types.items() {
+            if args[0].type == ty.as_pointer() {
                 helpers = p.list_helpers.get(key);
                 break;
             }

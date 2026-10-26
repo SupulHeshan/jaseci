@@ -24,8 +24,8 @@ impl NaIRGenPass._codegen_tuple_val(nd: uni.TupleVal) -> (ir.Value | None) {
     }
     _ret_direct = isinstance(nd.parent, uni.ReturnStmt);
     moved_locals: set[str] = set();
-    for val_node in nd.values {
-        v = self._codegen_expr(val_node);
+    for val in nd.values {
+        v = self._codegen_expr(val);
         if v is None {
             return None;
         }
@@ -39,7 +39,7 @@ impl NaIRGenPass._codegen_tuple_val(nd: uni.TupleVal) -> (ir.Value | None) {
 
         _owns = self._is_owned(v);
         if _in_return and self._is_reference_type(v.type) and not _owns {
-            local_name = val_node.sym_name if isinstance(val_node, uni.Name) else "";
+            local_name = val.sym_name if isinstance(val, uni.Name) else "";
             is_named_local = bool(local_name)
                 and local_name in self.local_vars
                 and local_name not in self.param_vars;

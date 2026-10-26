@@ -419,11 +419,6 @@ walker TypeEvaluator {
     def _get_type_of_symbol(symbol: Symbol) -> TypeBase;
     def _get_type_of_symbol_decl(symbol: Symbol, decl: NameAtom) -> TypeBase;
     def _get_type_of_name_binding(symbol: Symbol, node_: Name) -> TypeBase;
-    def _narrow_on_store(
-        declared_type: TypeBase, assigned_type: TypeBase, flat: bool
-    ) -> (TypeBase | None);
-
-    def _for_target_store_type(loop: InForStmt, key: str) -> (TypeBase | None);
     def _as_final_form(ty: TypeBase) -> (ClassType | None);
     def _final_declared_type(
         annotation_type: TypeBase, symbol: (Symbol | None), value: (Expr | None)

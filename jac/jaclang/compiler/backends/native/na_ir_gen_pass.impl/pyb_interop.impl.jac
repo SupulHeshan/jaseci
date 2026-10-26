@@ -750,16 +750,16 @@ impl NaIRGenPass._pyb_build_args(
         marshalled.append(o);
     }
     kw_pairs: list[tuple[str, ir.Value]] = [];
-    for kwpair in kwp {
-        v = self._codegen_expr(kwpair.value);
+    for kw in kwp {
+        v = self._codegen_expr(kw.value);
         if v is None {
             return None;
         }
-        o = self._pyb_to_py(kwpair.value, v);
+        o = self._pyb_to_py(kw.value, v);
         if o is None {
             return None;
         }
-        _kw_key = kwpair.key;
+        _kw_key = kw.key;
         assert _kw_key is not None;
         kw_pairs.append((_kw_key.sym_name, o, ));
     }

@@ -1,33 +1,17 @@
-"""A `for` target that rebinds an existing local writes that local (#9972).
+"""A `for` target that rebinds an existing local keeps Python's values (#9972).
 
-The loop variable is the function's variable, not a loop-only one, so after
-the loop the name holds the last element, and a zero-iteration loop leaves
-the earlier value in place. Each case rebinds with a type the checker
-accepts but whose native representation differs from the slot's.
+After the loop the name holds the last element, and a zero-iteration loop
+leaves the earlier value in place. The cases rebind with a type the checker
+accepts, including one whose native representation differs from the
+earlier value's (an int element over a float local).
 """
-
-obj Base {
-    has n: int = 0;
-}
-
-obj Derived(Base) {
-    has extra: int = 100;
-}
 
 def float_slot_int_elems -> float {
     x: float = 0.5;
     for x in [1, 2] {
-        x = x + 0.0;
+        print(x);
     }
     return x * 1.5;
-}
-
-def base_slot_derived_elems -> int {
-    b: Base = Base(n=1);
-    for b in [Derived(n=2), Derived(n=3)] {
-        print(b.extra);
-    }
-    return b.n;
 }
 
 def last_element_survives_the_loop -> int {

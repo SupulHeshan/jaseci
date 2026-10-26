@@ -464,9 +464,7 @@ impl SymTabBuildPass.exit_iter_for_stmt with IterForStmt exit {
 
 impl SymTabBuildPass.enter_in_for_stmt with InForStmt entry {
     self.push_scope_and_link(here);
-    if here.find_parent_of_type(ImplDef) is None {
-        bind_for_target(here);
-    }
+    def_insert_unpacking(here.target, here.sym_tab);
 }
 
 impl SymTabBuildPass.exit_in_for_stmt with InForStmt exit {
@@ -498,8 +496,8 @@ impl SymTabBuildPass.exit_with_stmt with WithStmt exit {
 }
 
 impl SymTabBuildPass.exit_expr_as_item with ExprAsItem exit {
-    if here.find_parent_of_type(ImplDef) is None {
-        bind_with_alias(here);
+    if (here.alias and isinstance(here.alias, Name)) {
+        here.alias.sym_tab.def_insert(here.alias, single_decl='context var');
     }
 }
 

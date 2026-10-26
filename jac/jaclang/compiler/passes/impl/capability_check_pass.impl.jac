@@ -392,12 +392,12 @@ impl native_capability_violations(
         }
     }
 
-    for native_stmt in _native_stmts {
-        if isinstance(native_stmt, Import) {
+    for stmt in _native_stmts {
+        if isinstance(stmt, Import) {
             continue;
         }
 
-        work: list[UniNode] = [native_stmt];
+        work: list[UniNode] = [stmt];
         while work {
             nd = work.pop();
             if isinstance(nd, Import) {

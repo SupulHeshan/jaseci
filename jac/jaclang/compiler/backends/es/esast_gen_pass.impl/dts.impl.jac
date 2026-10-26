@@ -670,13 +670,11 @@ impl EsastGenPass._emit_boundary_type_stubs(nd: uni.Module) -> list[es.Statement
         if binding.kind != 'type' {
             continue;
         }
-        ret_info = manifest.boundary_types_for(binding.type_scope).get(
-            binding.ret_type
-        );
-        if ret_info is None {
+        info = manifest.boundary_types_for(binding.type_scope).get(binding.ret_type);
+        if info is None {
             continue;
         }
-        type_name = self._boundary_type_name(ret_info);
+        type_name = self._boundary_type_name(info);
         if local_name != type_name {
             stubs.append(
                 es.VariableDeclaration(

@@ -349,12 +349,10 @@ impl TypeEvaluator._get_type_of_expression_core(
                 tuple_inst = self._convert_to_instance(self.prefetch.tuple_class);
                 if isinstance(tuple_inst, ClassType) and expr.values {
                     elem_types_t: list[TypeBase] = [];
-                    for tuple_part in expr.values {
+                    for _val in expr.values {
                         et = self._container_value_type(
                             self.get_type_of_expression(
-                                tuple_part.value
-                                    if isinstance(tuple_part, KWPair)
-                                    else tuple_part
+                                _val.value if isinstance(_val, KWPair) else _val
                             ),
                             expr
                         );
@@ -4909,21 +4907,6 @@ impl TypeEvaluator._get_type_from_flow_node(
             continue;
         }
 
-        if isinstance(pred, InForStmt) and pred.body and flow_node is pred.body[0] {
-            bound = self._for_target_store_type(pred, key);
-            if bound is not None {
-                narrowed = None
-                    if isinstance(bound, UnknownType)
-                    else self._narrow_on_store(target.declared_type, bound, True);
-                if narrowed is not None {
-                    incoming_types.append(narrowed);
-                } else {
-                    has_unnarrowed_pred = True;
-                }
-                continue;
-            }
-        }
-
         if isinstance(pred, (WhileStmt, ForeverStmt, InForStmt, IterForStmt))
             and self._loop_body_writes_target(pred, target) {
             if (
@@ -5070,9 +5053,44 @@ impl TypeEvaluator._get_type_from_flow_node(
                     assigned_type is not None
                     and not isinstance(assigned_type, UnknownType)
                 ) {
-                    narrowed_from_assignment = self._narrow_on_store(
-                        target.declared_type, assigned_type, flat_target_matched
+                    declared_type = target.declared_type;
+                    assigned_type = self._widen_literal_for_declaration(assigned_type);
+
+                    _decl_extern = (
+                        isinstance(declared_type, ClassType)
+                        and declared_type.is_class_instance()
+                        and isinstance(declared_type.shared.symbol_table, Archetype)
+                        and declared_type.shared.symbol_table.find_parent_of_type(
+                            Import
+                        )
+                            is not None
                     );
+                    import from jaclang.compiler.types.fixed_width { numeric_name_of }
+                    _decl_num = numeric_name_of(declared_type);
+                    _assigned_num = numeric_name_of(assigned_type);
+                    if _decl_extern {
+                        narrowed_from_assignment = None;
+                    } elif _decl_num is not None and _assigned_num is not None {
+                        narrowed_from_assignment = None;
+                    } elif self.is_none_type(declared_type) {
+                        narrowed_from_assignment = assigned_type;
+                    } elif (
+                        self.assign_type(assigned_type, declared_type)
+                        and not self.assign_type(declared_type, assigned_type)
+                    ) {
+                        narrowed_from_assignment = assigned_type;
+                    } elif (
+                        flat_target_matched
+                        and self.is_explicit_any(assigned_type)
+                        and self._union_contains_none(declared_type)
+                    ) {
+                        none_cls = self.prefetch.none_type_class;
+                        if none_cls is not None {
+                            narrowed_from_assignment = self.exclude_type_from_union(
+                                declared_type, self._convert_to_instance(none_cls)
+                            );
+                        }
+                    }
                 }
                 if narrowed_from_assignment is not None {
                     incoming_types.append(narrowed_from_assignment);
@@ -5208,58 +5226,6 @@ impl TypeEvaluator._if_exit_type(
         return arm_types[0];
     }
     return self._union_narrowed_types(arm_types);
-}
-
-impl TypeEvaluator._narrow_on_store(
-    declared_type: TypeBase, assigned_type: TypeBase, flat: bool
-) -> (TypeBase | None) {
-    assigned_type = self._widen_literal_for_declaration(assigned_type);
-    if isinstance(declared_type, ClassType)
-        and declared_type.is_class_instance()
-        and isinstance(declared_type.shared.symbol_table, Archetype)
-        and declared_type.shared.symbol_table.find_parent_of_type(Import) is not None {
-        return None;
-    }
-    import from jaclang.compiler.types.fixed_width { numeric_name_of }
-    if numeric_name_of(declared_type) is not None
-        and numeric_name_of(assigned_type) is not None {
-        return None;
-    }
-    if self.is_none_type(declared_type) {
-        return assigned_type;
-    }
-    if self.assign_type(assigned_type, declared_type)
-        and not self.assign_type(declared_type, assigned_type) {
-        return assigned_type;
-    }
-    if flat
-        and self.is_explicit_any(assigned_type)
-        and self._union_contains_none(declared_type) {
-        none_cls = self.prefetch.none_type_class;
-        if none_cls is not None {
-            return self.exclude_type_from_union(
-                declared_type, self._convert_to_instance(none_cls)
-            );
-        }
-    }
-    return None;
-}
-
-impl TypeEvaluator._for_target_store_type(
-    loop: InForStmt, key: str
-) -> (TypeBase | None) {
-    pending: list[UniNode] = [loop.target];
-    while pending {
-        cur = pending.pop();
-        if isinstance(cur, Name) {
-            if cur.value == key and cur.sym is not None {
-                return self._get_type_of_name_binding(cur.sym, cur);
-            }
-        } elif isinstance(cur, (TupleVal, ListVal)) {
-            pending.extend(cur.values);
-        }
-    }
-    return None;
 }
 
 impl TypeEvaluator._loop_body_writes_target(

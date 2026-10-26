@@ -210,10 +210,9 @@ impl collect_placement_rows(prog: JacProgram) -> dict[str, dict[str, any]] {
             );
         }
         crossings = 0;
-        for element in mod.elements {
+        for stmt in mod.elements {
             if not (
-                isinstance(element, uni.Import)
-                and element.code_context == CodeContext.CLIENT
+                isinstance(stmt, uni.Import) and stmt.code_context == CodeContext.CLIENT
             ) {
                 continue;
             }
@@ -226,10 +225,10 @@ impl collect_placement_rows(prog: JacProgram) -> dict[str, dict[str, any]] {
                 import from jaclang.compiler.symbol_utils {
                     resolve_import_source_module
                 }
-                if is_client_boundary_import(element) {
-                    src = resolve_import_source_module(prog, element);
+                if is_client_boundary_import(stmt) {
+                    src = resolve_import_source_module(prog, stmt);
                     if src is not None {
-                        for item in element.items {
+                        for item in stmt.items {
                             verdict = classify_client_import_item(src, item);
                             if verdict == ClientImportVerdict.BRIDGED {
                                 crossings += 1;

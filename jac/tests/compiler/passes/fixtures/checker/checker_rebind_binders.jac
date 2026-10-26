@@ -1,10 +1,11 @@
 """Rebinds the checker accepts, and the type each one leaves (#9972).
 
-A `for` target writes the function's variable: a compatible element type is
-accepted and narrows the name inside the loop body, the variable is still
-live after the loop, and the usual exemptions hold (`_`, a `None` sentinel).
-A loop in a nested function, or one reusing a module `glob` name, binds its
-own function's local, as Python does.
+A compatible element type is accepted and is the name's type inside the
+loop body, the variable is still live after the loop, and the usual
+exemptions hold (`_`, a `None` sentinel). Loops that reuse a name with no
+read after them, or a loop followed by an assignment with no read between,
+are sound. A loop in a nested function, or one reusing a module `glob`
+name, binds its own function's local, as Python does.
 """
 
 obj Base {
@@ -60,6 +61,23 @@ def underscore_is_reusable {
     }
 }
 
+def sibling_loops_reuse_a_name {
+    for v in [1, 2] {
+        print(v + 1);
+    }
+    for v in ["a", "b"] {
+        print(v.upper());
+    }
+}
+
+def later_assignment_without_a_read_between -> int {
+    for t in ["a", "b"] {
+        print(t);
+    }
+    t = 5;
+    return t;
+}
+
 def the_variable_outlives_the_loop -> str {
     for word in ["a", "b"] {
         print(word);
@@ -113,6 +131,8 @@ with entry {
     print(subclass_elements(), optional_narrows_in_the_body());
     print(unpacking_narrows_in_the_body(), none_sentinel_evolves());
     underscore_is_reusable();
+    sibling_loops_reuse_a_name();
+    print(later_assignment_without_a_read_between());
     print(the_variable_outlives_the_loop());
     print(nested_function_loop_is_its_own_local(), glob_name_as_a_loop_variable());
     print(Holder().collect([1, 2]));

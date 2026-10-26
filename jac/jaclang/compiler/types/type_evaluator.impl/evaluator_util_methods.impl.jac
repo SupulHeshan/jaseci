@@ -2497,8 +2497,8 @@ impl TypeEvaluator._collect_return_types(
         if isinstance(stmt, MatchStmt) {
             if stmt.cases {
                 all_return = True;
-                for match_case in stmt.cases {
-                    mc: MatchCase = match_case;
+                for `case in stmt.cases {
+                    mc: MatchCase = `case;
                     if not self._collect_return_types(list(mc.body), out) {
                         all_return = False;
                     }
@@ -2514,8 +2514,8 @@ impl TypeEvaluator._collect_return_types(
             if stmt.cases {
                 has_default = False;
                 all_return = True;
-                for switch_case in stmt.cases {
-                    sc: SwitchCase = switch_case;
+                for `case in stmt.cases {
+                    sc: SwitchCase = `case;
                     if sc.pattern is None {
                         has_default = True;
                     }

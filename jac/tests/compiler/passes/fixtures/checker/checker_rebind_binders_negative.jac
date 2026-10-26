@@ -1,8 +1,10 @@
 """Every binder that rebinds a local is checked against its type (#9972).
 
 A `for` target, an unpacking target, a walrus and a `with` alias each write
-the function's variable, so rebinding it to an incompatible type is E1001,
-the same as `title = "Top"`. One error per function, on the marked line.
+the function's one variable of that name, so rebinding it to an incompatible
+type is E1001, the same as `title = "Top"`. Loops that only reuse a name are
+reported when a later read would see the other loop's type. One error per
+function, on the marked line.
 """
 
 obj Label {
@@ -32,13 +34,14 @@ def for_rebinds_a_parameter(title: Label) -> str {
     return "";
 }
 
-def two_loops_reuse_a_name {
+def two_loops_reuse_a_name_read_after {
     for x in [1, 2] {
         print(x);
     }
     for x in ["a", "b"] {  # <-- E1001
         print(x);
     }
+    print(x);
 }
 
 def unpacking_assignment {
@@ -61,6 +64,15 @@ def with_alias {
     }
 }
 
+def read_before_a_later_assignment {
+    for t in ["a"] {  # <-- E1001
+        print(t);
+    }
+    print(t);
+    t = 5;
+    print(t);
+}
+
 obj Holder {
     def build -> None;
 }
@@ -74,7 +86,8 @@ impl Holder.build -> None {
 
 with entry {
     print(for_tuple_target(), for_single_target(), for_rebinds_a_parameter(Label()));
-    two_loops_reuse_a_name();
+    two_loops_reuse_a_name_read_after();
+    read_before_a_later_assignment();
     unpacking_assignment();
     walrus_rebind();
     with_alias();

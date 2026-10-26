@@ -375,8 +375,7 @@ impl collect_member_syms(
             return gathered;
         }
         for kid in s.kid_scope {
-            if UniScopeNode.is_python_scoping(kid)
-                or isinstance(kid, (ListCompr, DictCompr)) {
+            if UniScopeNode.is_python_scoping(kid) {
                 continue;
             }
             if isinstance(kid, (ElseStmt, ElseIf)) and isinstance(kid.parent, IfStmt) {
