@@ -48,6 +48,21 @@ def first_float_from_int_arg(v: float) -> float {
     return Holder[float](val=v).first("k", 7);
 }
 
+def echo_with_empty_spread(v: int) -> int {
+    extra: dict[str, int] = {};
+    return Holder[int](val=5).echo("k", v, **extra);
+}
+
+def echo_alt_from_spread(v: int) -> int {
+    extra: dict[str, int] = {"alt": v};
+    return Holder[int](val=5).echo("k", **extra);
+}
+
+def echo_float_alt_from_int_spread(v: int) -> float {
+    extra: dict[str, int] = {"alt": v};
+    return Holder[float](val=1.5).echo("k", **extra);
+}
+
 def first_str_len(n: int) -> int {
     return len(Holder[str](val="x" * n).first(1, "y"));
 }

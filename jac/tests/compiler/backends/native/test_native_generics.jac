@@ -196,6 +196,21 @@ test "mono: a generic method on a generic archetype keeps the archetype's params
     assert slen(4) == 4 , "a pointer-typed V";
 }
 
+test "mono: a ** spread call boxes the generic archetype's V arguments" {
+    # A `**` spread binds through a separate path; it must box a `V`
+    # argument like a plain call does, both a positional one and one
+    # taken from the unpacked mapping.
+    (eng, _) = compile_native("generics_owner_methods.jac");
+    spread = get_func(eng, "echo_with_empty_spread", ctypes.c_int64, ctypes.c_int64);
+    assert spread(7) == 7 , "a positional V next to a ** spread";
+    from_map = get_func(eng, "echo_alt_from_spread", ctypes.c_int64, ctypes.c_int64);
+    assert from_map(9) == 9 , "a V taken from the unpacked mapping";
+    as_float = get_func(
+        eng, "echo_float_alt_from_int_spread", ctypes.c_double, ctypes.c_int64
+    );
+    assert as_float(3) == 3.0 , "a mapping value boxed as the receiver's V";
+}
+
 test "iter flow: generator through a monomorphized Iterator[T] param" {
     # #7626 B4: JacIter is type-erased, so iterator values pass through
     # monomorphized signatures; the element type resolves per site.
