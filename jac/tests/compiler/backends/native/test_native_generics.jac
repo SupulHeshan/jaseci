@@ -176,6 +176,26 @@ test "mono: generic method on an archetype stamps per call site" {
     assert g(0) == 3 , "picks 'yyy'";
 }
 
+test "mono: a generic method on a generic archetype keeps the archetype's params erased" {
+    # The archetype's `V` is boxed in its fields, so the stamped method
+    # must not solve `V` from an argument: `self.val` came back as the
+    # box's address, and `get[K]` (no `V` argument) used to refuse.
+    (eng, _) = compile_native("generics_owner_methods.jac");
+    first = get_func(eng, "first_int", ctypes.c_int64, ctypes.c_int64);
+    assert first(5) == 5 , "self.val is unboxed, not its address";
+    pick = get_func(eng, "pick_int", ctypes.c_int64, ctypes.c_int64, ctypes.c_bool);
+    assert pick(5, True) == 5 , "the field arm of the ternary";
+    assert pick(5, False) == 7 , "the V-typed argument arm";
+    echo = get_func(eng, "echo_int", ctypes.c_int64, ctypes.c_int64);
+    assert echo(9) == 9 , "a V-typed argument round-trips";
+    get = get_func(eng, "get_int", ctypes.c_int64, ctypes.c_int64);
+    assert get(11) == 11 , "a V return with no V argument lowers natively";
+    flt = get_func(eng, "first_float_from_int_arg", ctypes.c_double, ctypes.c_double);
+    assert flt(2.5) == 2.5 , "V comes from the receiver, not the int argument";
+    slen = get_func(eng, "first_str_len", ctypes.c_int64, ctypes.c_int64);
+    assert slen(4) == 4 , "a pointer-typed V";
+}
+
 test "iter flow: generator through a monomorphized Iterator[T] param" {
     # #7626 B4: JacIter is type-erased, so iterator values pass through
     # monomorphized signatures; the element type resolves per site.

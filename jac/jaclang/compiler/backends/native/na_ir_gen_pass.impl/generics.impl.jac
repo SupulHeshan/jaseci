@@ -581,6 +581,17 @@ impl NaIRGenPass._instantiate_generic_method(
         );
         return None;
     }
+    _erased_tvs = set(self.arch_type_params.get(owner_arch) or []);
+    for tp in (ability.type_params or []) {
+        if tp?.name is not None {
+            _erased_tvs.discard(tp.name.value);
+        }
+    }
+    solution = {
+        k: v
+        for (k, v) in solution.items()
+        if k not in _erased_tvs
+    };
     _mangles: dict[str, str] = {};
     for (k, v) in solution.items() {
         _mangles[k] = native_type_key(v) if v?.mangle else "any";
