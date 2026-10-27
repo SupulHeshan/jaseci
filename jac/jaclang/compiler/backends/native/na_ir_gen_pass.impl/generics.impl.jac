@@ -631,9 +631,9 @@ impl NaIRGenPass._stamp_mono_method(
     }
     param_types: list[ir.Type] = [struct_type.as_pointer()];
     for p in sig.get_parameters() {
-        param_types.append(self._resolve_jac_type(p));
+        param_types.append(self._resolve_sig_type(p));
     }
-    ret_type = self._resolve_jac_type(sig.return_type);
+    ret_type = self._resolve_sig_type(sig.return_type);
     fnty = ir.FunctionType(ret_type, param_types);
     fn = ir.Function(self.llvm_module, fnty, name=spec_name);
     fn.linkage = "private";
