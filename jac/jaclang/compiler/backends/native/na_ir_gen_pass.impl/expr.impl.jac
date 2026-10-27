@@ -73,7 +73,7 @@ impl NaIRGenPass._codegen_expr(nd: (uni.UniNode | None)) -> (ir.Value | None) {
     } elif isinstance(nd, uni.UnaryExpr) {
         _result = self._codegen_unary(nd);
     } elif isinstance(nd, uni.FuncCall) {
-        _result = self._void_call_value(nd, self._codegen_call(nd));
+        _result = self._codegen_call(nd);
     } elif isinstance(nd, uni.AtomTrailer) {
         _result = self._codegen_atom_trailer(nd);
     } elif isinstance(nd, uni.BoolExpr) {
@@ -194,32 +194,6 @@ impl NaIRGenPass._codegen_required(nd: (uni.UniNode | None)) -> (ir.Value | None
         self.emit(E5092, node_override=nd, kind="expression", name=type(nd).__name__);
     }
     return val;
-}
-
-impl NaIRGenPass._void_call_value(
-    nd: uni.FuncCall, value: (ir.Value | None)
-) -> (ir.Value | None) {
-    if value is None or not isinstance(value.type, ir.VoidType) {
-        return value;
-    }
-    cur: uni.UniNode = nd;
-    up = nd.parent;
-    while isinstance(up, (uni.AtomUnit, uni.AwaitExpr, uni.ConcurrentExpr, uni.CfgExpr))
-        or isinstance(up, uni.IfElseExpr)
-        and cur is not up.condition {
-        cur = up;
-        up = up.parent;
-    }
-    if isinstance(up, (uni.ExprStmt, uni.Assignment, uni.ReturnStmt, uni.LambdaExpr)) {
-        return value;
-    }
-    self.emit(
-        E5092,
-        node_override=nd,
-        kind="the value of a call returning None",
-        name=self._get_name(nd.target) or "call"
-    );
-    return None;
 }
 
 impl NaIRGenPass._current_fn_key -> (str | None) {

@@ -111,9 +111,7 @@ test "a caller using a None call result as a value refuses with E5092" {
     seams = [str(s) for s in coverage[os.path.realpath(path)]["seams"]];
     for (caller, refusal) in (
         ("caller", "binding a void-typed value"),
-        ("method_caller", "binding a void-typed value"),
-        ("str_caller", "call returning None"),
-        ("cond_caller", "call returning None")
+        ("method_caller", "binding a void-typed value")
     ) {
         assert any(
             s.startswith(f"{caller}: [E5092]") and refusal in s for s in seams

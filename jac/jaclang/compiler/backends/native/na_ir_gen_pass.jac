@@ -1602,10 +1602,6 @@ walker NaIRGenPass(CompilerPass) {
     def _codegen_try(nd: uni.TryStmt) -> None;
     def _codegen_expr(nd: (uni.UniNode | None)) -> (ir.Value | None);
     def _codegen_required(nd: (uni.UniNode | None)) -> (ir.Value | None);
-    def _void_call_value(
-        nd: uni.FuncCall, value: (ir.Value | None)
-    ) -> (ir.Value | None);
-
     def _current_fn_key -> (str | None);
     def _mark_local_unlowered(name: str) -> None;
     def _mark_targets_unlowered(targets: list[uni.UniNode]) -> None;

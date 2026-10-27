@@ -14,8 +14,6 @@ def sink(x: int) -> None {
     return;
 }
 
-def bare_sink(x: int) {}
-
 def caller(x: int) -> int {
     y = sink(x);
     return x;
@@ -24,12 +22,4 @@ def caller(x: int) -> int {
 def method_caller(s: Sink) -> int {
     y = s.annotated();
     return 1;
-}
-
-def str_caller(x: int) -> str {
-    return str(bare_sink(x));
-}
-
-def cond_caller(x: int) -> int {
-    return 1 if bare_sink(x) else 2;
 }
