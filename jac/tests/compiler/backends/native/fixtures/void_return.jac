@@ -10,7 +10,8 @@ parse -- taking the whole module's codegen with it.
 still has to evaluate its expression before discarding the value.
 `discard_forms`, `await_form` and `flow_form` drop a void call's result in
 every position that does so, and `reassigned` stores it into a declared
-`object | None` slot as None; they must all stay native.
+`object | None` slot as None; they must all stay native. `compare_forms`
+compares a void call with None directly, which must answer as Python does.
 """
 
 glob COUNTER: int = 0;
@@ -74,8 +75,23 @@ def outer {
     inner();
 }
 
+def noop {}
+
+def compare_forms -> bool {
+    b = Box();
+    return noop() is None
+        and not (noop() is not None)
+        and noop() == None
+        and free_fn() is None
+        and b.touch() is None
+        and b.bare_touch() is None;
+}
+
 def run -> int {
     COUNTER = 0;
+    if not compare_forms() {
+        return -1;
+    }
     b = Box();
     b.touch();
     b.touch();

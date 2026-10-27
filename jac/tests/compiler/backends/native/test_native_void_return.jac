@@ -93,7 +93,8 @@ test "the returned expression is still evaluated for its effects" {
     run = ctypes.CFUNCTYPE(ctypes.c_int64)(addr);
     assert run() == 305 , (
         "three `touch`-style calls and five `bump()` calls (a `return bump()`, a "
-        "nested def, parens, a discarded if/else, a reassignment): n == 3, COUNTER == 5"
+        "nested def, parens, a discarded if/else, a reassignment): n == 3, COUNTER == 5; "
+        "-1 means a void call compared with None answered wrongly"
     );
 }
 

@@ -1074,6 +1074,22 @@ impl NaIRGenPass._codegen_compare_link(
 ) -> (ir.Value | None) {
     _cmp_left_orig = left;
     _cmp_right_orig = right;
+    if op in (Tok.KW_IS, Tok.KW_ISN, Tok.EE, Tok.NE)
+        and (
+            isinstance(left.type, ir.VoidType) or isinstance(right.type, ir.VoidType)
+        ) {
+        _void_left = isinstance(left.type, ir.VoidType);
+        _other = right if _void_left else left;
+        _other_node = right_node if _void_left else left_node;
+        if isinstance(_other_node, uni.CfgExpr) {
+            _other_node = _other_node.expr;
+        }
+        if not isinstance(_other_node, uni.Null)
+            and not isinstance(_other.type, ir.VoidType) {
+            return None;
+        }
+        return ir.Constant(ir.IntType(64), 1 if op in (Tok.KW_IS, Tok.EE) else 0);
+    }
     if op in (Tok.EE, Tok.NE) {
         left = _class_typed_operand(self, left, left_node);
         right = _class_typed_operand(self, right, right_node);
