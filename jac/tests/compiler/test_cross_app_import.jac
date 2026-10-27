@@ -211,6 +211,9 @@ test "direct, aliased and re-imported client RPC calls retain the service route"
         assert '"app": "social"' in call , call;
     }
     assert "class Badge" in js , js;
+    assert "const Medal = Badge;" in js , (
+        "a type renamed by both the entry and the client binds its declaration: " + js
+    );
     social_path = os.path.realpath(fixture("social_app.jac"));
     assert all(
         os.path.realpath(path) != social_path

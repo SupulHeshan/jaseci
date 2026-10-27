@@ -554,10 +554,14 @@ impl BoundaryAnalysisPass._register_client_bridged_import(nd: Import) -> None {
                 and classify_client_import_item(source_mod, item, self.prog)
                     != ClientImportVerdict.CLIENT {
                 decl = import_item_declaration(source_mod, item, self.prog);
+                type_name = "";
                 if isinstance(decl, (Archetype, Enum)) {
                     source_mod = decl.find_parent_of_type(Module) or source_mod;
+                    type_name = decl.name.value;
                 }
-                self._register_type_import(nd, item, source_mod, InteropContext.CLIENT);
+                self._register_type_import(
+                    nd, item, source_mod, InteropContext.CLIENT, type_name
+                );
             }
             continue;
         }
@@ -584,9 +588,11 @@ impl BoundaryAnalysisPass._register_type_import(
     nd: Import,
     item: ModuleItem,
     source_mod: (Module | None),
-    caller_ctx: InteropContext
+    caller_ctx: InteropContext,
+    type_name: str = ""
 ) -> bool {
-    info = self._collect_boundary_type(item.name.value, source_mod);
+    type_name = type_name or item.name.value;
+    info = self._collect_boundary_type(type_name, source_mod);
     if info is None or info.kind not in ('obj', 'enum', 'node', 'edge') {
         return False;
     }
@@ -596,10 +602,10 @@ impl BoundaryAnalysisPass._register_type_import(
     }
     local_name = item.alias.sym_name if item.alias else item.name.value;
     self.module.gen.interop_manifest.bindings[local_name] = InteropBinding(
-        name=item.name.value,
+        name=type_name,
         source_context=InteropContext.SERVER,
         callers={caller_ctx},
-        ret_type=item.name.value,
+        ret_type=type_name,
         source_module=nd.from_loc.base_module_name if nd.from_loc else '',
         type_scope=(source_mod or self.module).loc.mod_path,
         kind='type',

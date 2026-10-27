@@ -1,8 +1,10 @@
 """File-rooted `social` service app: the provider side of every bridge below."""
 
 import from typing { Generator }
+include social_beacon;
 import from social_ops {
     Badge,
+    Badge as Emblem,
     Relay,
     Relay as RelayAlias,
     Sweep,

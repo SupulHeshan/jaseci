@@ -532,6 +532,17 @@ impl _declaration_named(
         }
         cur = cur.parent;
     }
+    origin = uni.resolved_decl_of(sym);
+    if origin is not None
+        and origin.loc.mod_path != mod.loc.mod_path
+        and os.path.isfile(origin.loc.mod_path) {
+        return _declaration_named(
+            prog.load_dependency_module(origin.loc.mod_path, need_tree=True),
+            origin.sym_name,
+            prog,
+            seen
+        );
+    }
     return None;
 }
 
