@@ -293,7 +293,7 @@ graph import {
             | project.compiler_host.ProjectHost.note
             | project.config.JacConfig._write_toml_text
             | project.template_registry._register_builtin_client_templates { console },
-        project.config._parse_toml_data
+        project.config._apply_serve_table
             | project.template_registry._register_builtin_shadcn_template { console },
     ]
     type cli.console ++> runtime.runtime { JacConsole as ConsoleImpl }

@@ -10,7 +10,11 @@ glob CAPABILITY_SECTIONS: tuple[str, ...] = (
          "client",
          "mcp",
          "desktop"
-     );
+     ),
+     SERVE_MOVED_KEYS: dict[str, str] = {
+         'base_route_app': '[apps.<name>]; the served app is at /',
+         'cl_route_prefix': '[apps.<name>] route; other client apps are at /cl/<app-name>/'
+     };
 
 obj PersonConfig {
     has name: str = "",
@@ -410,6 +414,8 @@ def table_value(current: any, raw: any, label: str) -> any;
 def apply_table(
     target: object, table: dict[str, any], section: str, moved: dict[str, str]
 ) -> None;
+
+def _apply_serve_table(serve: ServeConfig, raw: any, section: str) -> None;
 
 def _parse_persons(raw: list[object]) -> list[PersonConfig];
 
