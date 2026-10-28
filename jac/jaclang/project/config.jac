@@ -166,6 +166,8 @@ obj ServeConfig {
         auth: dict[str, any] = {};
 }
 
+obj ServeConfigError(ValueError) {}
+
 obj FormatConfig {
     has outfile: str = "";
 }
@@ -402,6 +404,12 @@ obj JacConfig {
 }
 
 def _parse_toml_data(data: dict[str, any], toml_path: Path | None = None) -> JacConfig;
+
+def table_value(current: any, raw: any, label: str) -> any;
+
+def apply_table(
+    target: object, table: dict[str, any], section: str, moved: dict[str, str]
+) -> None;
 
 def _parse_persons(raw: list[object]) -> list[PersonConfig];
 

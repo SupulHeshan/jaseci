@@ -2164,10 +2164,7 @@ graph import {
         scale.config.dev_config.resolve_experimental_pr
             | scale.injector.bundle.seal_timeout_setting { get_config_for_path },
         scale.config.dev_config.resolve_pinned_spec { get_config_for_path },
-        scale.deploy.target.kubernetes.manifest_builder | server.settings {
-            JacConfig,
-            ServeConfig
-        },
+        scale.deploy.target.kubernetes.manifest_builder { JacConfig, ServeConfig },
         scale.deploy.target.kubernetes.manifest_builder.ManifestBuilder._check_deploy_settings_resolve {
             get_config_for_path,
             report_env_findings
@@ -2177,6 +2174,7 @@ graph import {
         scale.tests.server.test_host_serving
             | scale.tests.server.test_served_app_route { set_config },
         server.session._database_config { DatabaseConfig, get_config_for_dir },
+        server.settings { JacConfig, ServeConfig, ServeConfigError, apply_table },
         server.static_files { find_project_root, get_config, get_config_for_dir },
         testing.test_runner._fresh_jac_state { get_explicit_config, set_config },
         toolchains.host.use_system_tools { use_system_toolchains },
@@ -2686,6 +2684,7 @@ graph import {
             | data.contracts
             | data.schema_rules
             | data.serializer
+            | project.config.apply_table
             | server.serving.model
             | server.settings { fields, is_record },
         byllm.schema | server.serving.coerce { is_record },
