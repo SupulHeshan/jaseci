@@ -1555,6 +1555,10 @@ graph import {
         | scale.server.jobs_ext
         | scale.tests.server.test_health_fail_soft
         | scale.tests.server.test_scheduler_endpoints { PgWireError }
+    data.query_planner ++> [
+        runtime.graph_utils.graph_neighbors_view { resolve_query_page },
+        runtime.graph_utils.graph_node_view { resolve_query_type_counts },
+    ]
     data.query_planner --> runtime.runtime.JacGraph.refs {
         LazyRefs,
         resolve_query,
@@ -1604,6 +1608,10 @@ graph import {
         | scale.tests.data.test_auth_cutover
         | server.shared_store.shared_store { PgStore }
     data.type_identity ++> [
+        runtime.graph_utils._graph_edge { storage_type },
+        runtime.graph_utils.graph_neighbors_view { storage_type },
+        runtime.graph_utils.graph_node_view { storage_type },
+        runtime.graph_utils.graph_type_named { storage_type },
         server.session.Session._materialize { ForeignType, resolution_scope },
         server.session.Session._serialize { storage_type, type_module },
     ]
@@ -2506,9 +2514,11 @@ graph import {
             NodeArchetype,
             WalkerAnchor
         },
-        compiler.native_compiler.NativeCompiler._register { NodeArchetype },
+        compiler.native_compiler.NativeCompiler._register
+            | data.query_planner._acl_residual { NodeArchetype },
         data.query_planner { Anchor, anchor_key },
-        data.query_planner._acl_pushdown_root { Archetype, Root },
+        data.query_planner._edge_residual { EdgeArchetype },
+        data.query_planner._trusted_names { Archetype, Root },
         data.serializer {
             Access,
             AccessLevel,
@@ -2559,7 +2569,6 @@ graph import {
             | compiler.types.type_evaluator
             | lib.jaclib { EdgeDir },
         data.dbcatalog.holds_no_data
-            | scale.admin.admin_portal
             | scale.server.websocket_ext
             | server.endpoints.colocated
             | server.endpoints.pages
@@ -2589,10 +2598,15 @@ graph import {
             WalkerArchetype as Walker
         },
         scale.memory.context.JScaleExecutionContext.init { PermissionDenied },
+        server.endpoints.pages.register_graph_endpoints.graph_neighbors {
+            EdgeArchetype,
+            NodeArchetype
+        },
+        server.endpoints.pages.register_graph_endpoints.graph_target
+            | server.server.ExecutionManager.spawn_walker_async { NodeArchetype },
         server.identity.identity_storage.IdentityStorage.create_user { Root },
         server.identity.identity_storage.IdentityStorage.ensure_user_by_id { Root },
         server.identity.identity_storage.IdentityStorage.reset_root { Root },
-        server.server.ExecutionManager.spawn_walker_async { NodeArchetype },
         server.server.ExecutionManager.spawn_walker_sync { NodeArchetype },
         server.server.ModuleIntrospector.target { WalkerArchetype },
         server.session._ancestry_of {
@@ -2625,19 +2639,19 @@ graph import {
         server.session { ReadOnlyRetry, TransactionLost, WriteConflict },
     ]
     runtime.graph_query ++> [
-        data.query_planner { GraphQuery, QPred },
-        data.sqlcompile { GraphQuery, QHop, QPred },
+        data.query_planner | data.sqlcompile { GraphQuery, QHop, QPred },
         lib.jaclib { GraphQuery, QHop, QOrder, QPred },
     ]
     runtime.graph_utils ++> [
-        scale.admin.admin_portal.JacAPIServerAdmin.admin_graph_data
-            | server.endpoints.pages.register_graph_endpoints.graph_data {
-            collect_node_connections
-        },
         scale.injector.binary { host_arch, host_os, release_arch },
         scale.injector.binary_injector
             | scale.tests.microservices.test_binary_injector { host_arch },
         scale.utils.vendor_wheels { release_arch },
+        server.endpoints.pages.register_graph_endpoints.graph_neighbors {
+            graph_neighbors_view,
+            graph_type_named
+        },
+        server.endpoints.pages.register_graph_endpoints.graph_node { graph_node_view },
         server.session.project_database { get_name },
     ]
     runtime.graph_walk ++> data.query_planner {
@@ -3494,7 +3508,6 @@ graph import {
             | client.targets.mobile_target
             | client.targets.web_target.WebTarget.build
             | dist.seal.bake_serve_payloads
-            | scale.admin.admin_portal
             | server.endpoints.pages
             | server.hmr.HotReloader._recompile_client_code
             | server.server.ModuleIntrospector._check_module_freshness
@@ -4323,6 +4336,7 @@ graph import {
     server.task_scheduler ++> [
         runtime.builtin.schedule { ScheduleSpec },
         scale.scheduler.scheduler { Scheduler, schedule_namespace, tick_of },
+        scale.server.extensions { RunOutcome },
         scale.tests.server.test_scheduler_multipod { ScheduleSpec, Scheduler, tick_of },
     ]
     server.transport ++> [
@@ -10388,7 +10402,7 @@ graph import compiler {
             | types.type_utils.primitive_type_name_of { JAC_TYPE_REGISTRY },
         backends.es.esast_gen_pass.EsastGenPass._ensure_emitters
             | backends.es.jac_runtime_js._build_types_runtime_js
-            | backends.native.na_ir_gen_pass.NaIRGenPass._c_scalar_llvm
+            | backends.native.na_ir_gen_pass.NaIRGenPass._anchor_immutable
             | c_interop.c_bytes_elem_shape
             | passes.type_checker_pass.TypeCheckPass._c_plain_data
             | passes.wasm_contract.value_contract
@@ -10396,28 +10410,34 @@ graph import compiler {
             JAC_TYPE_REGISTRY
         },
         backends.es.esast_gen_pass.EsastGenPass._primitive_type_ref
-            | backends.native.na_ir_gen_pass.NaIRGenPass._codegen_name
+            | backends.native.na_ir_gen_pass.NaIRGenPass._anchor_plain
             | c_interop.c_scalar_constant
             | passes.type_checker_pass.TypeCheckPass._stamp_fixed_width
             | types.type_evaluator.TypeEvaluator._extern_scalar_type {
             JAC_TYPE_REGISTRY
         },
         backends.es.esast_gen_pass.EsastGenPass.exit_archetype
-            | backends.native.na_ir_gen_pass.NaIRGenPass._codegen_sized_builtin_call
+            | backends.native.na_ir_gen_pass.NaIRGenPass._c_scalar_llvm
             | passes.type_checker_pass.TypeCheckPass.exit_archetype
             | types.type_evaluator.TypeEvaluator._is_typed_c_declaration {
             JAC_TYPE_REGISTRY
         },
         backends.es.esast_gen_pass.EsastGenPass.exit_raise_stmt
-            | backends.native.na_ir_gen_pass.NaIRGenPass._ensure_emitters
+            | backends.native.na_ir_gen_pass.NaIRGenPass._codegen_name
             | passes.type_checker_pass.TypeCheckPass.exit_type_alias {
             JAC_TYPE_REGISTRY
         },
         backends.es.esast_gen_pass._raised_exc_identity
-            | backends.native.na_ir_gen_pass.NaIRGenPass._get_exc_descendants {
+            | backends.native.na_ir_gen_pass.NaIRGenPass._codegen_sized_builtin_call {
             JAC_TYPE_REGISTRY
         },
         backends.native.na_ir_gen_pass { JacTypeEntry },
+        backends.native.na_ir_gen_pass.NaIRGenPass._ensure_emitters {
+            JAC_TYPE_REGISTRY
+        },
+        backends.native.na_ir_gen_pass.NaIRGenPass._get_exc_descendants {
+            JAC_TYPE_REGISTRY
+        },
         backends.native.na_ir_gen_pass.NaIRGenPass._get_or_register_exc_type {
             JAC_TYPE_REGISTRY
         },
@@ -11230,6 +11250,7 @@ graph import compiler.backends.native {
             FACT_TARGET
         },
         na_ir_gen_pass {
+            ALLOC_ID_MASK,
             CLASS_DISPLAY_OFF,
             CLASS_RECORD_ANCESTRY,
             CLASS_RECORD_STATICS,
@@ -11253,6 +11274,8 @@ graph import compiler.backends.native {
             NATIVE_COPY_FUNCS,
             NATIVE_OSPATH_FUNCS,
             NATIVE_OS_FUNCS,
+            POOL_CLASS_MASK,
+            POOL_CLASS_SHIFT,
             RC_BUFFERED_BIT,
             RC_COLOR_BLACK,
             RC_COLOR_GRAY,
@@ -14853,7 +14876,7 @@ graph import data {
         serializer.Serializer._serialize_attrs { merged_rules_for, repair_mode },
         serializer.Serializer.serialize_fields { merged_rules_for, repair_mode },
     ]
-    sqlcompile ++> query_planner { compile_query }
+    sqlcompile ++> query_planner { CompiledQuery, compile_query }
     storage.local_storage ++> storage { LocalStorage }
     storage.storage ++> storage { Storage }
     store ++> [
@@ -14862,6 +14885,8 @@ graph import data {
         sqlcompile { Store },
     ]
     type_identity ++> [
+        query_planner._trusted_names { storage_type },
+        query_planner.resolve_query_type_counts { storage_type },
         serializer {
             TypeResolutionError,
             UnavailableType,
@@ -15398,12 +15423,11 @@ graph import runtime {
         },
         context { NodeAnchor, PermissionDenied, Root },
         graph_query { Anchor, anchor_key },
-        graph_utils.collect_node_connections {
-            AccessLevel,
-            EdgeAnchor,
-            NodeAnchor,
-            anchor_key
-        },
+        graph_utils { Anchor, Archetype },
+        graph_utils._graph_edge { EdgeAnchor, GenericEdge },
+        graph_utils._graph_label { Root },
+        graph_utils.graph_neighbors_view { Root },
+        graph_utils.graph_node_view { Root },
         graph_utils.traverse_graph { EdgeAnchor },
         graph_walk {
             Anchor,
@@ -15488,13 +15512,12 @@ graph import runtime {
     type context ++> runtime { ExecutionContext }
     exceptions ++> context { MissingAnchorError }
     graph_query ++> [
+        graph_utils.graph_neighbors_view { GraphQuery, QHop },
+        graph_utils.graph_node_view { GraphQuery, QHop },
         graph_walk { GraphQuery, QHop, QPred },
         runtime { GraphQuery, QHop, QPred, filter_query_nodes },
     ]
-    graph_utils ++> [
-        builtin._jac_graph_json { collect_node_connections },
-        runtime.JacBuiltin.printgraph { traverse_graph },
-    ]
+    graph_utils ++> runtime.JacBuiltin.printgraph { traverse_graph }
     graph_walk --> runtime.JacGraph.refs {
         access_gated,
         has_persistent_origin,
@@ -15519,12 +15542,9 @@ graph import runtime {
     object_pydantic ++> object_model._pydantic_schema { object_schema }
     osp_graph as _graph ++> osp_graph_sv;
     osp_graph_sv ++> [
-        graph_utils.collect_node_connections | runtime.JacAccessValidation._groups_of {
-            sv_live_edges,
-            sv_register_hydrated
-        },
         graph_utils.traverse_graph { sv_register_hydrated },
         osp_kernel_sv { cls_of_tag, tag_of_cls },
+        runtime.JacAccessValidation._groups_of { sv_live_edges, sv_register_hydrated },
         runtime.JacGraph.disconnect {
             sv_candidate_edges_between,
             sv_register_hydrated
@@ -15589,9 +15609,11 @@ graph import runtime {
     runtime ++> [
         context.ExecutionContext.__post_init__ | graph_utils.get_name { JacRuntime },
         context.ExecutionContext.bind_stream { JacRuntime },
-        graph_utils.collect_node_connections { JacRuntimeInterface, resolve_ref },
-        graph_utils.traverse_graph | graph_walk.access_gated { JacRuntimeInterface },
-        graph_walk.acl_read_ok { JacRuntimeInterface },
+        graph_utils.graph_neighbors_view | graph_walk.access_gated {
+            JacRuntimeInterface
+        },
+        graph_utils.graph_node_view | graph_walk.acl_read_ok { JacRuntimeInterface },
+        graph_utils.traverse_graph { JacRuntimeInterface },
         prepared.load_prepared_module { JacRuntime as Jac },
     ]
     runtime --> [
@@ -30857,6 +30879,7 @@ graph import scale {
         scheduler_min_interval
     }
     deploy.autoscale.autoscaler ++> [
+        runtime.cli.diagnostics { triggers_can_reach_zero },
         sdk { AutoscalerRuntimeStatus, AutoscalerTransition },
         sdk.client { AutoscalerRuntimeStatus },
         tests.deploy.test_deployment_overlay { Autoscaler, AutoscalerSpec },
@@ -30981,6 +31004,7 @@ graph import scale {
             | tests.deploy.test_alb_zero_downtime
             | tests.deploy.test_client_build_deps
             | tests.deploy.test_client_build_fail_fast
+            | tests.deploy.test_destroy_reclaim
             | tests.deploy.test_dry_run_purity
             | tests.deploy.test_gateway_config_isolation
             | tests.deploy.test_memory_trigger_guard
@@ -31348,12 +31372,17 @@ graph import scale {
         deploy.target.kubernetes.kubernetes_target {
             ResourceStatus,
             ResourceStatusInfo,
-            assess_workload
+            assess_workload,
+            container_crashlooping
         },
         deploy.target.kubernetes.manifest_builder
             | tests.deploy.test_ops_deploy
             | tests.microservices.test_fleet_rollout { REPLICA_FLOOR_ANNOTATION },
-        deploy.target.kubernetes.target { ResourceStatus, assess_workload },
+        deploy.target.kubernetes.target {
+            ResourceStatus,
+            assess_workload,
+            container_crashlooping
+        },
         sdk { ResourceStatus, ResourceStatusInfo },
         tests.deploy.test_http_activation_microservices {
             REPLICA_FLOOR_ANNOTATION,
@@ -31361,7 +31390,8 @@ graph import scale {
         },
         tests.deploy.test_superseded_deployment_reap {
             REPLICA_FLOOR_ANNOTATION,
-            assess_workload
+            assess_workload,
+            container_crashlooping
         },
     ]
     observability.factory ++> plugin
@@ -31529,7 +31559,8 @@ graph import scale {
             k8s_service_dns_url
         },
         deploy.target.kubernetes.runtime_resolver { DEFAULT_GATEWAY_PORT },
-        tests.deploy.test_http_activation_microservices
+        tests.deploy.test_destroy_reclaim
+            | tests.deploy.test_http_activation_microservices
             | tests.deploy.test_memory_trigger_guard
             | tests.deploy.test_ops_rbac
             | tests.deploy.test_pod_env { GATEWAY_NAME },
@@ -32004,6 +32035,7 @@ graph import scale.deploy.autoscale {
             AutoscalerSpec,
             DEFAULT_CPU_UTILIZATION_TARGET,
             DEFAULT_MEMORY_UTILIZATION_TARGET,
+            RESOURCE_ONLY_TRIGGER_TYPES,
             condition,
             normalize_conditions,
             tristate
@@ -32205,6 +32237,9 @@ graph import scale.runtime {
         },
         gateway.microservice_gateway.MicroserviceGateway.handle_metrics
             | middleware.rate_limit.build_rate_limit_middleware { error_response },
+        gateway.microservice_gateway.MicroserviceGateway.merge_graph_pages {
+            not_found
+        },
         gateway.microservice_gateway.MicroserviceGateway.probe_services { not_found },
     ]
     context.errors --> [
@@ -32261,10 +32296,10 @@ graph import scale.runtime {
             DEFAULT_GATEWAY_HOST,
             DEFAULT_GATEWAY_PORT
         },
-        gateway.microservice_gateway.MicroserviceGateway.aggregate_graph_data {
+        gateway.microservice_gateway.MicroserviceGateway.forward_to {
             http_forward_timeout
         },
-        gateway.microservice_gateway.MicroserviceGateway.forward_to {
+        gateway.microservice_gateway.MicroserviceGateway.merge_graph_pages {
             http_forward_timeout
         },
         gateway.microservice_gateway.MicroserviceGateway.probe_services {
@@ -32353,13 +32388,9 @@ graph import scale.runtime {
         transport.transport.HttpTransport.call_walker { walker_call },
     ]
     transport.http_forward ++> [
-        gateway.microservice_gateway | gateway.openapi_agg.fetch_service_spec {
-            raw_forward
-        },
-        gateway.microservice_gateway.MicroserviceGateway.aggregate_graph_data {
-            raw_forward
-        },
         gateway.microservice_gateway.MicroserviceGateway.forward_to { stream_forward },
+        gateway.microservice_gateway.MicroserviceGateway.merge_graph_pages
+            | gateway.openapi_agg.fetch_service_spec { raw_forward },
         gateway.microservice_gateway.MicroserviceGateway.probe_services {
             stream_forward
         },
@@ -32373,7 +32404,7 @@ graph import scale.runtime {
 
 graph import scale.runtime.cli {
     _narrow ++> [
-        diagnostics { bget, dget, effective_resources, iget, lget, pod_spec },
+        diagnostics { bget, dget, effective_resources, iget, lget, pod_spec, sget },
         plan { dget, fget, iget, lget, pod_spec, sget },
     ]
     diagnostics ++> plan { Diagnostic, PlanValidator }
