@@ -63,6 +63,24 @@ def echo_float_alt_from_int_spread(v: int) -> float {
     return Holder[float](val=1.5).echo("k", **extra);
 }
 
+def str_echo_rejects_int_spread(v: int) -> int {
+    extra: dict[str, int] = {"alt": v};
+    try {
+        return len(Holder[str](val="x").echo("k", **extra));
+    } except TypeError {
+        return -1;
+    }
+}
+
+def int_echo_rejects_str_spread(n: int) -> int {
+    extra: dict[str, str] = {"alt": "s" * n};
+    try {
+        return Holder[int](val=1).echo("k", **extra);
+    } except TypeError {
+        return -1;
+    }
+}
+
 def first_str_len(n: int) -> int {
     return len(Holder[str](val="x" * n).first(1, "y"));
 }

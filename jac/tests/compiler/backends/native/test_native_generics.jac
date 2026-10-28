@@ -209,6 +209,14 @@ test "mono: a ** spread call boxes the generic archetype's V arguments" {
         eng, "echo_float_alt_from_int_spread", ctypes.c_double, ctypes.c_int64
     );
     assert as_float(3) == 3.0 , "a mapping value boxed as the receiver's V";
+    rejects_int = get_func(
+        eng, "str_echo_rejects_int_spread", ctypes.c_int64, ctypes.c_int64
+    );
+    assert rejects_int(65) == -1 , "an int mapping value is not a str V";
+    rejects_str = get_func(
+        eng, "int_echo_rejects_str_spread", ctypes.c_int64, ctypes.c_int64
+    );
+    assert rejects_str(2) == -1 , "a str mapping value is not an int V";
 }
 
 test "iter flow: generator through a monomorphized Iterator[T] param" {

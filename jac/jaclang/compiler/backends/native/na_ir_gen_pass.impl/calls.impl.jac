@@ -4095,8 +4095,12 @@ impl NaIRGenPass._bind_kw_spread(
         _box = rec["erased"]
             and not isinstance(helpers["val_type"], ir.PointerType)
             and self._erased_boxable(helpers["val_type"]);
-        if not _box
-            and not self._kw_spread_value_fits(helpers["val_type"], rec["slot_type"]) {
+        _fit_type = rec["slot_type"];
+        if rec["erased"] and rec["erased_want"] is not None {
+            _fit_type = self._opt_payload_of(rec["erased_want"]) or rec["erased_want"];
+        }
+        if not (_box and rec["erased_want"] is None)
+            and not self._kw_spread_value_fits(helpers["val_type"], _fit_type) {
             self._emit_runtime_raise(
                 present,
                 "TypeError",
