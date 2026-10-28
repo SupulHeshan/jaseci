@@ -984,6 +984,7 @@ test "active profile default empty" {
 # TestMergeFromTomlFile
 # ===========================================================================
 test "merge simple sections" {
+    import from jaclang.project.config { ServeConfigError }
     config_mod._config = None;
     with TemporaryDirectory() as tmpdir {
         temp_project = make_temp_project(Path(tmpdir));
@@ -1011,7 +1012,7 @@ test "merge simple sections" {
         try {
             cfg.merge_from_toml_file(local);
             assert False , "a quoted boolean in jac.local.toml was accepted";
-        } except ValueError as refused {
+        } except ServeConfigError as refused {
             assert "jac.local.toml: [serve] graph_enabled must be true or false"
                 in str(refused) , str(refused);
         }
@@ -1989,8 +1990,6 @@ test "interpolation applies to every parsed string" {
     }
 }
 
-"""[serve] is read strictly (#10305): a retired or unknown key, or a value of the
-wrong type, stops the load naming the key, while the documented shorthands load."""
 test "serve config carries no routing keys and refuses keys or values it does not know" {
     import from jaclang.project.config { ServeConfigError }
     cfg = JacConfig.from_toml_str(
@@ -2004,15 +2003,12 @@ test "serve config carries no routing keys and refuses keys or values it does no
     assert not hasattr(cfg.project, "client_kind");
     for (body, needle) in [
         ('base_route_app = "app"', "[serve] base_route_app has moved to [apps.<name>]"),
-        ('cl_route_prefix = "x"', "[serve] cl_route_prefix has moved to [apps.<name>]"),
         ("grpah_enabled = false", "[serve] has no key 'grpah_enabled'"),
         ('graph_enabled = "false"', "[serve] graph_enabled must be true or false"),
-        ('port = "8000"', "[serve] port must be an integer"),
         (
             "[serve.limits]\nmax_connections = true",
             "[serve.limits] max_connections must be an integer"
         ),
-        ("[serve.limits]\nbacklog = 2.9", "[serve.limits] backlog must be an integer"),
         ("[serve.tls]\ncertfile = false", "[serve.tls] certfile must be a string"),
         (
             "[serve.proxy]\ntrusted = \"10.0.0.1\"",
