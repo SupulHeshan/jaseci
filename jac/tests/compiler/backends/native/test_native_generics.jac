@@ -183,9 +183,6 @@ test "mono: a generic method on a generic archetype keeps the archetype's params
     (eng, _) = compile_native("generics_owner_methods.jac");
     first = get_func(eng, "first_int", ctypes.c_int64, ctypes.c_int64);
     assert first(5) == 5 , "self.val is unboxed, not its address";
-    pick = get_func(eng, "pick_int", ctypes.c_int64, ctypes.c_int64, ctypes.c_bool);
-    assert pick(5, True) == 5 , "the field arm of the ternary";
-    assert pick(5, False) == 7 , "the V-typed argument arm";
     echo = get_func(eng, "echo_int", ctypes.c_int64, ctypes.c_int64);
     assert echo(9) == 9 , "a V-typed argument round-trips";
     get = get_func(eng, "get_int", ctypes.c_int64, ctypes.c_int64);

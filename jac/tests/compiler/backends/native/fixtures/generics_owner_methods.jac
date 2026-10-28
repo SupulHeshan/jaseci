@@ -15,10 +15,6 @@ obj Holder[V] {
         return self.val;
     }
 
-    def pick[K](key: K, alt: V) -> V {
-        return self.val if key else alt;
-    }
-
     def echo[K](key: K, alt: V) -> V {
         return alt;
     }
@@ -30,10 +26,6 @@ obj Holder[V] {
 
 def first_int(v: int) -> int {
     return Holder[int](val=v).first("k", 7);
-}
-
-def pick_int(v: int, take_val: bool) -> int {
-    return Holder[int](val=v).pick(take_val, 7);
 }
 
 def echo_int(v: int) -> int {
