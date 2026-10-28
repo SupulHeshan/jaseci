@@ -78,6 +78,12 @@ def holder_float_echo_from_int_spread(v: int) -> float {
     return Holder[float](val=1.5).echo("k", **extra);
 }
 
+def holder_optional_echo_from_spread(v: int) -> int {
+    extra: dict[str, int | None] = {"alt": v if v > 0 else None};
+    got = Holder[int | None](val=5).echo("k", **extra);
+    return got if got is not None else -1;
+}
+
 def holder_str_echo_rejects_int_spread(v: int) -> int {
     extra: dict[str, int] = {"alt": v};
     try {
