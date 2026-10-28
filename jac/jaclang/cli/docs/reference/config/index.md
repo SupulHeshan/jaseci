@@ -320,6 +320,8 @@ The `[serve]` tables are checked when the configuration loads, in every layer
 A layer's sub-table merges into the one below it instead of replacing it.
 `${VAR}` interpolation always gives text, so it can't set a `[serve]` number
 or switch; set those from the environment with their `JAC_SERVE_*` variable.
+`main`, `conflict_max_attempts` and `conflict_backoff_ms` have no such variable,
+so write them as plain values.
 
 ```toml
 [serve]
