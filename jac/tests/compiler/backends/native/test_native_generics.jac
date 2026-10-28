@@ -174,46 +174,23 @@ test "mono: generic method on an archetype stamps per call site" {
     g = get_func(eng, "pick_str_len", ctypes.c_int64, ctypes.c_int64);
     assert g(1) == 2 , "picks 'xx'";
     assert g(0) == 3 , "picks 'yyy'";
-}
-
-test "mono: a generic method on a generic archetype keeps the archetype's params erased" {
-    # The archetype's `V` is boxed in its fields, so the stamped method
-    # must not solve `V` from an argument: `self.val` came back as the
-    # box's address, and `get[K]` (no `V` argument) used to refuse.
-    (eng, _) = compile_native("generics_owner_methods.jac");
-    first = get_func(eng, "first_int", ctypes.c_int64, ctypes.c_int64);
-    assert first(5) == 5 , "self.val is unboxed, not its address";
-    echo = get_func(eng, "echo_int", ctypes.c_int64, ctypes.c_int64);
-    assert echo(9) == 9 , "a V-typed argument round-trips";
-    get = get_func(eng, "get_int", ctypes.c_int64, ctypes.c_int64);
-    assert get(11) == 11 , "a V return with no V argument lowers natively";
-    flt = get_func(eng, "first_float_from_int_arg", ctypes.c_double, ctypes.c_double);
-    assert flt(2.5) == 2.5 , "V comes from the receiver, not the int argument";
-    slen = get_func(eng, "first_str_len", ctypes.c_int64, ctypes.c_int64);
-    assert slen(4) == 4 , "a pointer-typed V";
-}
-
-test "mono: a ** spread call boxes the generic archetype's V arguments" {
-    # A `**` spread binds through a separate path; it must box a `V`
-    # argument like a plain call does, both a positional one and one
-    # taken from the unpacked mapping.
-    (eng, _) = compile_native("generics_owner_methods.jac");
-    spread = get_func(eng, "echo_with_empty_spread", ctypes.c_int64, ctypes.c_int64);
-    assert spread(7) == 7 , "a positional V next to a ** spread";
-    from_map = get_func(eng, "echo_alt_from_spread", ctypes.c_int64, ctypes.c_int64);
-    assert from_map(9) == 9 , "a V taken from the unpacked mapping";
-    as_float = get_func(
-        eng, "echo_float_alt_from_int_spread", ctypes.c_double, ctypes.c_int64
-    );
-    assert as_float(3) == 3.0 , "a mapping value boxed as the receiver's V";
-    rejects_int = get_func(
-        eng, "str_echo_rejects_int_spread", ctypes.c_int64, ctypes.c_int64
-    );
-    assert rejects_int(65) == -1 , "an int mapping value is not a str V";
-    rejects_str = get_func(
-        eng, "int_echo_rejects_str_spread", ctypes.c_int64, ctypes.c_int64
-    );
-    assert rejects_str(2) == -1 , "a str mapping value is not an int V";
+    # On a generic archetype the method keeps the archetype's `V` boxed:
+    # solving it from an argument returned `self.val`'s box address.
+    for (name, restype, x, want) in [
+        ("holder_first_int", ctypes.c_int64, 5, 5),
+        ("holder_echo_int", ctypes.c_int64, 9, 9),
+        ("holder_get_int", ctypes.c_int64, 11, 11),
+        ("holder_first_float", ctypes.c_double, 2, 2.5),
+        ("holder_first_str_len", ctypes.c_int64, 4, 4),
+        ("holder_echo_beside_spread", ctypes.c_int64, 7, 7),
+        ("holder_echo_from_spread", ctypes.c_int64, 9, 9),
+        ("holder_float_echo_from_int_spread", ctypes.c_double, 3, 3.0),
+        ("holder_str_echo_rejects_int_spread", ctypes.c_int64, 65, -1),
+        ("holder_int_echo_rejects_str_spread", ctypes.c_int64, 2, -1)
+    ] {
+        got = get_func(eng, name, restype, ctypes.c_int64)(x);
+        assert got == want , f"{name}({x}) = {got}, want {want}";
+    }
 }
 
 test "iter flow: generator through a monomorphized Iterator[T] param" {
