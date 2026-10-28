@@ -187,6 +187,7 @@ test "mono: generic method on an archetype stamps per call site" {
         ("holder_float_echo_from_int_spread", ctypes.c_double, 3, 3.0),
         ("holder_optional_echo_from_spread", ctypes.c_int64, 7, 7),
         ("holder_optional_echo_from_spread", ctypes.c_int64, 0, -1),
+        ("holder_float_echo_from_optional_int_spread", ctypes.c_double, 3, 3.0),
         ("holder_str_echo_rejects_int_spread", ctypes.c_int64, 65, -1),
         ("holder_int_echo_rejects_str_spread", ctypes.c_int64, 2, -1)
     ] {
