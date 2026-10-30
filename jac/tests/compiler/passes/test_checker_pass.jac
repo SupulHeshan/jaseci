@@ -2565,7 +2565,7 @@ test "inferred_local_type_frozen" {
         os.path.join(CHECKER_FIXTURES, "checker_inferred_type_frozen.jac"),
         options=NO_TC
     );
-    assert len(program.errors_had) == 5 , f"Expected 5 type errors, but got {len(
+    assert len(program.errors_had) == 7 , f"Expected 7 type errors, but got {len(
         program.errors_had
     )}: "
         + "\n".join([err.pretty_print() for err in program.errors_had]);
@@ -2602,6 +2602,20 @@ test "inferred_local_type_frozen" {
             """
         for x in ["bad"] {  # <-- Error
         Cannot assign str to int
+    """
+        ),
+        (
+            5,
+            """
+        for [kind, title] in [["k", "x"]] {  # <-- Error
+        Cannot assign str to Label
+    """
+        ),
+        (
+            6,
+            """
+        for (key, count) in {"ab": 1} {  # <-- Error
+        Cannot assign LiteralString to int
     """
         )
     ] {

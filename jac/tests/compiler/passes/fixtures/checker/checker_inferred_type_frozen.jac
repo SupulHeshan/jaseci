@@ -62,3 +62,19 @@ impl rebinds_param(x: int) -> int {
 }
 
 def rebinds_param(x: int) -> int;
+
+obj Label {
+    has text: str = "";
+}
+
+def for_unpack_rebinds {
+    title = Label(text="a");
+    for [kind, title] in [["k", "x"]] {  # <-- Error
+        print(kind);
+    }
+    count = 0;
+    # Iterating a dict yields its keys, so `count` gets a key's characters.
+    for (key, count) in {"ab": 1} {  # <-- Error
+        print(key);
+    }
+}
